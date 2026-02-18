@@ -1,0 +1,23 @@
+[package]
+name = "mk73"
+description = "game, inspiration from https://mk48.io"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.18.0"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+strip = "debuginfo"
