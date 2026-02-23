@@ -1,4 +1,6 @@
 //! utility functions independent to game
+
+// remember high test coverage
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
 
 #[derive(Component)]
@@ -33,27 +35,32 @@ pub fn get_cursor_pos(window: Single<&Window, With<PrimaryWindow>>, camera: Sing
         .map(|ray| ray.origin.truncate())
 }
 
-/// calculates a float from the given unit 1 and respective maximum.
+/// calculates a float from the given `current` and respective range (`minimum_source..=unit_1`).
 /// #### Note
-/// if `source` is bigger than `unit_1`, `maximum` will be returned.
+/// if `current` is bigger than `unit_1`, `maximum_value` will be returned.
 /// 
-/// if `source` is smaller than provided `minimum`, 0 will be returned.
+/// if `current` is smaller than provided `minimum_source`, 0 will be returned.
 /// ### Panics
-/// if provided `minimum` is bigger than `unit_1`
-pub fn calculate_from_proportion(source: f32, unit_1: f32, maximum: f32, minimum: f32) -> f32 {
-    assert!(minimum <= unit_1);
+/// if provided `minimum_source` is bigger than `unit_1`
+pub fn calculate_from_proportion(current: f32, unit_1: f32, maximum_value: f32, minimum_source: f32) -> f32 {
+    assert!(minimum_source <= unit_1);
 
-    if source <= minimum {
+    if current <= minimum_source {
         return 0.0;
     }
-    let proportion = source / unit_1;
+    if current >= unit_1 {
+        return maximum_value;
+    }
+    let proportion = (current - minimum_source) / (unit_1 - minimum_source);
 
-    maximum * proportion
+    println!("Unit1: {unit_1}, minimum: {minimum_source}");
+    println!("Proportion: {proportion}");
+    maximum_value * proportion
 }
 
-/// calculates the outer "circle" by adding 1/3 to `length`
-pub fn add_one_third(length: f32) -> f32 {
-    length / 3.3 + length
+/// calculates the circle HUD by adding 7/10 of `length` to `length`
+pub fn add_circle_hud(length: f32) -> f32 {
+    length * 0.7 + length
 }
 
 #[cfg(test)]
@@ -70,5 +77,20 @@ mod tests {
     fn test_move_with_rotation() {
         let rotation = Quat::from_rotation_z(90.0_f32.to_radians());
         assert_eq!(move_with_rotation(rotation, 2.0).y, 2.0);
+    }
+    #[test]
+    fn test_add_circle_hud() {
+        assert_eq!(add_circle_hud(10.0), 17.0);
+    }
+    #[test]
+    fn test_calculate_from_proportion() {
+        let source = 7.5;
+        let minimum = 5.0;
+        let unit_1 = 10.0;
+        
+        let maximum = 100.0;
+
+        let result = calculate_from_proportion(source, unit_1, maximum, minimum);
+        assert_eq!(result, 50.0);
     }
 }

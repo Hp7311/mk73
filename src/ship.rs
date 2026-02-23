@@ -4,12 +4,16 @@
 
 use std::f32::consts::PI;
 
+use bevy::camera_controller::pan_camera::PanCamera;
+use bevy::color::palettes::css::*;  // colors
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use crate::util::{calculate_from_proportion, get_cursor_pos, add_one_third, get_rotate_radian, move_with_rotation};
+use crate::util::{calculate_from_proportion, get_cursor_pos, add_circle_hud, get_rotate_radian, move_with_rotation};
 use crate::constants::*;
 use crate::util::MainCamera;
+
+const SPRITE_SHRINK: f32 = 0.3;
 
 #[derive(Component, Debug, Clone)]
 pub struct Ship {
@@ -27,6 +31,7 @@ pub struct Ship {
     raw_size: f32,
 }
 
+
 impl Ship {
     fn radius(&self) -> f32 {
         self.raw_size * self.scale / 2.0
@@ -36,28 +41,41 @@ impl Ship {
 pub fn startup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    let transform = Transform::from_scale(Vec3::splat(0.3))
+    let transform = Transform::from_scale(Vec3::splat(SPRITE_SHRINK))
         .with_translation(Vec3 { x: 100.0, y: 0.0, z: 0.0 })
         .with_rotation(Quat::from_rotation_z(PI / (180.0 / 90.0)));
+    
+    commands.spawn((Camera2d, PanCamera {
+        min_zoom: 1.0,
+        max_zoom: DEFAULT_MAX_ZOOM,
+        key_down: None,
+        key_left: None,
+        key_right: None,
+        key_up: None,
+        ..default()
+    }, MainCamera));
 
-    commands.spawn((Camera2d, MainCamera));  // ::default() ?
     commands.spawn((  // TODO Bundle it
+        transform,
+
         Sprite::from_image(
             asset_server.load("yasen.png")
         ),
-        transform,
         Ship {
             max_turn_radian: YASEN_MAX_TURN_DEGREE.to_radians(),
             max_speed: YASEN_MAX_SPEED,
-            scale: 0.3,
+            scale: SPRITE_SHRINK,
             transform,
-            raw_size: YASEN_RAW_SIZE
+            raw_size: YASEN_RAW_SIZE,
         },
+
         Mesh2d(
-            meshes.add(Circle::new(add_one_third(YASEN_RAW_SIZE / 2.0)))
-        )
+            meshes.add(Circle::new(add_circle_hud(YASEN_RAW_SIZE / 2.0)).to_ring(3.0))  // TODO dirty
+        ),
+        MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
     ));
 }
 
@@ -101,8 +119,6 @@ fn rotate_ship(ship_data: &mut Query<(&Transform, &mut Ship)>, cursor_pos: Vec2)
         } else {
             ship.transform.rotate_local_z(moved);
         }
-
-        println!("Moved from last time: {}", moved.to_degrees());
     }
 }
 
@@ -113,10 +129,12 @@ fn move_ship(ship_data: &mut Query<(&Transform, &mut Ship)>, cursor_pos: Vec2) {
         let cursor_distance = cursor_pos.distance(transform.translation.xy());
         let speed = calculate_from_proportion(
             cursor_distance,
-            add_one_third(ship.radius()),
+            add_circle_hud(ship.radius()),  // TODO bigger circle HUD
             ship.max_speed,
             ship.radius()
         );
+
+        println!("Speed: {}", speed);
         
         ship.transform.translation += move_with_rotation(transform.rotation, speed);
     }
