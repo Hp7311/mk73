@@ -1,5 +1,5 @@
-use mk73::ShipPlugin;
 use bevy::prelude::{App, DefaultPlugins};
+use mk73::ShipPlugin;
 
 fn main() {
     App::new()

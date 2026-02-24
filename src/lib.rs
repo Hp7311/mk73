@@ -1,9 +1,9 @@
-mod util;
 mod ship;
-use bevy::prelude::*;
+mod util;
 use bevy::camera_controller::pan_camera::PanCameraPlugin;
+use bevy::prelude::*;
 
-use crate::ship::{startup, update_transform, update_ship};
+use crate::ship::{startup, update_ship, update_transform};
 
 mod constants {
     pub const YASEN_MAX_TURN_DEGREE: f32 = 2.0;
