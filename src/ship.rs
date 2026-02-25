@@ -10,6 +10,7 @@ use bevy::camera_controller::pan_camera::PanCamera;
 use bevy::color::palettes::css::*;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use rand::RngExt;
 
 use crate::constants::*;
 use crate::primitives::*;
@@ -21,6 +22,8 @@ use crate::util::{
 
 #[derive(Component, Debug, Clone)]
 pub struct Ship;
+
+const WORLD_SIZE: Vec2 = vec2(4000.0, 2000.0);
 
 pub fn startup(
     mut commands: Commands,
@@ -51,14 +54,15 @@ pub fn startup(
             asset_server.clone(),
             YASEN_RAW_SIZE / 2.0,
         ),
-        CircleHudBundle {
+        Ship
+    )).with_children(|parent| {
+        parent.spawn(CircleHudBundle {
             mesh: Mesh2d(meshes.add(Circle::new(
                 add_circle_hud(YASEN_RAW_SIZE / 2.0) * DEFAULT_SPRITE_SHRINK
             ).to_ring(3.0))),
-            materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY)))
-        },
-        Ship
-    ));
+            materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
+        });
+    });
     
     commands.spawn((
         Transform {
@@ -71,13 +75,31 @@ pub fn startup(
         Sprite {
             image: asset_server.load("waves.png"),
             color: Color::srgb(0.0, 0.65, 1.03),
-            custom_size: Some(vec2(20000.0, 20000.0)),  // TODO spawn sprites from edge of screen / world map (multiplayer)
+            custom_size: Some(WORLD_SIZE),  // TODO spawn sprites from edge of screen / world map (multiplayer)
             image_mode: SpriteImageMode::Tiled {
                 tile_x: true, tile_y: true, stretch_value: 2.0
             },
             ..default()
-        }
+        },
+        Background
     ));
+
+    let mut rng = rand::rng();
+    // let oil_rig = asset_server.load("oil_platform.png".to_owned());
+
+    // for _ in 0..100 {  // TODO hard coded
+        // let x = rng.random_range(-WORLD_SIZE.x.round() as i32..WORLD_SIZE.x.round() as i32) as f32;
+        // let y = rng.random_range(-WORLD_SIZE.y.round() as i32..WORLD_SIZE.y.round() as i32) as f32;
+        commands.spawn((
+            Transform::from_translation(vec3(0.0, 0.0, 0.1)),
+            Sprite {
+                image: asset_server.clone().load("oil_platform.png"),
+                ..default()
+            },
+            Text2d("I'm here".to_owned()),
+            OilRig,
+        ));
+    // }
 }
 
 pub fn move_camera(
@@ -107,6 +129,7 @@ pub fn update_ship(
         rotate_ship(&mut queries.p0(), cursor_pos);
         move_ship(&mut queries.p1(), cursor_pos);
     }
+    
 }
 
 /// handle rotation
@@ -181,8 +204,17 @@ pub fn update_transform(mut transform_ship: Query<(&mut Transform, &mut CustomTr
     }
 }
 
-/// resize the Sprite
-pub fn set_sprite_scale(mut sprites: Query<&mut Sprite, With<Ship>>, assets: Res<Assets<Image>>) {
+type ResizeSprite<'a, 'w, 's, T> = Query<'w, 's, &'static mut Sprite, With<T>>;
+
+pub fn resize_ship(sprites: ResizeSprite<Ship>, assets: Res<Assets<Image>>) {
+    resize_inner(sprites, assets);
+}
+
+pub fn resize_rigs(sprites: ResizeSprite<OilRig>, assets: Res<Assets<Image>>) {
+    resize_inner(sprites, assets);
+}
+
+fn resize_inner<T: Component>(mut sprites: ResizeSprite<T>, assets: Res<Assets<Image>>) {
     for mut sprite in sprites.iter_mut() {
         let Some(image) = assets.get(&mut sprite.image) else { continue };
         if sprite.custom_size.is_some() { continue }

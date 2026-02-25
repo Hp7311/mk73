@@ -6,6 +6,7 @@ edition = "2024"
 
 [dependencies]
 bevy = {version = "0.18.0", features = ["debug", "pan_camera"]}
+rand = "0.10.0"
 
 [profile.dev]
 opt-level = 1

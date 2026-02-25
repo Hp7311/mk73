@@ -2,7 +2,7 @@ use std::ops::{AddAssign, Neg};
 
 use bevy::prelude::*;
 
-use crate::constants::DEFAULT_MAX_TURN_DEG;
+use crate::{constants::DEFAULT_MAX_TURN_DEG, ship::Ship};
 
 #[derive(Component, Debug)]
 pub struct CustomTransform {
@@ -110,7 +110,7 @@ impl ShipBundle {
         let sprite = Sprite::from_image(asset_server.load(sprite_name.to_owned()));
 
         let transform = Transform {
-            translation: position.extend(0.0),
+            translation: position.extend(2.0),
             rotation: Quat::from_rotation_z(SPRITE_ROTATION.to_radians()),
             ..default()
         };
@@ -135,3 +135,9 @@ pub struct CircleHudBundle {
     pub mesh: Mesh2d,
     pub materials: MeshMaterial2d<ColorMaterial>,
 }
+
+#[derive(Component, Debug)]
+pub struct Background;
+
+#[derive(Component, Debug)]
+pub struct OilRig;
