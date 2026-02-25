@@ -2,9 +2,12 @@
 //!
 //! be mindful of [`Ship::transform`] and [`Transform`] of the [`Ship`] needs to be kept in sync
 
+// doc outdated
+
 use std::f32::consts::PI;
 
 use bevy::camera_controller::pan_camera::PanCamera;
+use bevy::color::palettes::css::*;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
@@ -21,8 +24,8 @@ pub struct Ship;
 
 pub fn startup(
     mut commands: Commands,
-    // mut meshes: ResMut<Assets<Mesh>>,
-    // mut materials: ResMut<Assets<ColorMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
 
@@ -37,7 +40,7 @@ pub fn startup(
             key_up: None,
             ..default()
         },
-        MainCamera,
+        MainCamera
     ));
 
     commands.spawn((
@@ -48,8 +51,44 @@ pub fn startup(
             asset_server.clone(),
             YASEN_RAW_SIZE / 2.0,
         ),
+        CircleHudBundle {
+            mesh: Mesh2d(meshes.add(Circle::new(
+                add_circle_hud(YASEN_RAW_SIZE / 2.0) * DEFAULT_SPRITE_SHRINK
+            ).to_ring(3.0))),
+            materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY)))
+        },
         Ship
     ));
+    
+    commands.spawn((
+        Transform {
+            translation: Vec3 {
+                z: -1.0,
+                ..default()
+            },
+            ..default()
+        },
+        Sprite {
+            image: asset_server.load("waves.png"),
+            color: Color::srgb(0.0, 0.65, 1.03),
+            custom_size: Some(vec2(20000.0, 20000.0)),  // TODO spawn sprites from edge of screen / world map (multiplayer)
+            image_mode: SpriteImageMode::Tiled {
+                tile_x: true, tile_y: true, stretch_value: 2.0
+            },
+            ..default()
+        }
+    ));
+}
+
+pub fn move_camera(
+    mut camera: Single<&mut Transform, With<MainCamera>>,
+    ship_pos: Query<&CustomTransform, With<Ship>>
+) {  // currently ignores possibility of multiple ships
+    let Some(ship) = ship_pos.iter().last() else { return; };
+
+    if ship.position.0 != camera.translation.xy() {
+        camera.translation = ship.position.0.extend(0.0);
+    }
 }
 
 /// modifys [`Transform`] of [`Ship`]
@@ -143,7 +182,7 @@ pub fn update_transform(mut transform_ship: Query<(&mut Transform, &mut CustomTr
 }
 
 /// resize the Sprite
-pub fn set_sprite_scale(mut sprites: Query<&mut Sprite>, assets: Res<Assets<Image>>) {
+pub fn set_sprite_scale(mut sprites: Query<&mut Sprite, With<Ship>>, assets: Res<Assets<Image>>) {
     for mut sprite in sprites.iter_mut() {
         let Some(image) = assets.get(&mut sprite.image) else { continue };
         if sprite.custom_size.is_some() { continue }

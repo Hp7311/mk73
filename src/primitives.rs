@@ -66,7 +66,7 @@ impl Radian {
     }
 }
 
-#[derive(Component, Debug)]
+#[derive(Component, Debug, PartialEq)]
 pub struct Position(pub Vec2);
 
 impl AddAssign for Position {
@@ -128,4 +128,10 @@ impl ShipBundle {
             }
         }
     }
+}
+
+#[derive(Bundle, Debug)]
+pub struct CircleHudBundle {
+    pub mesh: Mesh2d,
+    pub materials: MeshMaterial2d<ColorMaterial>,
 }

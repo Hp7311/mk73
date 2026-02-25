@@ -61,8 +61,6 @@ pub fn calculate_from_proportion(
     }
     let proportion = (current - minimum_source) / (unit_1 - minimum_source);
 
-    println!("Unit1: {unit_1}, minimum: {minimum_source}");
-    println!("Proportion: {proportion}");
     maximum_value * proportion
 }
 
