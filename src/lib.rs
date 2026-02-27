@@ -5,7 +5,7 @@ mod util;
 use bevy::camera_controller::pan_camera::PanCameraPlugin;
 use bevy::prelude::*;
 
-use crate::ship::{move_camera, resize_rigs, resize_ship, startup, update_ship, update_transform};
+use crate::ship::{move_camera, resize_rigs, resize_ship, startup, update_ship, update_transform, validate_rigs};
 
 mod constants {
 
@@ -28,6 +28,6 @@ impl Plugin for ShipPlugin {
             .add_systems(Startup, startup)
             .add_systems(Update, (update_ship, update_transform).chain())
             .add_systems(Update, move_camera)
-            .add_systems(Update, (resize_rigs, resize_ship));
+            .add_systems(Update, (resize_rigs, resize_ship, validate_rigs));
     }
 }

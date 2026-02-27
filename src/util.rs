@@ -69,6 +69,7 @@ pub fn add_circle_hud(length: f32) -> f32 {
     length * 0.7 + length
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;

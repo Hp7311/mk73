@@ -2,9 +2,9 @@ use std::ops::{AddAssign, Neg};
 
 use bevy::prelude::*;
 
-use crate::{constants::DEFAULT_MAX_TURN_DEG, ship::Ship};
+use crate::{constants::DEFAULT_MAX_TURN_DEG};
 
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Copy, Clone)]
 pub struct CustomTransform {
     pub speed: Speed,
     pub position: Position,
@@ -15,10 +15,10 @@ impl CustomTransform {
     pub fn rotate_local_z(&mut self, angle: Radian) {
         let rotation = angle.to_quat();
         self.rotation = (rotation * self.rotation.to_quat()).to_radian_unchecked();
-    }  // TODO test
+    } // TODO test
 }
 
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Copy, Clone)]
 pub struct Radius(pub f32);
 
 impl Radius {
@@ -29,10 +29,22 @@ impl Radius {
         Radius(self.0 * ratio)
     }
 }
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Copy, Clone)]
 pub struct Speed(pub f32);
 
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone, Copy)]
+pub struct TargetRotation(pub Option<f32>);
+
+impl From<Option<f32>> for TargetRotation {
+    fn from(value: Option<f32>) -> Self {
+        match value {
+            Some(v) => TargetRotation(Some(v)),
+            None => TargetRotation(None),
+        }
+    }
+}
+
+#[derive(Component, Debug, Copy, Clone)]
 pub struct Radian(pub f32);
 
 impl Neg for Radian {
@@ -66,7 +78,7 @@ impl Radian {
     }
 }
 
-#[derive(Component, Debug, PartialEq)]
+#[derive(Component, Debug, PartialEq, Copy, Clone)]
 pub struct Position(pub Vec2);
 
 impl AddAssign for Position {
@@ -79,7 +91,6 @@ impl Position {
         self.0.extend(0.0)
     }
 }
-
 
 #[derive(Bundle, Debug)]
 pub struct ShipBundle {
@@ -95,6 +106,8 @@ pub struct ShipBundle {
     custom_transform: CustomTransform,
     /// raw image
     radius: Radius,
+    /// where the user's mouse is facing
+    mouse_target: TargetRotation,
 }
 
 impl ShipBundle {
@@ -125,19 +138,49 @@ impl ShipBundle {
                 speed: Speed(0.0),
                 position: Position(position),
                 rotation: Radian::from_deg(SPRITE_ROTATION),
-            }
+            },
+            mouse_target: None.into(),
         }
     }
 }
 
-#[derive(Bundle, Debug)]
+#[derive(Bundle, Debug, Clone)]
 pub struct CircleHudBundle {
     pub mesh: Mesh2d,
     pub materials: MeshMaterial2d<ColorMaterial>,
 }
 
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Copy, Clone)]
 pub struct Background;
 
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Copy, Clone)]
 pub struct OilRig;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RectWithWh {
+    pub pos: Vec2,
+    pub w_h: Vec2,
+}
+
+impl RectWithWh {
+    pub fn intersects_with(&self, rhs: &Self) -> bool {
+        self.x() < rhs.right()
+            && self.right() > rhs.x()
+            && self.y() < rhs.bottom()
+            && self.bottom() > rhs.y()
+    }
+
+    pub fn x(&self) -> f32 {
+        self.pos.x
+    }
+    pub fn y(&self) -> f32 {
+        self.pos.y
+    }
+    pub fn right(&self) -> f32 {
+        self.pos.x + self.w_h.x
+    }
+
+    pub fn bottom(&self) -> f32 {
+        self.pos.y + self.w_h.y
+    }
+}
