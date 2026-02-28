@@ -2,13 +2,17 @@ use std::ops::{AddAssign, Neg};
 
 use bevy::prelude::*;
 
-use crate::{constants::DEFAULT_MAX_TURN_DEG};
+use crate::constants::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK};
 
 #[derive(Component, Debug, Copy, Clone)]
 pub struct CustomTransform {
     pub speed: Speed,
     pub position: Position,
+    /// stores the radian to move, with -> of Sprite as 0
+    /// 
+    /// ignores any reverse, calculates them like normal
     pub rotation: Radian,
+    pub reversed: bool,
 }
 
 impl CustomTransform {
@@ -23,14 +27,15 @@ pub struct Radius(pub f32);
 
 impl Radius {
     pub fn default_convert(&self) -> Self {
-        Radius(self.0 * 0.3)
-    }
-    pub fn custom_convert(&self, ratio: f32) -> Self {
-        Radius(self.0 * ratio)
+        Radius(self.0 * DEFAULT_SPRITE_SHRINK)
     }
 }
 #[derive(Component, Debug, Copy, Clone)]
 pub struct Speed(pub f32);
+#[derive(Component, Debug, Copy, Clone)]
+pub struct MaxSpeed(pub f32);
+#[derive(Component, Debug, Copy, Clone)]
+pub struct ReverseSpeed(pub f32);
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct TargetRotation(pub Option<f32>);
@@ -73,7 +78,7 @@ impl Radian {
     pub fn from_deg(deg: f32) -> Self {
         Radian(deg.to_radians())
     }
-    pub fn to_quat(&self) -> Quat {
+    pub fn to_quat(self) -> Quat {
         Quat::from_rotation_z(self.0)
     }
 }
@@ -87,7 +92,7 @@ impl AddAssign for Position {
     }
 }
 impl Position {
-    pub fn to_vec3(&self) -> Vec3 {
+    pub fn to_vec3(self) -> Vec3 {
         self.0.extend(0.0)
     }
 }
@@ -99,7 +104,8 @@ pub struct ShipBundle {
     /// keep the value small
     max_turn: Radian,
     /// max speed that the Ship can have
-    max_speed: Speed,
+    max_speed: MaxSpeed,
+    reverse_speed: ReverseSpeed,
     /// tranform to update in seperate system
     transform: Transform,
     sprite: Sprite,
@@ -114,6 +120,7 @@ impl ShipBundle {
     /// default to rotated 90 degrees and 2.0 turning
     pub fn new(
         max_speed: f32,
+        reverse_speed: f32,
         position: Vec2,
         sprite_name: &str,
         asset_server: AssetServer,
@@ -123,14 +130,15 @@ impl ShipBundle {
         let sprite = Sprite::from_image(asset_server.load(sprite_name.to_owned()));
 
         let transform = Transform {
-            translation: position.extend(2.0),
+            translation: position.extend(0.0),
             rotation: Quat::from_rotation_z(SPRITE_ROTATION.to_radians()),
             ..default()
         };
 
         ShipBundle {
             max_turn: Radian::from_deg(DEFAULT_MAX_TURN_DEG),
-            max_speed: Speed(max_speed),
+            max_speed: MaxSpeed(max_speed),
+            reverse_speed: ReverseSpeed(reverse_speed),
             transform,
             sprite,
             radius: Radius(radius),
@@ -138,6 +146,7 @@ impl ShipBundle {
                 speed: Speed(0.0),
                 position: Position(position),
                 rotation: Radian::from_deg(SPRITE_ROTATION),
+                reversed: false
             },
             mouse_target: None.into(),
         }
@@ -184,3 +193,6 @@ impl RectWithWh {
         self.pos.y + self.w_h.y
     }
 }
+
+#[derive(Component, Debug, Copy, Clone)]
+pub struct WorldSize(pub Vec2);

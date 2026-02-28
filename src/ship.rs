@@ -15,14 +15,20 @@ use rand::RngExt;
 use crate::constants::*;
 use crate::primitives::*;
 use crate::util::{
-    MainCamera, add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
-    move_with_rotation,
+    MainCamera,
+    add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
+    move_with_rotation, check_in_vec2, get_head, get_map_size,
+    TrimRadian
 };
 
 #[derive(Component, Debug, Copy, Clone)]
 pub struct Ship;
 
-const WORLD_SIZE: Vec2 = vec2(4000.0, 2000.0);
+const WORLD_MIN: Vec2 = vec2(4000.0, 2000.0);
+const WORLD_EXPAND: f32 = 2000.0;
+
+/// absolute value of minimum radians that must be reached to reverse the Ship
+const MINIMUM_REVERSE: f32 = PI * (2.0 / 3.0);
 
 // TODO time to modulise
 
@@ -49,6 +55,7 @@ pub fn startup(
     commands.spawn((
         ShipBundle::new(
             YASEN_MAX_SPEED,
+            YASEN_BACK_SPEED,
             vec2(100.0, 0.0),
             "yasen.png",
             asset_server.clone(),
@@ -57,17 +64,22 @@ pub fn startup(
         Ship,
     ))
     .with_children(|parent | {
-        parent.spawn(CircleHudBundle {
-            mesh: Mesh2d(
-                meshes.add(
-                    Circle::new(add_circle_hud(YASEN_RAW_SIZE / 2.0) * DEFAULT_SPRITE_SHRINK)
-                        .to_ring(3.0),
+        parent.spawn((
+            CircleHudBundle {
+                mesh: Mesh2d(
+                    meshes.add(
+                        Circle::new(add_circle_hud(YASEN_RAW_SIZE / 2.0) * DEFAULT_SPRITE_SHRINK)  // TODO
+                            .to_ring(3.0),
+                    ),
                 ),
-            ),
-            materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED))),
-        });
+                materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
+            },
+            Transform::from_translation(vec3(0.0, 0.0, 30.0))  // relative to parent, circle hud highest Z
+        ));
     });
 
+    // in Sprites, translation is the center point of the Sprite rendered
+    let world_size = get_map_size(1, WORLD_MIN, WORLD_EXPAND);  // TODO smart idea: using structs and default values instead of constants!
     commands.spawn((
         Transform {
             translation: Vec3 {
@@ -79,7 +91,7 @@ pub fn startup(
         Sprite {
             image: asset_server.load("waves.png"),
             color: Color::srgb(0.0, 0.65, 1.03),
-            custom_size: Some(WORLD_SIZE), // TODO spawn sprites from edge of screen / world map (multiplayer)
+            custom_size: Some(world_size),
             image_mode: SpriteImageMode::Tiled {
                 tile_x: true,
                 tile_y: true,
@@ -93,21 +105,23 @@ pub fn startup(
     let mut rng = rand::rng();
     let oil_rig = asset_server.load("oil_platform.png".to_owned());
 
-    for _ in 0..10 {
-        // TODO hard coded
-        let x = rng.random_range(-WORLD_SIZE.x.round() as i32..WORLD_SIZE.x.round() as i32) as f32;
-        let y = rng.random_range(-WORLD_SIZE.y.round() as i32..WORLD_SIZE.y.round() as i32) as f32;
+    for _ in 0..10 {  // temporary
+        let rotation = rng.random_range(-PI..PI);
+        let x = rng.random_range(-world_size.x.round() as i32 / 2..world_size.x.round() as i32 / 2) as f32;
+        let y = rng.random_range(-world_size.y.round() as i32 / 2..world_size.y.round() as i32 / 2) as f32;
         
         commands.spawn((
-            Transform::from_translation(vec3(x, y, 0.0)),
+            Transform::from_translation(vec3(x, y, 0.0))
+                .with_rotation(Quat::from_rotation_z(rotation)),
             Sprite {
                 image: oil_rig.clone(),
                 ..default()
             },
-            // Text2d("I'm here".to_owned()),
             OilRig,
         ));
     }
+
+    commands.spawn(WorldSize(world_size));
 }
 
 pub fn move_camera(
@@ -132,8 +146,8 @@ pub fn update_ship(
     mut queries: ParamSet<(
         Query<(&Transform, &mut CustomTransform, &Radian, &mut TargetRotation), With<Ship>>,
         Query<(&Transform, &mut CustomTransform, &Radian, &TargetRotation), With<Ship>>,
-        Query<(&Transform, &mut CustomTransform, &Radius, &Speed), With<Ship>>,
-    )>,
+        Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed), With<Ship>>,
+    )>
 ) {
     if let Some(cursor_pos) = get_cursor_pos(window, camera)
         && buttons.pressed(MouseButton::Left)
@@ -151,22 +165,30 @@ fn rotate_ship(
     cursor_pos: Vec2,
 ) {
     for (transform, mut custom_transform, max_turn, mut target_rotation) in transforms.iter_mut() {
-        // TODO consider subtracting this into the system
 
         let raw_moved = get_rotate_radian(cursor_pos, transform.translation.xy());  // diff from radian 0
         let (_, _, current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
+        let mut target_move = raw_moved;
 
         let moved = {  // radians to move from current rotation
-            let mut raw_moved =
-                (raw_moved.to_degrees() - current_rotation.to_degrees()).to_radians();
-            if raw_moved > PI {
-                raw_moved -= 2.0 * PI;
-            } else if raw_moved < -PI {
-                raw_moved += 2.0 * PI;
+            let mut moved_from_current = (raw_moved.to_degrees() - current_rotation.to_degrees())
+                .to_radians()
+                .trim();
+
+            if moved_from_current.abs() > MINIMUM_REVERSE {
+                custom_transform.reversed = true;
+                // if reversing, adjust return value
+                moved_from_current = (moved_from_current + PI).trim();
+                target_move = (target_move + PI).trim()
+
+            } else if custom_transform.reversed {
+                custom_transform.reversed = false;
             }
-            raw_moved
+
+            moved_from_current
         };
 
+        // turning degree bigger than maximum
         if moved.abs() > max_turn.0 {
             let ship_max_turn = max_turn.0;
             if moved > 0.0 {
@@ -174,53 +196,52 @@ fn rotate_ship(
             } else if moved < 0.0 {
                 custom_transform.rotate_local_z(-ship_max_turn.to_radian_unchecked());
             }
-        } else {
+        } else { // normal
             custom_transform.rotate_local_z(moved.to_radian_unchecked());
         }
 
-        *target_rotation = Some(raw_moved).into();  // when moving, raw_moved will differ with mouse on same pos
+        
+        *target_rotation = Some(target_move).into();
     }
 }
 
 /// handle moving
 fn move_ship(
-    datas: &mut Query<(&Transform, &mut CustomTransform, &Radius, &Speed), With<Ship>>,
+    datas: &mut Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed), With<Ship>>,
     cursor_pos: Vec2,
 ) {
-    for (transform, mut custom_transform, radius, max_speed) in datas.iter_mut() {
+    for (transform, mut custom_transform, radius, max_speed, reverse_speed) in datas.iter_mut() {
         let cursor_distance = cursor_pos.distance(transform.translation.xy());
+        let speed = if custom_transform.reversed {
+            reverse_speed.0
+        } else {
+            max_speed.0
+        };
+
         let speed = calculate_from_proportion(
             cursor_distance,
             add_circle_hud(radius.default_convert().0),
-            max_speed.0,
+            speed,
             radius.default_convert().0,
         );
 
-        println!("Speed: {}", speed);
-
-        custom_transform.speed = Speed(speed); // TODO currently not using Speed in custom
+        custom_transform.speed = Speed(speed);
     }
 }
 
 // note that we're accepting Query instead of Single for ship everywhere
 // and not descriminating Bot/Player
 
+/// remember the last move angle and rotate toward it when button not pressed
 fn rotate_ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &Radian, &TargetRotation), With<Ship>>) {
     for (transform, mut custom_transform, max_turn, target) in ships {
         let Some(target) = target.0 else { continue; };
 
         let (_, _, current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
 
-        let moved = {  // radians to move from current rotation
-            let mut raw_moved =
-                (target.to_degrees() - current_rotation.to_degrees()).to_radians();
-            if raw_moved > PI {
-                raw_moved -= 2.0 * PI;
-            } else if raw_moved < -PI {
-                raw_moved += 2.0 * PI;
-            }
-            raw_moved
-        };
+        let moved = (target.to_degrees() - current_rotation.to_degrees())
+            .to_radians()
+            .trim();
 
         if moved.abs() > max_turn.0 {
             let ship_max_turn = max_turn.0;
@@ -235,18 +256,29 @@ fn rotate_ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &R
     }
 }
 
-/// updates [`Ship`]'s [`Transform`] along with Circle HUD
+/// updates [`Ship`]'s [`Transform`] according to its [`CustomTransform`]
 pub fn update_transform(
-    mut transform_ship: Query<(&mut Transform, &mut CustomTransform), With<Ship>>,
+    mut transform_ship: Query<(&mut Transform, &mut CustomTransform, &Radius), With<Ship>>,
+    world_size: Single<&WorldSize>
 ) {
-    for (mut transform, mut custom) in transform_ship.iter_mut() {
+    for (mut transform, mut custom, radius_raw) in transform_ship.iter_mut() {
         let mut translation = custom.position.to_vec3();
-        translation += move_with_rotation(transform.rotation, custom.speed.0);
+        if custom.reversed {
+            translation += move_with_rotation(transform.rotation, -custom.speed.0);
+        } else {
+            translation += move_with_rotation(transform.rotation, custom.speed.0);  // ignores frame lagging temporary
+        }
 
+        // TODO use hit box instead of raw head
+        // TODO check tail
+        if !check_in_vec2(get_head(radius_raw.0 * DEFAULT_SPRITE_SHRINK, translation.xy(), custom.rotation.to_quat()), world_size.0) {  // only checks head
+            println!("Out of bounds!!");
+            return;
+        }
         let target = Transform {
             translation,
             rotation: custom.rotation.to_quat(),
-            scale: Vec3::splat(1.0),
+            scale: Vec3::ONE,
         };
         *transform = target;
 
@@ -264,6 +296,7 @@ pub fn resize_rigs(sprites: ResizeSprite<OilRig>, assets: Res<Assets<Image>>) {
     resize_inner(sprites, assets);
 }
 
+/// resize [`Sprite`]s by default constant
 fn resize_inner<T: Component>(mut sprites: ResizeSprite<T>, assets: Res<Assets<Image>>) {
     for mut sprite in sprites.iter_mut() {
         let Some(image) = assets.get(&mut sprite.image) else {
@@ -273,7 +306,6 @@ fn resize_inner<T: Component>(mut sprites: ResizeSprite<T>, assets: Res<Assets<I
             continue;
         }
 
-        println!("Changing size..");
         sprite.custom_size = Some(vec2(
             image.width() as f32 * DEFAULT_SPRITE_SHRINK,
             image.height() as f32 * DEFAULT_SPRITE_SHRINK,
