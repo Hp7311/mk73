@@ -1,8 +1,8 @@
-use std::ops::{AddAssign, Neg};
+use std::{f32::consts::PI, ops::{AddAssign, Neg}};
 
 use bevy::prelude::*;
 
-use crate::constants::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK};
+use crate::{constants::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK}, ship::{WORLD_EXPAND, WORLD_MIN}, util::{TrimRadian, get_map_size}};
 
 #[derive(Component, Debug, Copy, Clone)]
 pub struct CustomTransform {
@@ -36,6 +36,10 @@ pub struct Speed(pub f32);
 pub struct MaxSpeed(pub f32);
 #[derive(Component, Debug, Copy, Clone)]
 pub struct ReverseSpeed(pub f32);
+
+/// currently interpretated as maximum pixels of speed per frame
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Acceleration(pub f32);
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct TargetRotation(pub Option<f32>);
@@ -97,7 +101,7 @@ impl Position {
     }
 }
 
-#[derive(Bundle, Debug)]
+#[derive(Bundle, Debug, Clone)]
 pub struct ShipBundle {
     /// maximum angle in radians that you can turn per frame, consider deriving from `max_speed`
     /// ### Warning
@@ -108,12 +112,18 @@ pub struct ShipBundle {
     reverse_speed: ReverseSpeed,
     /// tranform to update in seperate system
     transform: Transform,
+    /// ship's sprite
     sprite: Sprite,
+    /// whether reversed, speed etc
     custom_transform: CustomTransform,
-    /// raw image
+    /// if reversed, whether LMB has been released since reversing
+    reverse_released: ReleasedAfterReverse,
+    /// raw image radius
     radius: Radius,
-    /// where the user's mouse is facing
+    /// where the user's mouse was facing
     mouse_target: TargetRotation,
+    /// maximum speed acceleration per frame
+    acceleration: Acceleration,
 }
 
 impl ShipBundle {
@@ -121,6 +131,7 @@ impl ShipBundle {
     pub fn new(
         max_speed: f32,
         reverse_speed: f32,
+        acceleration: f32,
         position: Vec2,
         sprite_name: &str,
         asset_server: AssetServer,
@@ -149,6 +160,8 @@ impl ShipBundle {
                 reversed: false
             },
             mouse_target: None.into(),
+            reverse_released: ReleasedAfterReverse(false),
+            acceleration: Acceleration(acceleration)
         }
     }
 }
@@ -164,6 +177,12 @@ pub struct Background;
 
 #[derive(Component, Debug, Copy, Clone)]
 pub struct OilRig;
+
+/// the ship will reverse to any angle if LMB is held down after reversing.
+/// 
+/// once released, mouse being in the forward zone will be interpretated as forwards
+#[derive(Component, Debug, Clone, Copy)]
+pub struct ReleasedAfterReverse(pub bool);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RectWithWh {
@@ -196,3 +215,32 @@ impl RectWithWh {
 
 #[derive(Component, Debug, Copy, Clone)]
 pub struct WorldSize(pub Vec2);
+
+impl Default for WorldSize {
+    fn default() -> Self {
+        WorldSize(get_map_size(1, WORLD_MIN, WORLD_EXPAND))
+    }
+}
+
+/// flips a radian 180 degrees
+pub trait FlipRadian {
+    fn flip(self) -> Self;
+}
+
+impl FlipRadian for f32 {
+    fn flip(self) -> Self {
+        (self + PI).trim()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_flip() {
+        let src = 80.0f32.to_radians();
+        let expected = -100.0f32.to_radians();
+
+        assert!((src.flip() - expected).abs() < 0.1);
+    }
+}

@@ -32,10 +32,10 @@ pub fn move_with_rotation(rotation: Quat, speed: f32) -> Vec3 {
 
 /// centre point at middle of window
 pub fn get_cursor_pos(
-    window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+    window: &Single<&Window, With<PrimaryWindow>>,
+    camera: &Single<(&Camera, &GlobalTransform), With<MainCamera>>,
 ) -> Option<Vec2> {
-    let (camera, camera_transform) = *camera;
+    let (camera, camera_transform) = **camera;
     window
         .cursor_position()
         .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor).ok())
@@ -113,7 +113,7 @@ impl TrimRadian for f32 {
         if self > PI {
             self -= 2.0 * PI;
         } else if self < -PI {
-            self += 2.0 * PI;  // TODO util func
+            self += 2.0 * PI;
         }
         self
     }

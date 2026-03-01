@@ -17,15 +17,15 @@ use crate::primitives::*;
 use crate::util::{
     MainCamera,
     add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
-    move_with_rotation, check_in_vec2, get_head, get_map_size,
+    move_with_rotation, check_in_vec2, get_head,
     TrimRadian
 };
 
 #[derive(Component, Debug, Copy, Clone)]
 pub struct Ship;
 
-const WORLD_MIN: Vec2 = vec2(4000.0, 2000.0);
-const WORLD_EXPAND: f32 = 2000.0;
+pub const WORLD_MIN: Vec2 = vec2(4000.0, 2000.0);
+pub const WORLD_EXPAND: f32 = 2000.0;
 
 /// absolute value of minimum radians that must be reached to reverse the Ship
 const MINIMUM_REVERSE: f32 = PI * (2.0 / 3.0);
@@ -56,6 +56,7 @@ pub fn startup(
         ShipBundle::new(
             YASEN_MAX_SPEED,
             YASEN_BACK_SPEED,
+            YASEN_ACCELERATION,
             vec2(100.0, 0.0),
             "yasen.png",
             asset_server.clone(),
@@ -66,20 +67,17 @@ pub fn startup(
     .with_children(|parent | {
         parent.spawn((
             CircleHudBundle {
-                mesh: Mesh2d(
-                    meshes.add(
-                        Circle::new(add_circle_hud(YASEN_RAW_SIZE / 2.0) * DEFAULT_SPRITE_SHRINK)  // TODO
-                            .to_ring(3.0),
-                    ),
-                ),
+                mesh: Mesh2d(meshes.add(Circle::new(add_circle_hud(YASEN_RAW_SIZE / 2.0) * DEFAULT_SPRITE_SHRINK)
+                        .to_ring(3.0),
+                )),
                 materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
             },
             Transform::from_translation(vec3(0.0, 0.0, 30.0))  // relative to parent, circle hud highest Z
         ));
     });
 
-    // in Sprites, translation is the center point of the Sprite rendered
-    let world_size = get_map_size(1, WORLD_MIN, WORLD_EXPAND);  // TODO smart idea: using structs and default values instead of constants!
+    // in Sprites, translation is the center point of the Sprite
+    let world_size = WorldSize::default().0;
     commands.spawn((
         Transform {
             translation: Vec3 {
@@ -144,12 +142,13 @@ pub fn update_ship(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut queries: ParamSet<(
-        Query<(&Transform, &mut CustomTransform, &Radian, &mut TargetRotation), With<Ship>>,
+        Query<(&Transform, &mut CustomTransform, &Radian, &mut TargetRotation, &mut ReleasedAfterReverse), With<Ship>>,
         Query<(&Transform, &mut CustomTransform, &Radian, &TargetRotation), With<Ship>>,
-        Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed), With<Ship>>,
+        Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed, &Acceleration), With<Ship>>,
+        Query<(&CustomTransform, &mut ReleasedAfterReverse), With<Ship>>
     )>
 ) {
-    if let Some(cursor_pos) = get_cursor_pos(window, camera)
+    if let Some(cursor_pos) = get_cursor_pos(&window, &camera)
         && buttons.pressed(MouseButton::Left)
     {
         rotate_ship(&mut queries.p0(), cursor_pos);
@@ -157,14 +156,19 @@ pub fn update_ship(
     } else {
         rotate_ship_to_target(&mut queries.p1());
     }
+    if get_cursor_pos(&window, &camera).is_some()
+        && buttons.just_released(MouseButton::Left)
+    {
+        try_release_after_rev(&mut queries.p3())
+    }
 }
 
 /// handle rotation
 fn rotate_ship(
-    transforms: &mut Query<(&Transform, &mut CustomTransform, &Radian, &mut TargetRotation), With<Ship>>,
+    transforms: &mut Query<(&Transform, &mut CustomTransform, &Radian, &mut TargetRotation, &mut ReleasedAfterReverse), With<Ship>>,  // FIXME
     cursor_pos: Vec2,
 ) {
-    for (transform, mut custom_transform, max_turn, mut target_rotation) in transforms.iter_mut() {
+    for (transform, mut custom_transform, max_turn, mut target_rotation, mut released_after_reverse) in transforms.iter_mut() {
 
         let raw_moved = get_rotate_radian(cursor_pos, transform.translation.xy());  // diff from radian 0
         let (_, _, current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
@@ -175,14 +179,18 @@ fn rotate_ship(
                 .to_radians()
                 .trim();
 
+            // if reversing, adjust return value
             if moved_from_current.abs() > MINIMUM_REVERSE {
                 custom_transform.reversed = true;
-                // if reversing, adjust return value
-                moved_from_current = (moved_from_current + PI).trim();
-                target_move = (target_move + PI).trim()
+                moved_from_current = moved_from_current.flip();
+                target_move = target_move.flip()
 
-            } else if custom_transform.reversed {
+            } else if custom_transform.reversed && released_after_reverse.0 {  // free to forward again
                 custom_transform.reversed = false;
+                released_after_reverse.0 = false;  // reset. setting to true is done in `try_release_after_rev`
+            } else if custom_transform.reversed {  // unable to go forward, haven't released key yet
+                moved_from_current = moved_from_current.flip();
+                target_move = target_move.flip()
             }
 
             moved_from_current
@@ -205,12 +213,20 @@ fn rotate_ship(
     }
 }
 
+fn try_release_after_rev(query: &mut Query<(&CustomTransform, &mut ReleasedAfterReverse), With<Ship>>) {
+    for (CustomTransform { reversed, ..}, mut release) in query {
+        if !reversed { continue; }
+
+        release.0 = true;
+    }
+}
+
 /// handle moving
 fn move_ship(
-    datas: &mut Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed), With<Ship>>,
+    datas: &mut Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed, &Acceleration), With<Ship>>,
     cursor_pos: Vec2,
 ) {
-    for (transform, mut custom_transform, radius, max_speed, reverse_speed) in datas.iter_mut() {
+    for (transform, mut custom_transform, radius, max_speed, reverse_speed, acceleration) in datas.iter_mut() {
         let cursor_distance = cursor_pos.distance(transform.translation.xy());
         let speed = if custom_transform.reversed {
             reverse_speed.0
@@ -218,12 +234,19 @@ fn move_ship(
             max_speed.0
         };
 
-        let speed = calculate_from_proportion(
+        let mut speed = calculate_from_proportion(
             cursor_distance,
             add_circle_hud(radius.default_convert().0),
             speed,
             radius.default_convert().0,
         );
+
+        let speed_diff = speed - custom_transform.speed.0;
+        if speed_diff > acceleration.0 {
+            speed = custom_transform.speed.0 + acceleration.0;
+        } else if speed_diff < -acceleration.0 {
+            speed = custom_transform.speed.0 - acceleration.0;
+        }
 
         custom_transform.speed = Speed(speed);
     }

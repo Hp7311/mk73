@@ -17,6 +17,8 @@ mod constants {
 
     pub const YASEN_MAX_SPEED: f32 = 1.5;  // using HashMap?
     pub const YASEN_BACK_SPEED: f32 = 0.9;
+    pub const YASEN_ACCELERATION: f32 = 0.03;
+
     pub const YASEN_RAW_SIZE: f32 = 1024.0;
 }
 
