@@ -4,8 +4,9 @@ use bevy::prelude::*;
 
 use crate::{constants::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK}, ship::{WORLD_EXPAND, WORLD_MIN}, util::{TrimRadian, get_map_size}};
 
-#[derive(Component, Debug, Copy, Clone)]
+#[derive(Component, Debug, Copy, Clone, Default)]
 pub struct CustomTransform {
+    /// along the `rotation`
     pub speed: Speed,
     pub position: Position,
     /// stores the radian to move, with -> of Sprite as 0
@@ -20,6 +21,13 @@ impl CustomTransform {
         let rotation = angle.to_quat();
         self.rotation = (rotation * self.rotation.to_quat()).to_radian_unchecked();
     } // TODO test
+    /// from a not-moving entity
+    pub fn from_static(position: Vec2) -> Self {
+        CustomTransform {
+            position: Position(position),
+            ..default()
+        }
+    }
 }
 
 #[derive(Component, Debug, Copy, Clone)]
@@ -30,7 +38,7 @@ impl Radius {
         Radius(self.0 * DEFAULT_SPRITE_SHRINK)
     }
 }
-#[derive(Component, Debug, Copy, Clone)]
+#[derive(Component, Debug, Copy, Clone, Default)]
 pub struct Speed(pub f32);
 #[derive(Component, Debug, Copy, Clone)]
 pub struct MaxSpeed(pub f32);
@@ -53,9 +61,16 @@ impl From<Option<f32>> for TargetRotation {
     }
 }
 
-#[derive(Component, Debug, Copy, Clone)]
+#[derive(Component, Debug, Copy, Clone, Default)]
 pub struct Radian(pub f32);
 
+impl Radian {
+    /// Replacement for [`f32::sin_cos`] (returns `vec2(cos, sin)`). Uses cross-platform
+    /// deterministic sin/cos.
+    pub fn to_vec(self) -> Vec2 {
+        vec2(self.0.cos(), self.0.sin())
+    }
+}
 impl Neg for Radian {
     type Output = Radian;
     fn neg(self) -> Self::Output {
@@ -74,7 +89,7 @@ impl ToRadian for f32 {
 }
 impl ToRadian for Quat {
     fn to_radian_unchecked(&self) -> Radian {
-        let (_, _, z) = self.to_euler(EulerRot::XYZ);
+        let (.., z) = self.to_euler(EulerRot::XYZ);
         Radian(z)
     }
 }
@@ -87,7 +102,7 @@ impl Radian {
     }
 }
 
-#[derive(Component, Debug, PartialEq, Copy, Clone)]
+#[derive(Component, Debug, PartialEq, Copy, Clone, Default)]
 pub struct Position(pub Vec2);
 
 impl AddAssign for Position {
@@ -124,6 +139,8 @@ pub struct ShipBundle {
     mouse_target: TargetRotation,
     /// maximum speed acceleration per frame
     acceleration: Acceleration,
+    /// stores dimension of the image once loaded
+    dimensions: Dimensions,
 }
 
 impl ShipBundle {
@@ -161,7 +178,8 @@ impl ShipBundle {
             },
             mouse_target: None.into(),
             reverse_released: ReleasedAfterReverse(false),
-            acceleration: Acceleration(acceleration)
+            acceleration: Acceleration(acceleration),
+            dimensions: Dimensions(None)
         }
     }
 }
@@ -184,41 +202,14 @@ pub struct OilRig;
 #[derive(Component, Debug, Clone, Copy)]
 pub struct ReleasedAfterReverse(pub bool);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RectWithWh {
-    pub pos: Vec2,
-    pub w_h: Vec2,
-}
 
-impl RectWithWh {
-    pub fn intersects_with(&self, rhs: &Self) -> bool {
-        self.x() < rhs.right()
-            && self.right() > rhs.x()
-            && self.y() < rhs.bottom()
-            && self.bottom() > rhs.y()
-    }
-
-    pub fn x(&self) -> f32 {
-        self.pos.x
-    }
-    pub fn y(&self) -> f32 {
-        self.pos.y
-    }
-    pub fn right(&self) -> f32 {
-        self.pos.x + self.w_h.x
-    }
-
-    pub fn bottom(&self) -> f32 {
-        self.pos.y + self.w_h.y
-    }
-}
 
 #[derive(Component, Debug, Copy, Clone)]
-pub struct WorldSize(pub Vec2);
+pub struct WorldSize(pub WidthHeight);
 
 impl Default for WorldSize {
     fn default() -> Self {
-        WorldSize(get_map_size(1, WORLD_MIN, WORLD_EXPAND))
+        WorldSize(get_map_size(1, WORLD_MIN, WORLD_EXPAND).into())
     }
 }
 
@@ -233,6 +224,62 @@ impl FlipRadian for f32 {
     }
 }
 
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Dimensions(pub Option<WidthHeight>);
+
+#[derive(Component, Debug, Copy, Clone)]
+pub struct WidthHeight {
+    pub width: f32,
+    pub height: f32,
+}
+
+impl WidthHeight {
+    pub fn to_rect(&self, center_pos: Vec2) -> Rect {
+        Rect::from_center_size(center_pos, vec2(self.width, self.height))
+    }
+    pub fn to_vec2(self) -> Vec2 {
+        vec2(self.width, self.height)
+    }
+}
+
+impl From<Vec2> for WidthHeight {
+    fn from(value: Vec2) -> Self {
+        WidthHeight { width: value.x, height: value.y }
+    }
+}
+
+pub trait RectIntersect {
+    fn intersects_with(&self, rhs: &Self) -> bool;
+    fn x(&self) -> f32;
+    fn y(&self) -> f32;
+    fn right(&self) -> f32;
+    fn bottom(&self) -> f32;
+}
+
+impl RectIntersect for Rect {
+    fn intersects_with(&self, rhs: &Self) -> bool {
+        self.x() < rhs.right()
+            && self.right() > rhs.x()
+            && self.y() < rhs.bottom()
+            && self.bottom() > rhs.y()
+    }
+    
+    fn x(&self) -> f32 {
+        self.min.x
+    }
+    
+    fn y(&self) -> f32 {
+        self.min.y
+    }
+    
+    fn right(&self) -> f32 {
+        self.max.x
+    }
+    
+    fn bottom(&self) -> f32 {
+        self.max.y
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,6 +5,8 @@ use std::f32::consts::PI;
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
 
+use crate::primitives::{RectIntersect, WidthHeight, WorldSize};
+
 #[derive(Component)]
 pub struct MainCamera;
 
@@ -23,7 +25,7 @@ pub fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
 /// ### Note
 /// assumes 2D
 pub fn move_with_rotation(rotation: Quat, speed: f32) -> Vec3 {
-    let (_, _, move_angle) = rotation.to_euler(EulerRot::XYZ);
+    let (.., move_angle) = rotation.to_euler(EulerRot::XYZ);
 
     (vec2(move_angle.cos(), move_angle.sin()) * speed)
         .extend(0.0)  // TODO assume Z index 0.0
@@ -42,6 +44,41 @@ pub fn get_cursor_pos(
         .map(|ray| ray.origin.truncate())
 }
 
+/// check if a Sprite is out-of-bounds, returns true if out-of-bound
+/// 
+/// accounts for rotation by rotating each corner before checking bounds
+pub fn out_of_bounds(
+    bound: &WorldSize,
+    sprite_size: WidthHeight,
+    pos: Vec2,
+    rotation: Quat,
+) -> bool {
+    let world_bound = Rect::new(
+        -bound.0.width / 2.0,
+        -bound.0.height / 2.0, 
+        bound.0.width / 2.0,
+        bound.0.height / 2.0
+    );
+    let corners = corners_rotated(pos, sprite_size, rotation);
+
+    corners.iter().any(|corner| !world_bound.contains(*corner))
+}
+
+/// returns the global coordinates of a rotated Rectangle with given stats
+pub fn corners_rotated(
+    position: Vec2,
+    dimensions: WidthHeight,
+    rotation: Quat
+) -> [Vec2; 4] {
+    let half_size = vec2(dimensions.width / 2.0, dimensions.height / 2.0);
+    [
+        vec2(-half_size.x, -half_size.y),
+        vec2(half_size.x, -half_size.y),
+        vec2(half_size.x, half_size.y),
+        vec2(-half_size.x, half_size.y)
+    ]
+    .map(|corner_local| rotate_vec2(corner_local, rotation) + position)
+}
 /// calculates a float from the given `current` and respective range (`minimum_source..=unit_1`).
 /// #### Note
 /// if `current` is bigger than `unit_1`, `maximum_value` will be returned.
@@ -91,17 +128,15 @@ pub fn get_map_size(player_num: u32, minimum_size: Vec2, expand_per_multiple: f3
     minimum_size + expand_per_multiple * (multiplier as f32)
 }
 
-/// - `position` takes the centre point as (0, 0)
-/// 
-/// - `whole` is the (width, height) to check
-pub fn check_in_vec2(position: Vec2, whole: Vec2) -> bool {
-    position.x.abs() < whole.x / 2.0 && position.y.abs() < whole.y / 2.0
-}
 
-/// calculates the "head"
-pub fn get_head(radius: f32, mut position: Vec2, rotation: Quat) -> Vec2 {
-    position += move_with_rotation(rotation, radius).xy();
-    position
+/// rotates a point around (0, 0) for `angle`
+pub fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
+    let angle = angle.to_euler(EulerRot::XYZ).2;
+
+    vec2(
+        source.x * angle.cos() - source.y * angle.sin(),
+        source.y * angle.cos() + source.x * angle.sin(),
+    )
 }
 
 /// eliminates offset when turning over the <--- axis

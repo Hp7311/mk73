@@ -1,6 +1,7 @@
 mod primitives;
 mod ship;
 mod util;
+mod collision;
 
 use bevy::camera_controller::pan_camera::PanCameraPlugin;
 use bevy::prelude::*;

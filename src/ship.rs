@@ -14,10 +14,11 @@ use rand::RngExt;
 
 use crate::constants::*;
 use crate::primitives::*;
+use crate::util::out_of_bounds;
 use crate::util::{
     MainCamera,
     add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
-    move_with_rotation, check_in_vec2, get_head,
+    move_with_rotation,
     TrimRadian
 };
 
@@ -89,7 +90,7 @@ pub fn startup(
         Sprite {
             image: asset_server.load("waves.png"),
             color: Color::srgb(0.0, 0.65, 1.03),
-            custom_size: Some(world_size),
+            custom_size: Some(world_size.to_vec2()),
             image_mode: SpriteImageMode::Tiled {
                 tile_x: true,
                 tile_y: true,
@@ -105,8 +106,8 @@ pub fn startup(
 
     for _ in 0..10 {  // temporary
         let rotation = rng.random_range(-PI..PI);
-        let x = rng.random_range(-world_size.x.round() as i32 / 2..world_size.x.round() as i32 / 2) as f32;
-        let y = rng.random_range(-world_size.y.round() as i32 / 2..world_size.y.round() as i32 / 2) as f32;
+        let x = rng.random_range(-world_size.width.round() as i32 / 2..world_size.width.round() as i32 / 2) as f32;
+        let y = rng.random_range(-world_size.height.round() as i32 / 2..world_size.height.round() as i32 / 2) as f32;
         
         commands.spawn((
             Transform::from_translation(vec3(x, y, 0.0))
@@ -115,6 +116,7 @@ pub fn startup(
                 image: oil_rig.clone(),
                 ..default()
             },
+            Dimensions(None),
             OilRig,
         ));
     }
@@ -165,13 +167,13 @@ pub fn update_ship(
 
 /// handle rotation
 fn rotate_ship(
-    transforms: &mut Query<(&Transform, &mut CustomTransform, &Radian, &mut TargetRotation, &mut ReleasedAfterReverse), With<Ship>>,  // FIXME
+    transforms: &mut Query<(&Transform, &mut CustomTransform, &Radian, &mut TargetRotation, &mut ReleasedAfterReverse), With<Ship>>,
     cursor_pos: Vec2,
 ) {
     for (transform, mut custom_transform, max_turn, mut target_rotation, mut released_after_reverse) in transforms.iter_mut() {
 
         let raw_moved = get_rotate_radian(cursor_pos, transform.translation.xy());  // diff from radian 0
-        let (_, _, current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
+        let (.., current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
         let mut target_move = raw_moved;
 
         let moved = {  // radians to move from current rotation
@@ -260,7 +262,7 @@ fn rotate_ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &R
     for (transform, mut custom_transform, max_turn, target) in ships {
         let Some(target) = target.0 else { continue; };
 
-        let (_, _, current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
+        let (.., current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
 
         let moved = (target.to_degrees() - current_rotation.to_degrees())
             .to_radians()
@@ -281,10 +283,10 @@ fn rotate_ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &R
 
 /// updates [`Ship`]'s [`Transform`] according to its [`CustomTransform`]
 pub fn update_transform(
-    mut transform_ship: Query<(&mut Transform, &mut CustomTransform, &Radius), With<Ship>>,
-    world_size: Single<&WorldSize>
+    mut transform_ship: Query<(&mut Transform, &mut CustomTransform, &Dimensions), With<Ship>>,
+    world_size: Single<&WorldSize>,
 ) {
-    for (mut transform, mut custom, radius_raw) in transform_ship.iter_mut() {
+    for (mut transform, mut custom, dimension) in transform_ship.iter_mut().filter(|(.., dimension)| dimension.0.is_some()) {
         let mut translation = custom.position.to_vec3();
         if custom.reversed {
             translation += move_with_rotation(transform.rotation, -custom.speed.0);
@@ -292,10 +294,9 @@ pub fn update_transform(
             translation += move_with_rotation(transform.rotation, custom.speed.0);  // ignores frame lagging temporary
         }
 
-        // TODO use hit box instead of raw head
-        // TODO check tail
-        if !check_in_vec2(get_head(radius_raw.0 * DEFAULT_SPRITE_SHRINK, translation.xy(), custom.rotation.to_quat()), world_size.0) {  // only checks head
-            println!("Out of bounds!!");
+        
+        if out_of_bounds(&world_size, dimension.0.unwrap(), translation.xy(), custom.rotation.to_quat()) {
+            println!("Out of bounds");
             return;
         }
         let target = Transform {
@@ -309,20 +310,34 @@ pub fn update_transform(
     }
 }
 
-type ResizeSprite<'a, 'w, 's, T> = Query<'w, 's, &'static mut Sprite, With<T>>;
 
-pub fn resize_ship(sprites: ResizeSprite<Ship>, assets: Res<Assets<Image>>) {
-    resize_inner(sprites, assets);
+pub fn resize_ship(
+    mut queries: ParamSet<(
+        Query<&mut Sprite, With<Ship>>,
+        Query<(&Sprite, &mut Dimensions), With<Ship>>
+    )>,
+    assets: Res<Assets<Image>>
+) {
+    resize_inner(queries.p0(), &assets);
+    fill_dimensions(queries.p1(), &assets);
 }
 
-pub fn resize_rigs(sprites: ResizeSprite<OilRig>, assets: Res<Assets<Image>>) {
-    resize_inner(sprites, assets);
+pub fn resize_rigs(
+    mut queries: ParamSet<(
+        Query<&mut Sprite, With<OilRig>>,
+        Query<(&Sprite, &mut Dimensions), With<OilRig>>
+    )>,
+    assets: Res<Assets<Image>>
+) {
+    resize_inner(queries.p0(), &assets);
+    fill_dimensions(queries.p1(), &assets);
 }
 
 /// resize [`Sprite`]s by default constant
-fn resize_inner<T: Component>(mut sprites: ResizeSprite<T>, assets: Res<Assets<Image>>) {
+fn resize_inner<T: Component>(mut sprites: Query<&mut Sprite, With<T>>, assets: &Res<Assets<Image>>) {
     for mut sprite in sprites.iter_mut() {
-        let Some(image) = assets.get(&mut sprite.image) else {
+
+        let Some(image) = assets.get(&sprite.image) else {
             continue;
         };
         if sprite.custom_size.is_some() {
@@ -336,31 +351,50 @@ fn resize_inner<T: Component>(mut sprites: ResizeSprite<T>, assets: Res<Assets<I
     }
 }
 
-// TODO add the raw size of sprite to Entity to calculate hit box
+/// fill in the dimensions of a Sprite using it's `custom_size`
+fn fill_dimensions<T: Component>(mut query: Query<(&Sprite, &mut Dimensions), With<T>>, images: &Res<Assets<Image>>) {
+    for (sprite, mut dimension) in query.iter_mut() {
+        if images.get(&sprite.image).is_none() {
+            continue;
+        };
+        let Some(size) = sprite.custom_size else {
+            continue;
+        };
 
-pub fn validate_rigs(mut commands: Commands, sprites: Query<(&Sprite, &Transform, Entity), With<OilRig>>) {
+        *dimension = Dimensions(Some(WidthHeight {
+            width: size.x,
+            height: size.y
+        }));
+    }
+}
+
+/// despawn rigs that intersect with another rig
+pub fn validate_rigs(mut commands: Commands, sprites: Query<(&Dimensions, &Transform, Entity), With<OilRig>>, world_size: Single<&WorldSize>) {
     let mut bounding_boxes = vec![];
     
-    for (sprite, transform, id) in sprites.iter().filter(|(sprite, _, _)| sprite.custom_size.is_some()) {
-        let sprite_size = sprite.custom_size.unwrap();
+    for (dimension, transform, id) in sprites.iter().filter(|(d, ..)| d.0.is_some()) {
+        let WidthHeight { width, height } = dimension.0.unwrap();
         let pos = transform.translation.xy();
 
         bounding_boxes.push((
-            RectWithWh {
-                pos,
-                w_h: sprite_size,
-            },
+            WidthHeight {
+                width,
+                height,
+            }.to_rect(pos),
+            transform.rotation,
             id
         ));
     }
 
-    for (rect, id) in bounding_boxes.iter() {
-        if bounding_boxes
-            .iter()
-            .filter(|(target, _)| target != rect)
-            .any(|(target, _)| rect.intersects_with(target))
+    for (rect, rotation, id) in bounding_boxes.iter() {
+        if bounding_boxes.iter()
+            .filter(|(target, ..)| target != rect)
+            .any(|(target, ..)| rect.intersects_with(target))
+        || out_of_bounds(&world_size, rect.size().into(), rect.center(), *rotation)
         {
-            commands.get_entity(*id).unwrap().despawn();
+            info!("Despawning a rig..");
+            commands.get_entity(*id).unwrap().despawn();  // TODO randomly spawn another rig and validate until total amount reached
         }
+        // TODO create a Rect-like structure instead of operating with WidthHeight and Vec2 etc.
     }
 }
