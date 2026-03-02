@@ -2,6 +2,8 @@
 
 use std::f32::consts::PI;
 
+// extern crate test;
+
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
 
@@ -28,7 +30,7 @@ pub fn move_with_rotation(rotation: Quat, speed: f32) -> Vec3 {
     let (.., move_angle) = rotation.to_euler(EulerRot::XYZ);
 
     (vec2(move_angle.cos(), move_angle.sin()) * speed)
-        .extend(0.0)  // TODO assume Z index 0.0
+        .extend(0.0)  // assume Z index 0.0
 }
 
 
@@ -44,9 +46,40 @@ pub fn get_cursor_pos(
         .map(|ray| ray.origin.truncate())
 }
 
+/// gets a approximately round area of tiles around a point
+/// # Unexpected behavior
+/// the `radius` will be rounded
+pub fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
+    let radius_rg = radius.round() as i32;
+    let mut ret = vec![];
+
+    for r in -radius_rg..radius_rg {
+        for r2 in -radius_rg..radius_rg {
+            let tile = vec2(r as f32, r2 as f32) + position;
+            if tile.distance(position) <= radius {
+                ret.push(tile);
+            }
+        }
+    }
+
+    ret
+}
+
+pub fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
+    let square = Rect::from_center_size(square_center, Vec2::splat(square_len));
+
+    square.contains(point)
+}
+
+pub fn relative_point(source: Vec2, relative_origin: Vec2) -> Vec2 {
+    source - relative_origin
+}
+
 /// check if a Sprite is out-of-bounds, returns true if out-of-bound
 /// 
 /// accounts for rotation by rotating each corner before checking bounds
+/// # Performance
+/// very slow due to calculating rotation of the sprite
 pub fn out_of_bounds(
     bound: &WorldSize,
     sprite_size: WidthHeight,
@@ -64,6 +97,22 @@ pub fn out_of_bounds(
     corners.iter().any(|corner| !world_bound.contains(*corner))
 }
 
+/// faster version of out_of_bounds with a point
+pub fn out_of_bound_no_rotation(
+    bound: &WorldSize,
+    size: WidthHeight,
+    pos: &Vec2,
+) -> bool {
+    let world_bound = Rect::new(
+        -bound.0.width / 2.0,
+        -bound.0.height / 2.0, 
+        bound.0.width / 2.0,
+        bound.0.height / 2.0
+    );
+    let corners = corners_unrotated(*pos, size);
+    corners.iter().any(|corner| !world_bound.contains(*corner))
+}
+
 /// returns the global coordinates of a rotated Rectangle with given stats
 pub fn corners_rotated(
     position: Vec2,
@@ -78,6 +127,19 @@ pub fn corners_rotated(
         vec2(-half_size.x, half_size.y)
     ]
     .map(|corner_local| rotate_vec2(corner_local, rotation) + position)
+}
+pub fn corners_unrotated(
+    position: Vec2,
+    dimensions: WidthHeight
+) -> [Vec2; 4] {
+    let half_size = vec2(dimensions.width / 2.0, dimensions.height / 2.0);
+    [
+        vec2(-half_size.x, -half_size.y),
+        vec2(half_size.x, -half_size.y),
+        vec2(half_size.x, half_size.y),
+        vec2(-half_size.x, half_size.y)
+    ]
+    .map(|corner_local| corner_local + position)
 }
 /// calculates a float from the given `current` and respective range (`minimum_source..=unit_1`).
 /// #### Note
@@ -184,4 +246,25 @@ mod tests {
         let result = calculate_from_proportion(source, unit_1, maximum, minimum);
         assert_eq!(result, 50.0);
     }
+    // use test::Bencher;
+    // #[bench]
+    // fn bench_og_outofbound(b: &mut Bencher) {
+    //     let point = vec2(0.0, 0.0);
+    //     let world_bound = WorldSize(WidthHeight { width: 1000.0, height: 1000.0 });
+    //     b.iter(|| {
+    //         for _ in 0..10 {
+    //             out_of_bounds(&world_bound, WidthHeight::ZERO, point, Quat::default());
+    //         }
+    //     });
+    // }
+    // #[bench]
+    // fn bench_point_outofbound(b: &mut Bencher) {
+    //     let point = vec2(0.0, 0.0);
+    //     let world_bound = WorldSize(WidthHeight { width: 1000.0, height: 1000.0 });
+    //     b.iter(|| {
+    //         for _ in 0..10 {
+    //             point_out_of_bound(&world_bound, &point);
+    //         }
+    //     });
+    // }
 }

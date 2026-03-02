@@ -1,8 +1,9 @@
 use std::{f32::consts::PI, ops::{AddAssign, Neg}};
 
 use bevy::prelude::*;
+use rand::{RngExt, rngs::ThreadRng};
 
-use crate::{constants::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK}, ship::{WORLD_EXPAND, WORLD_MIN}, util::{TrimRadian, get_map_size}};
+use crate::{constants::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK}, ship::{SPAWN_POINT_AMOUNT_MAX, WORLD_EXPAND, WORLD_MIN}, util::{TrimRadian, get_map_size}};
 
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub struct CustomTransform {
@@ -20,7 +21,7 @@ impl CustomTransform {
     pub fn rotate_local_z(&mut self, angle: Radian) {
         let rotation = angle.to_quat();
         self.rotation = (rotation * self.rotation.to_quat()).to_radian_unchecked();
-    } // TODO test
+    }
     /// from a not-moving entity
     pub fn from_static(position: Vec2) -> Self {
         CustomTransform {
@@ -234,7 +235,8 @@ pub struct WidthHeight {
 }
 
 impl WidthHeight {
-    pub fn to_rect(&self, center_pos: Vec2) -> Rect {
+    pub const ZERO: Self = WidthHeight { width: 0.0, height: 0.0 };
+    pub fn to_rect(self, center_pos: Vec2) -> Rect {
         Rect::from_center_size(center_pos, vec2(self.width, self.height))
     }
     pub fn to_vec2(self) -> Vec2 {
@@ -280,6 +282,31 @@ impl RectIntersect for Rect {
         self.max.y
     }
 }
+
+/// holding the amount of points
+#[derive(Component, Debug, Clone, Copy)]
+pub struct PointAmount {
+    points: u16,
+    max_point: u16,
+}
+
+impl PointAmount {
+    /// generates a max point from default
+    pub fn new(rng: &mut ThreadRng) -> Self {
+        let max_point = rng.random_range(SPAWN_POINT_AMOUNT_MAX);
+
+        PointAmount { points: 0, max_point }
+    }
+    /// add given amount to points
+    pub fn add(&mut self, points: u16) {
+        self.points += points
+    }
+    /// if exceeds max range
+    pub fn is_max(&self) -> bool {
+        self.points >= self.max_point
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

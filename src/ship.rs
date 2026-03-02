@@ -5,16 +5,22 @@
 // doc outdated
 
 use std::f32::consts::PI;
+use std::ops::Range;
 
 use bevy::camera_controller::pan_camera::PanCamera;
 use bevy::color::palettes::css::*;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use rand::RngExt;
+use rand::seq::IndexedRandom;
 
 use crate::constants::*;
 use crate::primitives::*;
+use crate::util::out_of_bound_no_rotation;
 use crate::util::out_of_bounds;
+use crate::util::point_in_square;
+use crate::util::relative_point;
+use crate::util::tiles_around_point;
 use crate::util::{
     MainCamera,
     add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
@@ -117,6 +123,7 @@ pub fn startup(
                 ..default()
             },
             Dimensions(None),
+            PointAmount::new(&mut rng),
             OilRig,
         ));
     }
@@ -257,6 +264,7 @@ fn move_ship(
 // note that we're accepting Query instead of Single for ship everywhere
 // and not descriminating Bot/Player
 
+// TODO add a target speed so you don't have to press all the time when accelerating
 /// remember the last move angle and rotate toward it when button not pressed
 fn rotate_ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &Radian, &TargetRotation), With<Ship>>) {
     for (transform, mut custom_transform, max_turn, target) in ships {
@@ -369,14 +377,19 @@ fn fill_dimensions<T: Component>(mut query: Query<(&Sprite, &mut Dimensions), Wi
 }
 
 /// despawn rigs that intersect with another rig
-pub fn validate_rigs(mut commands: Commands, sprites: Query<(&Dimensions, &Transform, Entity), With<OilRig>>, world_size: Single<&WorldSize>) {
-    let mut bounding_boxes = vec![];
+pub fn validate_rigs(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    sprites: Query<(&Dimensions, &Transform, Entity), With<OilRig>>,
+    world_size: Single<&WorldSize>
+) {
+    let mut rigs = vec![];
     
     for (dimension, transform, id) in sprites.iter().filter(|(d, ..)| d.0.is_some()) {
         let WidthHeight { width, height } = dimension.0.unwrap();
         let pos = transform.translation.xy();
 
-        bounding_boxes.push((
+        rigs.push((
             WidthHeight {
                 width,
                 height,
@@ -386,15 +399,102 @@ pub fn validate_rigs(mut commands: Commands, sprites: Query<(&Dimensions, &Trans
         ));
     }
 
-    for (rect, rotation, id) in bounding_boxes.iter() {
-        if bounding_boxes.iter()
+    let despawning = validate_rig_raw(rigs, *world_size);
+    for id in despawning.iter() {
+        commands.get_entity(*id).unwrap()
+            .despawn();
+    }
+
+    let mut rng = rand::rng();
+    let oil_rig = asset_server.load("oil_platform.png");
+    for _ in 0..despawning.len() {
+        let rotation = rng.random_range(-PI..PI);
+        let x = rng.random_range(-world_size.0.width.round() as i32 / 2..world_size.0.width.round() as i32 / 2) as f32;
+        let y = rng.random_range(-world_size.0.height.round() as i32 / 2..world_size.0.height.round() as i32 / 2) as f32;
+        
+        commands.spawn((
+            Transform::from_translation(vec3(x, y, 0.0))
+                .with_rotation(Quat::from_rotation_z(rotation)),
+            Sprite {
+                image: oil_rig.clone(),
+                ..default()
+            },
+            Dimensions(None),
+            PointAmount::new(&mut rng),
+            OilRig,
+        ));
+        // here, we don't need to validate again because the systems is run every Update, so next frame will call again
+    }
+}
+
+/// returns vector of Entities to despawn
+fn validate_rig_raw(rigs: Vec<(Rect, Quat, Entity)>, world_size: &WorldSize) -> Vec<Entity> {
+    let mut despawning_id = vec![];
+    for (rect, rotation, id) in rigs.iter() {
+        if rigs.iter()
             .filter(|(target, ..)| target != rect)
             .any(|(target, ..)| rect.intersects_with(target))
-        || out_of_bounds(&world_size, rect.size().into(), rect.center(), *rotation)
+            || out_of_bounds(world_size, rect.size().into(), rect.center(), *rotation)
         {
-            info!("Despawning a rig..");
-            commands.get_entity(*id).unwrap().despawn();  // TODO randomly spawn another rig and validate until total amount reached
+            despawning_id.push(*id);
         }
         // TODO create a Rect-like structure instead of operating with WidthHeight and Vec2 etc.
+    }
+
+    despawning_id
+}
+
+/// maximum amount of points a rig can spawn
+pub const SPAWN_POINT_AMOUNT_MAX: Range<u16> = 30..40;
+/// spawns a point around a rig every x-y seconds
+#[cfg(debug_assertions)]
+pub const SPAWN_POINT_SPRITE_P: Range<usize> = 0..2;
+#[cfg(not(debug_assertions))]
+pub const SPAWN_POINT_SPRITE_P: Range<usize> = 15 * 60..30 * 60;
+
+/// the maximum radius around a rig which a point can spawn
+pub const SPAWN_POINT_RADIUS_MAX: f32 = 100.0;
+
+pub fn rig_spawn_points(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut transforms: Query<(&mut PointAmount, &Transform, &Sprite, Entity), With<OilRig>>,
+    world_size: Single<&WorldSize>
+) {
+    let point_sprites = [
+        asset_server.load("coin.png"),
+        asset_server.load("barrel.png"),
+        asset_server.load("scrap.png")
+    ];
+
+    for (mut point_amount, transform, sprite, id) in transforms.iter_mut() {
+        let Some(sprite_size) = sprite.custom_size else { continue };
+
+        let avaliable_spawn_tiles: Vec<_> = tiles_around_point(transform.translation.xy(), sprite_size.x + SPAWN_POINT_RADIUS_MAX)
+            .iter()
+            .filter(|&tile| !point_in_square(*tile, sprite_size.x, transform.translation.xy()))
+            .filter(|&tile| !out_of_bound_no_rotation(&world_size, WidthHeight::ZERO, tile))
+            .map(|&glob_tile| relative_point(glob_tile, transform.translation.xy()))
+            .collect();
+
+        if point_amount.is_max() {
+            continue;
+        }
+
+        let mut rng = rand::rng();
+        let mut spawn_p = vec![false; rng.random_range(SPAWN_POINT_SPRITE_P)];
+        spawn_p.push(true);
+
+        if *spawn_p.choose(&mut rng).unwrap() {
+            commands.get_entity(id).unwrap()
+                .with_children(|parent| {
+                    parent.spawn((
+                        Sprite::from_image(point_sprites.choose(&mut rng).unwrap().clone()),
+                        Transform::from_translation(avaliable_spawn_tiles.choose(&mut rng).unwrap().extend(0.0))
+                            .with_scale(Vec2::splat(DEFAULT_SPRITE_SHRINK.powi(2)).extend(0.0)) // TODO unit struct identitfier
+                    ));
+                });
+            point_amount.add(1);  // TODO all point types are 1 worth for now
+        }
     }
 }
