@@ -1,42 +1,39 @@
-// #![feature(test)]
 mod primitives;
 mod ship;
 mod util;
 mod collision;
+mod world;
+mod oil_rig;
 
-use bevy::camera_controller::pan_camera::PanCameraPlugin;
 use bevy::prelude::*;
+use bevy::camera_controller::pan_camera::PanCamera;
 
+/// # Warning
+/// Code will break silently if we use something else
+const DEFAULT_SPRITE_SHRINK: f32 = 0.3;
 
-use crate::ship::{despawn_points, move_camera, move_points, resize_rigs, resize_ship, rig_spawn_points, startup, update_ship, update_transform, validate_rigs};
+const DEFAULT_MAX_TURN_DEG: f32 = 0.5;
+const DEFAULT_MAX_ZOOM: f32 = 2.0;
 
-mod constants {
+pub use ship::ShipPlugin;
+pub use oil_rig::OilRigPlugin;
+pub use world::WorldPlugin;
 
-    pub const DEFAULT_MAX_TURN_DEG: f32 = 0.5;
-    pub const DEFAULT_MAX_ZOOM: f32 = 2.0;
-    /// # Warning
-    /// Code will break silently if we use something else
-    pub const DEFAULT_SPRITE_SHRINK: f32 = 0.3;
+#[derive(Component)]
+struct MainCamera;
 
-    pub const YASEN_MAX_SPEED: f32 = 1.5;  // using HashMap?
-    pub const YASEN_BACK_SPEED: f32 = 0.9;
-    pub const YASEN_ACCELERATION: f32 = 0.03;
-
-    pub const YASEN_RAW_SIZE: f32 = 1024.0;
-}
-
-pub struct ShipPlugin;
-
-impl Plugin for ShipPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(PanCameraPlugin)
-            .insert_resource(ClearColor(Color::linear_rgb(0.0, 0.1, 0.6)))
-            .add_systems(Startup, startup)
-            .add_systems(Update, (update_ship, update_transform).chain())
-            .add_systems(Update, (resize_rigs, resize_ship, validate_rigs))
-            .add_systems(Update, rig_spawn_points)
-            .add_systems(Update, move_points)
-            .add_systems(Update, despawn_points)
-            .add_systems(PostUpdate, move_camera.after(TransformSystems::Propagate));
-    }
+pub fn setup(mut commands: Commands) {
+    commands.spawn((
+        Camera2d,
+        PanCamera {
+            min_zoom: 1.0,
+            max_zoom: DEFAULT_MAX_ZOOM,
+            key_down: None,
+            key_left: None,
+            key_right: None,
+            key_up: None,
+            ..default()
+        },
+        MainCamera,
+    ));
 }

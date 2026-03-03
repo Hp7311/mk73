@@ -1,13 +1,109 @@
-// SPDX-FileCopyrightText: 2024 Softbear, Inc.
-// SPDX-License-Identifier: AGPL-3.0-or-later
+//! collision and out of bound detects
+
+use bevy::prelude::*;
+
+use crate::{primitives::{CustomTransform, WidthHeight}, util::rotate_vec2, world::WorldSize};
+
+// TODO test
+/// check if a Sprite is out-of-bounds by checking it's 4 corners
+/// ### Performance
+/// slow if close to the border
+pub(crate) fn out_of_bounds(
+    bound: &WorldSize,
+    sprite_size: WidthHeight,
+    pos: Vec2,
+    rotation: Quat
+) -> bool {
+    // if not near the border, return without redundant operations
+    if !near_bound_coarse(sprite_size, pos, bound) {
+        return false;
+    }
+
+    let world_bound = Rect::new(
+        -bound.0.width / 2.0,
+        -bound.0.height / 2.0, 
+        bound.0.width / 2.0,
+        bound.0.height / 2.0
+    );
+    let half_size = vec2(sprite_size.width / 2.0, sprite_size.height / 2.0);
+
+    // relative to centre of sprite
+    let corners = [
+        vec2(-half_size.x, -half_size.y),
+        vec2(half_size.x, -half_size.y),
+        vec2(half_size.x, half_size.y),
+        vec2(-half_size.x, half_size.y)
+    ];
+
+    if corners
+        .iter()
+        .map(|corner| rotate_vec2(*corner, rotation))
+        .any(|corner| {
+            let in_world_pos = pos + corner;
+            !world_bound.contains(in_world_pos)
+        })
+    {
+        return true;
+    }
+    
+    false
+}
+
+/// determine whether perform slow trignometry to calculate out_of_bound
+/// 
+/// `corners` are relative to `pos`
+/// ### Implementation
+/// given a rectangle, a square of side length longer_side ^ 2 will always cover the entirety of the rectangle
+fn near_bound_coarse(sprite_size: WidthHeight, pos: Vec2, bound: &WorldSize) -> bool {
+    let longer_sprite_side = if sprite_size.width < sprite_size.height {
+        sprite_size.height
+    } else {
+        sprite_size.width
+    } * 2.0;
+
+    out_of_bound_no_rotation(bound, WidthHeight { width: longer_sprite_side, height: longer_sprite_side }, &pos)
+}
+
+/// faster version of out_of_bounds with a point, no rotation
+pub(crate) fn out_of_bound_no_rotation(
+    bound: &WorldSize,
+    sprite_size: WidthHeight,
+    pos: &Vec2,
+) -> bool {
+    let world_bound = Rect::new(
+        -bound.0.width / 2.0,
+        -bound.0.height / 2.0, 
+        bound.0.width / 2.0,
+        bound.0.height / 2.0
+    );
+    let half_size = vec2(sprite_size.width / 2.0, sprite_size.height / 2.0);
+
+    // relative to centre of sprite
+    let corners = [
+        vec2(-half_size.x, -half_size.y),
+        vec2(half_size.x, -half_size.y),
+        vec2(half_size.x, half_size.y),
+        vec2(-half_size.x, half_size.y)
+    ];
+
+    if corners.iter().any(|corner| {
+        let in_world_pos = pos + corner;
+        !world_bound.contains(in_world_pos)
+    }) {
+        return true;
+    }
+    
+    false
+}
+
 
 // copied from https://github.com/SoftbearStudios/mk48/tree/main/server/src/collision.rs with minor modifications
 
-use crate::primitives::CustomTransform;
-use bevy::prelude::Vec2;
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 /// sat_collision performs continuous rectangle-based separating axis theorem collision.
-pub fn sat_collision(
+pub(crate) fn sat_collision(
     mut transform: CustomTransform,
     mut dimensions: Vec2,
     radius: f32,
@@ -113,6 +209,7 @@ fn sat_collision_half(
     true
 }
 
+
 #[cfg(test)]
 mod tests {
     use bevy::math::vec2;
@@ -133,7 +230,7 @@ mod tests {
 
         let other_transform = CustomTransform {
             speed: Speed(0.0),
-            position: Position(vec2(4.0, 4.0)),
+            position: Position(vec2(3.0, 3.0)),
             rotation: Radian::from_deg(90.0),
             reversed: false,
         };

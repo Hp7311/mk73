@@ -1,30 +1,28 @@
 use std::{f32::consts::PI, ops::{AddAssign, Neg}};
 
 use bevy::prelude::*;
-use enum_dispatch::enum_dispatch;
-use rand::{RngExt, rngs::ThreadRng};
 
-use crate::{constants::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK}, ship::{SPAWN_POINT_AMOUNT_MAX, WORLD_EXPAND, WORLD_MIN}, util::{TrimRadian, get_map_size}};
+use crate::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK};
 
 #[derive(Component, Debug, Copy, Clone, Default)]
-pub struct CustomTransform {
+pub(crate) struct CustomTransform {
     /// along the `rotation`
-    pub speed: Speed,
-    pub position: Position,
+    pub(crate) speed: Speed,
+    pub(crate) position: Position,
     /// stores the radian to move, with -> of Sprite as 0
     /// 
     /// ignores any reverse, calculates them like normal
-    pub rotation: Radian,
-    pub reversed: bool,
+    pub(crate) rotation: Radian,
+    pub(crate) reversed: bool,
 }
 
 impl CustomTransform {
-    pub fn rotate_local_z(&mut self, angle: Radian) {
+    pub(crate) fn rotate_local_z(&mut self, angle: Radian) {
         let rotation = angle.to_quat();
         self.rotation = (rotation * self.rotation.to_quat()).to_radian_unchecked();
     }
     /// from a not-moving entity
-    pub fn from_static(position: Vec2) -> Self {
+    pub(crate) fn from_static(position: Vec2) -> Self {
         CustomTransform {
             position: Position(position),
             ..default()
@@ -33,26 +31,26 @@ impl CustomTransform {
 }
 
 #[derive(Component, Debug, Copy, Clone)]
-pub struct Radius(pub f32);
+pub(crate) struct Radius(pub(crate) f32);
 
 impl Radius {
-    pub fn default_convert(&self) -> Self {
+    pub(crate) fn default_convert(&self) -> Self {
         Radius(self.0 * DEFAULT_SPRITE_SHRINK)
     }
 }
 #[derive(Component, Debug, Copy, Clone, Default)]
-pub struct Speed(pub f32);
+pub(crate) struct Speed(pub(crate) f32);
 #[derive(Component, Debug, Copy, Clone)]
-pub struct MaxSpeed(pub f32);
+pub(crate) struct MaxSpeed(pub(crate) f32);
 #[derive(Component, Debug, Copy, Clone)]
-pub struct ReverseSpeed(pub f32);
+pub(crate) struct ReverseSpeed(pub(crate) f32);
 
 /// currently interpretated as maximum pixels of speed per frame
 #[derive(Component, Debug, Clone, Copy)]
-pub struct Acceleration(pub f32);
+pub(crate) struct Acceleration(pub(crate) f32);
 
 #[derive(Component, Debug, Clone, Copy, Default)]
-pub struct TargetRotation(pub Option<f32>);
+pub(crate) struct TargetRotation(pub(crate) Option<f32>);
 
 impl From<Option<f32>> for TargetRotation {
     fn from(value: Option<f32>) -> Self {
@@ -64,7 +62,7 @@ impl From<Option<f32>> for TargetRotation {
 }
 
 #[derive(Component, Debug, Copy, Clone, Default)]
-pub struct TargetSpeed(pub f32);
+pub(crate) struct TargetSpeed(pub(crate) f32);
 
 impl From<f32> for TargetSpeed {
     fn from(value: f32) -> Self {
@@ -73,12 +71,12 @@ impl From<f32> for TargetSpeed {
 }
 
 #[derive(Component, Debug, Copy, Clone, Default)]
-pub struct Radian(pub f32);
+pub(crate) struct Radian(pub(crate) f32);
 
 impl Radian {
     /// Replacement for [`f32::sin_cos`] (returns `vec2(cos, sin)`). Uses cross-platform
     /// deterministic sin/cos.
-    pub fn to_vec(self) -> Vec2 {
+    pub(crate) fn to_vec(self) -> Vec2 {
         vec2(self.0.cos(), self.0.sin())
     }
 }
@@ -88,7 +86,7 @@ impl Neg for Radian {
         Radian(-self.0)
     }
 }
-pub trait ToRadian {
+pub(crate) trait ToRadian {
     fn to_radian_unchecked(&self) -> Radian;
 }
 
@@ -105,16 +103,16 @@ impl ToRadian for Quat {
     }
 }
 impl Radian {
-    pub fn from_deg(deg: f32) -> Self {
+    pub(crate) fn from_deg(deg: f32) -> Self {
         Radian(deg.to_radians())
     }
-    pub fn to_quat(self) -> Quat {
+    pub(crate) fn to_quat(self) -> Quat {
         Quat::from_rotation_z(self.0)
     }
 }
 
 #[derive(Component, Debug, PartialEq, Copy, Clone, Default)]
-pub struct Position(pub Vec2);
+pub(crate) struct Position(pub(crate) Vec2);
 
 impl AddAssign for Position {
     fn add_assign(&mut self, rhs: Self) {
@@ -122,13 +120,13 @@ impl AddAssign for Position {
     }
 }
 impl Position {
-    pub fn to_vec3(self) -> Vec3 {
+    pub(crate) fn to_vec3(self) -> Vec3 {
         self.0.extend(0.0)
     }
 }
 
 #[derive(Bundle, Debug, Clone)]
-pub struct ShipBundle {
+pub(crate) struct ShipBundle {
     /// maximum angle in radians that you can turn per frame, consider deriving from `max_speed`
     /// ### Warning
     /// keep the value small
@@ -158,7 +156,7 @@ pub struct ShipBundle {
 
 impl ShipBundle {
     /// default to rotated 90 degrees and 2.0 turning
-    pub fn new(
+    pub(crate) fn new(
         max_speed: f32,
         reverse_speed: f32,
         acceleration: f32,
@@ -199,76 +197,31 @@ impl ShipBundle {
 }
 
 #[derive(Bundle, Debug, Clone)]
-pub struct CircleHudBundle {
-    pub mesh: Mesh2d,
-    pub materials: MeshMaterial2d<ColorMaterial>,
+pub(crate) struct CircleHudBundle {
+    pub(crate) mesh: Mesh2d,
+    pub(crate) materials: MeshMaterial2d<ColorMaterial>,
 }
 
-/// helper struct for accessing the [`Ship`](crate::ship::Ship)'s circle HUD
-#[derive(Debug, Component, Copy, Clone)]
-pub struct CircleHud {
-    pub radius: f32,
-    pub center: Vec2
-}
-
-impl CircleHud {
-    /// whether `point` is in the Circle HUD
-    pub fn contains(&self, point: Vec2) -> bool {
-        point.distance_squared(self.center) < self.radius.powi(2)
-    }
-    /// whether a point is at HUD's center
-    /// 
-    /// adjusted for decimal-point precision
-    pub fn at_center(&self, point: Vec2, decimal_point: DecimalPoint) -> bool {
-        let x_diff = (point.x - self.center.x).abs();
-        let y_diff = (point.y - self.center.y).abs();
-
-        let max_distance = match decimal_point {
-            DecimalPoint::Zero => 1.0,
-            DecimalPoint::One => 0.1,
-            DecimalPoint::Two => 0.01,
-            DecimalPoint::Three => 0.001
-        };
-
-        x_diff < max_distance && y_diff < max_distance
-    }
-}
 /// # Example
 /// Zero = 1.0,
 /// Two = 0.01
 #[allow(dead_code)]
-pub enum DecimalPoint {
+pub(crate) enum DecimalPoint {
     Zero = 0,
     One = 1,
     Two = 2,
     Three = 3,
 }
 
-#[derive(Component, Debug, Copy, Clone)]
-pub struct Background;
-
-#[derive(Component, Debug, Copy, Clone)]
-pub struct OilRig;
-
 /// the ship will reverse to any angle if LMB is held down after reversing.
 /// 
 /// once released, mouse being in the forward zone will be interpretated as forwards
 #[derive(Component, Debug, Clone, Copy)]
-pub struct ReleasedAfterReverse(pub bool);
+pub(crate) struct ReleasedAfterReverse(pub(crate) bool);
 
-
-
-#[derive(Component, Debug, Copy, Clone)]
-pub struct WorldSize(pub WidthHeight);
-
-impl Default for WorldSize {
-    fn default() -> Self {
-        WorldSize(get_map_size(1, WORLD_MIN, WORLD_EXPAND).into())
-    }
-}
 
 /// flips a radian 180 degrees
-pub trait FlipRadian {
+pub(crate) trait FlipRadian {
     fn flip(self) -> Self;
 }
 
@@ -278,21 +231,36 @@ impl FlipRadian for f32 {
     }
 }
 
+/// eliminates offset when turning over the <--- axis
+pub(crate) trait TrimRadian {
+    fn trim(self) -> Self;
+}
+impl TrimRadian for f32 {
+    fn trim(mut self) -> Self {
+        if self > PI {
+            self -= 2.0 * PI;
+        } else if self < -PI {
+            self += 2.0 * PI;
+        }
+        self
+    }
+}
+
 #[derive(Component, Debug, Clone, Copy)]
-pub struct Dimensions(pub Option<WidthHeight>);
+pub(crate) struct Dimensions(pub(crate) Option<WidthHeight>);
 
 #[derive(Component, Debug, Copy, Clone)]
-pub struct WidthHeight {
-    pub width: f32,
-    pub height: f32,
+pub(crate) struct WidthHeight {
+    pub(crate) width: f32,
+    pub(crate) height: f32,
 }
 
 impl WidthHeight {
-    pub const ZERO: Self = WidthHeight { width: 0.0, height: 0.0 };
-    pub fn to_rect(self, center_pos: Vec2) -> Rect {
+    pub(crate) const ZERO: Self = WidthHeight { width: 0.0, height: 0.0 };
+    pub(crate) fn to_rect(self, center_pos: Vec2) -> Rect {
         Rect::from_center_size(center_pos, vec2(self.width, self.height))
     }
-    pub fn to_vec2(self) -> Vec2 {
+    pub(crate) fn to_vec2(self) -> Vec2 {
         vec2(self.width, self.height)
     }
 }
@@ -303,7 +271,7 @@ impl From<Vec2> for WidthHeight {
     }
 }
 
-pub trait RectIntersect {
+pub(crate) trait RectIntersect {
     fn intersects_with(&self, rhs: &Self) -> bool;
     fn x(&self) -> f32;
     fn y(&self) -> f32;
@@ -336,68 +304,11 @@ impl RectIntersect for Rect {
     }
 }
 
-#[enum_dispatch]
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PointType {
-    Barrel,
-    Coin,
-    Scrap,
-}
-
-
-#[enum_dispatch(PointType)]
-pub trait PointData {
-    fn worth(&self) -> u16;
-}
-
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Barrel;
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Coin;
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Scrap;
-
-impl PointData for Coin {
-    fn worth(&self) -> u16 {
-        3
-    }
-}
-impl PointData for Barrel {
-    fn worth(&self) -> u16 {
-        2
-    }
-}
-impl PointData for Scrap {
-    fn worth(&self) -> u16 {
-        1
-    }
-}
-/// holding the amount of points
-#[derive(Component, Debug, Clone, Copy)]
-pub struct PointAmount {
-    points: u16,
-    max_point: u16,
-}
-
-impl PointAmount {
-    /// generates a max point from default
-    pub fn new(rng: &mut ThreadRng) -> Self {
-        let max_point = rng.random_range(SPAWN_POINT_AMOUNT_MAX);
-
-        PointAmount { points: 0, max_point }
-    }
-    /// add given amount to points
-    pub fn add(&mut self, points: u16) {
-        self.points += points
-    }
-    /// if exceeds max range
-    pub fn is_max(&self) -> bool {
-        self.points >= self.max_point
-    }
-}
 
 #[cfg(test)]
 mod tests {
+    use crate::ship::CircleHud;
+
     use super::*;
     #[test]
     fn test_flip() {
