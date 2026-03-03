@@ -8,7 +8,7 @@ use bevy::camera_controller::pan_camera::PanCameraPlugin;
 use bevy::prelude::*;
 
 
-use crate::ship::{move_camera, resize_rigs, resize_ship, rig_spawn_points, startup, update_ship, update_transform, validate_rigs};
+use crate::ship::{despawn_points, move_camera, move_points, resize_rigs, resize_ship, rig_spawn_points, startup, update_ship, update_transform, validate_rigs};
 
 mod constants {
 
@@ -33,8 +33,10 @@ impl Plugin for ShipPlugin {
             .insert_resource(ClearColor(Color::linear_rgb(0.0, 0.1, 0.6)))
             .add_systems(Startup, startup)
             .add_systems(Update, (update_ship, update_transform).chain())
-            .add_systems(Update, move_camera)
             .add_systems(Update, (resize_rigs, resize_ship, validate_rigs))
-            .add_systems(Update, rig_spawn_points);
+            .add_systems(Update, rig_spawn_points)
+            .add_systems(Update, move_points)
+            .add_systems(Update, despawn_points)
+            .add_systems(PostUpdate, move_camera.after(TransformSystems::Propagate));
     }
 }

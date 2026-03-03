@@ -1,6 +1,7 @@
 use std::{f32::consts::PI, ops::{AddAssign, Neg}};
 
 use bevy::prelude::*;
+use enum_dispatch::enum_dispatch;
 use rand::{RngExt, rngs::ThreadRng};
 
 use crate::{constants::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK}, ship::{SPAWN_POINT_AMOUNT_MAX, WORLD_EXPAND, WORLD_MIN}, util::{TrimRadian, get_map_size}};
@@ -50,7 +51,7 @@ pub struct ReverseSpeed(pub f32);
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Acceleration(pub f32);
 
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, Default)]
 pub struct TargetRotation(pub Option<f32>);
 
 impl From<Option<f32>> for TargetRotation {
@@ -59,6 +60,15 @@ impl From<Option<f32>> for TargetRotation {
             Some(v) => TargetRotation(Some(v)),
             None => TargetRotation(None),
         }
+    }
+}
+
+#[derive(Component, Debug, Copy, Clone, Default)]
+pub struct TargetSpeed(pub f32);
+
+impl From<f32> for TargetSpeed {
+    fn from(value: f32) -> Self {
+        TargetSpeed(value)
     }
 }
 
@@ -138,6 +148,8 @@ pub struct ShipBundle {
     radius: Radius,
     /// where the user's mouse was facing
     mouse_target: TargetRotation,
+    /// the target speed of the Ship
+    target_speed: TargetSpeed,
     /// maximum speed acceleration per frame
     acceleration: Acceleration,
     /// stores dimension of the image once loaded
@@ -178,6 +190,7 @@ impl ShipBundle {
                 reversed: false
             },
             mouse_target: None.into(),
+            target_speed: TargetSpeed(0.0),
             reverse_released: ReleasedAfterReverse(false),
             acceleration: Acceleration(acceleration),
             dimensions: Dimensions(None)
@@ -189,6 +202,46 @@ impl ShipBundle {
 pub struct CircleHudBundle {
     pub mesh: Mesh2d,
     pub materials: MeshMaterial2d<ColorMaterial>,
+}
+
+/// helper struct for accessing the [`Ship`](crate::ship::Ship)'s circle HUD
+#[derive(Debug, Component, Copy, Clone)]
+pub struct CircleHud {
+    pub radius: f32,
+    pub center: Vec2
+}
+
+impl CircleHud {
+    /// whether `point` is in the Circle HUD
+    pub fn contains(&self, point: Vec2) -> bool {
+        point.distance_squared(self.center) < self.radius.powi(2)
+    }
+    /// whether a point is at HUD's center
+    /// 
+    /// adjusted for decimal-point precision
+    pub fn at_center(&self, point: Vec2, decimal_point: DecimalPoint) -> bool {
+        let x_diff = (point.x - self.center.x).abs();
+        let y_diff = (point.y - self.center.y).abs();
+
+        let max_distance = match decimal_point {
+            DecimalPoint::Zero => 1.0,
+            DecimalPoint::One => 0.1,
+            DecimalPoint::Two => 0.01,
+            DecimalPoint::Three => 0.001
+        };
+
+        x_diff < max_distance && y_diff < max_distance
+    }
+}
+/// # Example
+/// Zero = 1.0,
+/// Two = 0.01
+#[allow(dead_code)]
+pub enum DecimalPoint {
+    Zero = 0,
+    One = 1,
+    Two = 2,
+    Three = 3,
 }
 
 #[derive(Component, Debug, Copy, Clone)]
@@ -283,6 +336,42 @@ impl RectIntersect for Rect {
     }
 }
 
+#[enum_dispatch]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PointType {
+    Barrel,
+    Coin,
+    Scrap,
+}
+
+
+#[enum_dispatch(PointType)]
+pub trait PointData {
+    fn worth(&self) -> u16;
+}
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Barrel;
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Coin;
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Scrap;
+
+impl PointData for Coin {
+    fn worth(&self) -> u16 {
+        3
+    }
+}
+impl PointData for Barrel {
+    fn worth(&self) -> u16 {
+        2
+    }
+}
+impl PointData for Scrap {
+    fn worth(&self) -> u16 {
+        1
+    }
+}
 /// holding the amount of points
 #[derive(Component, Debug, Clone, Copy)]
 pub struct PointAmount {
@@ -316,5 +405,13 @@ mod tests {
         let expected = -100.0f32.to_radians();
 
         assert!((src.flip() - expected).abs() < 0.1);
+    }
+    #[test]
+    fn test_circle_hud() {
+        let circle_hud = CircleHud { radius: 3.0, center: vec2(0., 0.)};
+
+        let target = vec2(2.8, 0.0);
+
+        assert!(circle_hud.contains(target))
     }
 }

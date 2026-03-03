@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // copied from https://github.com/SoftbearStudios/mk48/tree/main/server/src/collision.rs with minor modifications
-// TODO work on collision
 
 use crate::primitives::CustomTransform;
 use bevy::prelude::Vec2;

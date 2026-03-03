@@ -19,7 +19,6 @@ use crate::primitives::*;
 use crate::util::out_of_bound_no_rotation;
 use crate::util::out_of_bounds;
 use crate::util::point_in_square;
-use crate::util::relative_point;
 use crate::util::tiles_around_point;
 use crate::util::{
     MainCamera,
@@ -38,7 +37,7 @@ pub const WORLD_EXPAND: f32 = 2000.0;
 const MINIMUM_REVERSE: f32 = PI * (2.0 / 3.0);
 
 // TODO time to modulise
-
+// TODO constants for Z-ordering
 pub fn startup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -59,6 +58,7 @@ pub fn startup(
         MainCamera,
     ));
 
+    let radius = add_circle_hud(YASEN_RAW_SIZE / 2.0) * DEFAULT_SPRITE_SHRINK;
     commands.spawn((
         ShipBundle::new(
             YASEN_MAX_SPEED,
@@ -74,12 +74,13 @@ pub fn startup(
     .with_children(|parent | {
         parent.spawn((
             CircleHudBundle {
-                mesh: Mesh2d(meshes.add(Circle::new(add_circle_hud(YASEN_RAW_SIZE / 2.0) * DEFAULT_SPRITE_SHRINK)
+                mesh: Mesh2d(meshes.add(Circle::new(radius)
                         .to_ring(3.0),
                 )),
                 materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
             },
-            Transform::from_translation(vec3(0.0, 0.0, 30.0))  // relative to parent, circle hud highest Z
+            Transform::from_translation(vec3(0.0, 0.0, 30.0)),  // relative to parent, circle hud highest Z
+            CircleHud { radius, center: vec2(100.0, 0.0) }
         ));
     });
 
@@ -152,8 +153,8 @@ pub fn update_ship(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut queries: ParamSet<(
         Query<(&Transform, &mut CustomTransform, &Radian, &mut TargetRotation, &mut ReleasedAfterReverse), With<Ship>>,
-        Query<(&Transform, &mut CustomTransform, &Radian, &TargetRotation), With<Ship>>,
-        Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed, &Acceleration), With<Ship>>,
+        Query<(&Transform, &mut CustomTransform, &Radian, &TargetRotation, &TargetSpeed, &Acceleration), With<Ship>>,
+        Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed, &Acceleration, &mut TargetSpeed), With<Ship>>,
         Query<(&CustomTransform, &mut ReleasedAfterReverse), With<Ship>>
     )>
 ) {
@@ -163,7 +164,7 @@ pub fn update_ship(
         rotate_ship(&mut queries.p0(), cursor_pos);
         move_ship(&mut queries.p2(), cursor_pos);
     } else {
-        rotate_ship_to_target(&mut queries.p1());
+        ship_to_target(&mut queries.p1());
     }
     if get_cursor_pos(&window, &camera).is_some()
         && buttons.just_released(MouseButton::Left)
@@ -232,10 +233,10 @@ fn try_release_after_rev(query: &mut Query<(&CustomTransform, &mut ReleasedAfter
 
 /// handle moving
 fn move_ship(
-    datas: &mut Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed, &Acceleration), With<Ship>>,
+    datas: &mut Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed, &Acceleration, &mut TargetSpeed), With<Ship>>,
     cursor_pos: Vec2,
 ) {
-    for (transform, mut custom_transform, radius, max_speed, reverse_speed, acceleration) in datas.iter_mut() {
+    for (transform, mut custom_transform, radius, max_speed, reverse_speed, acceleration, mut target_speed) in datas.iter_mut() {
         let cursor_distance = cursor_pos.distance(transform.translation.xy());
         let speed = if custom_transform.reversed {
             reverse_speed.0
@@ -250,6 +251,9 @@ fn move_ship(
             radius.default_convert().0,
         );
 
+        target_speed.0 = speed;
+
+        // adjust for acceleration
         let speed_diff = speed - custom_transform.speed.0;
         if speed_diff > acceleration.0 {
             speed = custom_transform.speed.0 + acceleration.0;
@@ -264,15 +268,15 @@ fn move_ship(
 // note that we're accepting Query instead of Single for ship everywhere
 // and not descriminating Bot/Player
 
-// TODO add a target speed so you don't have to press all the time when accelerating
 /// remember the last move angle and rotate toward it when button not pressed
-fn rotate_ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &Radian, &TargetRotation), With<Ship>>) {
-    for (transform, mut custom_transform, max_turn, target) in ships {
-        let Some(target) = target.0 else { continue; };
+fn ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &Radian, &TargetRotation, &TargetSpeed, &Acceleration), With<Ship>>) {
+    for (transform, mut custom_transform, max_turn, target_rotation, target_speed, acceleration) in ships {
+        // ------ rotation
+        let Some(target_rotation) = target_rotation.0 else { continue; };
 
         let (.., current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
 
-        let moved = (target.to_degrees() - current_rotation.to_degrees())
+        let moved = (target_rotation.to_degrees() - current_rotation.to_degrees())
             .to_radians()
             .trim();
 
@@ -286,15 +290,23 @@ fn rotate_ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &R
         } else {
             custom_transform.rotate_local_z(moved.to_radian_unchecked());
         }
+        // ------ speed
+        let speed_diff = target_speed.0 - custom_transform.speed.0;
+        if speed_diff > acceleration.0 {
+            custom_transform.speed.0 = custom_transform.speed.0 + acceleration.0;
+        } else if speed_diff < -acceleration.0 {
+            custom_transform.speed.0 = custom_transform.speed.0 - acceleration.0;
+        }
     }
 }
 
 /// updates [`Ship`]'s [`Transform`] according to its [`CustomTransform`]
 pub fn update_transform(
-    mut transform_ship: Query<(&mut Transform, &mut CustomTransform, &Dimensions), With<Ship>>,
+    mut transform_ship: Query<(&mut Transform, &mut CustomTransform, &Children, &Dimensions), With<Ship>>,
+    mut circle_huds: Query<&mut CircleHud>,
     world_size: Single<&WorldSize>,
 ) {
-    for (mut transform, mut custom, dimension) in transform_ship.iter_mut().filter(|(.., dimension)| dimension.0.is_some()) {
+    for (mut transform, mut custom, children, dimension) in transform_ship.iter_mut().filter(|(.., dimension)| dimension.0.is_some()) {
         let mut translation = custom.position.to_vec3();
         if custom.reversed {
             translation += move_with_rotation(transform.rotation, -custom.speed.0);
@@ -314,7 +326,15 @@ pub fn update_transform(
         };
         *transform = target;
 
-        custom.position = Position(translation.xy()); // sync position
+        // sync position
+        custom.position = Position(translation.xy());
+
+        for child in children {
+            if let Ok(mut hud) = circle_huds.get_mut(*child) {
+                hud.center = translation.xy();
+                break;
+            }
+        }
     }
 }
 
@@ -434,7 +454,7 @@ fn validate_rig_raw(rigs: Vec<(Rect, Quat, Entity)>, world_size: &WorldSize) -> 
         if rigs.iter()
             .filter(|(target, ..)| target != rect)
             .any(|(target, ..)| rect.intersects_with(target))
-            || out_of_bounds(world_size, rect.size().into(), rect.center(), *rotation)
+            || out_of_bounds(&world_size, rect.size().into(), rect.center(), *rotation)
         {
             despawning_id.push(*id);
         }
@@ -455,26 +475,32 @@ pub const SPAWN_POINT_SPRITE_P: Range<usize> = 15 * 60..30 * 60;
 /// the maximum radius around a rig which a point can spawn
 pub const SPAWN_POINT_RADIUS_MAX: f32 = 100.0;
 
+/// speed at which a point moves toward a ship's HUD center
+const POINT_SPEED: f32 = 2.0;
+
 pub fn rig_spawn_points(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut transforms: Query<(&mut PointAmount, &Transform, &Sprite, Entity), With<OilRig>>,
+    mut transforms: Query<(&mut PointAmount, &Transform, &Sprite), With<OilRig>>,
     world_size: Single<&WorldSize>
 ) {
-    let point_sprites = [
-        asset_server.load("coin.png"),
-        asset_server.load("barrel.png"),
-        asset_server.load("scrap.png")
+    let point_sprites: [(PointType, Handle<Image>); 3] = [
+        (Coin.into(), asset_server.load("coin.png")),
+        (Barrel.into(), asset_server.load("barrel.png")),
+        (Scrap.into(), asset_server.load("scrap.png"))
     ];
 
-    for (mut point_amount, transform, sprite, id) in transforms.iter_mut() {
+    for (mut point_amount, transform, sprite) in transforms.iter_mut() {
         let Some(sprite_size) = sprite.custom_size else { continue };
 
-        let avaliable_spawn_tiles: Vec<_> = tiles_around_point(transform.translation.xy(), sprite_size.x + SPAWN_POINT_RADIUS_MAX)
+        let avaliable_tiles = tiles_around_point(
+            transform.translation.xy(),
+            sprite_size.x + SPAWN_POINT_RADIUS_MAX
+        );
+        let avaliable_tiles: Vec<_> = avaliable_tiles
             .iter()
             .filter(|&tile| !point_in_square(*tile, sprite_size.x, transform.translation.xy()))
             .filter(|&tile| !out_of_bound_no_rotation(&world_size, WidthHeight::ZERO, tile))
-            .map(|&glob_tile| relative_point(glob_tile, transform.translation.xy()))
             .collect();
 
         if point_amount.is_max() {
@@ -486,15 +512,76 @@ pub fn rig_spawn_points(
         spawn_p.push(true);
 
         if *spawn_p.choose(&mut rng).unwrap() {
-            commands.get_entity(id).unwrap()
-                .with_children(|parent| {
-                    parent.spawn((
-                        Sprite::from_image(point_sprites.choose(&mut rng).unwrap().clone()),
-                        Transform::from_translation(avaliable_spawn_tiles.choose(&mut rng).unwrap().extend(0.0))
-                            .with_scale(Vec2::splat(DEFAULT_SPRITE_SHRINK.powi(2)).extend(0.0)) // TODO unit struct identitfier
-                    ));
-                });
-            point_amount.add(1);  // TODO all point types are 1 worth for now
+            let (chosen_type, chosen_sprite) = point_sprites.choose(&mut rng).unwrap().clone();
+            commands.spawn((
+                Sprite::from_image(chosen_sprite),
+                Transform {
+                    translation: avaliable_tiles.choose(&mut rng).unwrap().extend(0.0),
+                    scale: Vec2::splat(DEFAULT_SPRITE_SHRINK.powi(2)).extend(0.0),
+                    ..default()
+                },
+                chosen_type
+            ));
+            point_amount.add(chosen_type.worth());
+        }
+    }
+}
+
+/// move points toward ships that have a CircleHud overlapping them
+pub fn move_points(
+    mut points_transform: Query<&mut Transform, With<PointType>>,
+    circle_huds: Query<&CircleHud>,
+) {
+    for (intersect_huds, mut transform) in points_transform
+        .iter_mut()
+        .filter_map(|transform| {
+            let huds_in_point = circle_huds
+                .iter()
+                .filter(|hud| hud.contains(transform.translation.xy()))
+                .collect::<Vec<_>>();
+
+            if huds_in_point.is_empty() {
+                None
+            } else {
+                Some((huds_in_point, transform))
+            }
+        })
+    {
+        // move the point toward player for those in 1 player's circle hud
+        if intersect_huds.len() == 1 {
+            transform.translation = transform.translation.move_towards(
+                intersect_huds.first().unwrap()
+                    .center
+                    .extend(0.0),
+                POINT_SPEED
+            );
+            continue;
+        }
+
+        // calculate the distance and make the point go to the nearest ship
+        let Some(closest_hud) = intersect_huds.iter()
+            .min_by(|a, b| {
+                let a_distance = transform.translation.distance_squared(a.center.extend(0.0));
+                let b_distance = transform.translation.distance_squared(b.center.extend(0.0));
+                a_distance.total_cmp(&b_distance)
+            }) else { return };
+
+        transform.translation = transform.translation.move_towards(
+            closest_hud.center.extend(0.0),
+            POINT_SPEED
+        );
+    }
+}
+
+// TODO add to player's score
+pub fn despawn_points(
+    mut commands: Commands,
+    points_transform: Query<(&Transform, Entity), With<PointType>>,
+    circle_huds: Query<&CircleHud>,
+) {
+    for (point_transform, id) in points_transform {
+        if circle_huds.iter().any(|hud| hud.at_center(point_transform.translation.xy(), DecimalPoint::Zero)) {
+            commands.get_entity(id).unwrap().despawn();
         }
     }
 }
