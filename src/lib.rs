@@ -15,6 +15,10 @@ const DEFAULT_SPRITE_SHRINK: f32 = 0.3;
 const DEFAULT_MAX_TURN_DEG: f32 = 0.5;
 const DEFAULT_MAX_ZOOM: f32 = 2.0;
 
+// --- Z-ordering constants
+const WATER_SURFACE: f32 = 0.0;
+const CIRCLE_HUD: f32 = 30.0;
+
 pub use ship::ShipPlugin;
 pub use oil_rig::OilRigPlugin;
 pub use world::WorldPlugin;

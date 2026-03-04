@@ -4,8 +4,11 @@ use bevy::prelude::*;
 
 use crate::{primitives::{CustomTransform, WidthHeight}, util::rotate_vec2, world::WorldSize};
 
-// TODO test
 /// check if a Sprite is out-of-bounds by checking it's 4 corners
+/// 
+/// `sprite_size` takes a full width * length of a Sprite,
+/// 
+/// `pos` has center point at the center.
 /// ### Performance
 /// slow if close to the border
 pub(crate) fn out_of_bounds(
@@ -96,6 +99,36 @@ pub(crate) fn out_of_bound_no_rotation(
     false
 }
 
+/// primarily used for rig spawning,
+/// returns false if intersects
+/// ### length is added half
+pub(crate) fn square_does_not_intersects(
+    center: Vec2,
+    mut length: f32,
+    other_center: Vec2,
+    mut other_length: f32
+) -> bool {
+    length *= 1.5;
+    other_length *= 1.5;
+    // less boilerplate
+    length /= 2.0;
+    other_length /= 2.0;
+
+    let left = center.x - length;
+    let right = center.x + length;
+    let top = center.y - length;
+    let bottom = center.y + length;
+
+    let other_left = other_center.x - other_length;
+    let other_right = other_center.x + other_length;
+    let other_top = other_center.y - other_length;
+    let other_bottom = other_center.y + other_length;
+
+    right <= other_left
+        || left >= other_right
+        || top <= other_bottom
+        || bottom >= other_top
+}
 
 // copied from https://github.com/SoftbearStudios/mk48/tree/main/server/src/collision.rs with minor modifications
 
@@ -214,29 +247,15 @@ fn sat_collision_half(
 mod tests {
     use bevy::math::vec2;
 
-    use crate::primitives::{Position, Radian, Speed};
 
     use super::*;
     #[test]
-    fn sat_test() {
-        let transform = CustomTransform {
-            speed: Speed(0.0),
-            position: Position(vec2(0.0, 0.0)),
-            rotation: Radian::from_deg(90.0),
-            reversed: false
-        };
-        let dimensions = vec2(10.0, 10.0);
-        let radius = 0.0;
+    fn test_outofbound() {
+        let bound = WorldSize(WidthHeight { width: 10.0, height: 10.0 });
+        let sprite_size = WidthHeight { width: 4.0, height: 4.0 };
+        let pos = vec2(3.0, 3.01);
+        let rotation = Quat::from_rotation_z(90.0f32.to_radians());
 
-        let other_transform = CustomTransform {
-            speed: Speed(0.0),
-            position: Position(vec2(3.0, 3.0)),
-            rotation: Radian::from_deg(90.0),
-            reversed: false,
-        };
-        let other_dimensions = vec2(10.0, 10.0);
-        let other_radius = 0.0;
-
-        assert!(sat_collision(transform, dimensions, radius, other_transform, other_dimensions, other_radius));
+        assert!(out_of_bounds(&bound, sprite_size, pos, rotation));
     }
 }

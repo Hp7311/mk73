@@ -5,6 +5,8 @@ use crate::primitives::WidthHeight;
 const WORLD_MIN: Vec2 = vec2(4000.0, 2000.0);
 const WORLD_EXPAND: f32 = 2000.0;
 
+const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
+
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
@@ -39,7 +41,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
         Sprite {
             image: asset_server.load("waves.png"),
-            color: Color::srgb(0.0, 0.65, 1.03),
+            color: SPRITE_TINT,
             custom_size: Some(world_size.to_vec2()),
             image_mode: SpriteImageMode::Tiled {
                 tile_x: true,

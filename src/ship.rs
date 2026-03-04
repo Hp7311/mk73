@@ -10,8 +10,10 @@ use bevy::color::palettes::css::*;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
+use crate::CIRCLE_HUD;
 use crate::MainCamera;
 use crate::DEFAULT_SPRITE_SHRINK;
+use crate::WATER_SURFACE;
 use crate::primitives::*;
 use crate::util::fill_dimensions;
 use crate::collision::out_of_bounds;
@@ -27,6 +29,7 @@ pub struct ShipPlugin;
 impl Plugin for ShipPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup)
+            .insert_resource(PlayerScore(0))
             .add_systems(Update, (
                 resize_ship,
                 update_ship,
@@ -48,22 +51,32 @@ const YASEN_RAW_SIZE: f32 = 1024.0;
 /// absolute value of minimum radians that must be reached to reverse the Ship
 const MINIMUM_REVERSE: f32 = PI * (2.0 / 3.0);
 
+#[derive(Debug, Clone, Copy, Resource)]
+pub(crate) struct PlayerScore(u32);
 
-// TODO constants for Z-ordering
+impl PlayerScore {
+    pub(crate) fn add_to_score(&mut self, points: u32) {
+        self.0 += points;
+    }
+    pub(crate) fn get_score(&self) -> u32 {
+        self.0
+    }
+}
+
 fn startup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-
+    let position = vec2(100.0, 0.0);
     let radius = add_circle_hud(YASEN_RAW_SIZE / 2.0) * DEFAULT_SPRITE_SHRINK;
     commands.spawn((
         ShipBundle::new(
             YASEN_MAX_SPEED,
             YASEN_BACK_SPEED,
             YASEN_ACCELERATION,
-            vec2(100.0, 0.0),
+            position,
             "yasen.png",
             asset_server.clone(),
             YASEN_RAW_SIZE / 2.0,
@@ -78,8 +91,8 @@ fn startup(
                 )),
                 materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
             },
-            Transform::from_translation(vec3(0.0, 0.0, 30.0)),  // relative to parent, circle hud highest Z
-            CircleHud { radius, center: vec2(100.0, 0.0) }
+            Transform::from_translation(vec3(0.0, 0.0, CIRCLE_HUD)),  // relative to parent, circle hud highest Z
+            CircleHud { radius, center: position }
         ));
     });
 }
@@ -125,7 +138,7 @@ fn move_camera(
     };
 
     if ship.position.0 != camera.translation.xy() {
-        camera.translation = ship.position.0.extend(0.0);
+        camera.translation = ship.position.0.extend(WATER_SURFACE);
     }
 }
 
@@ -276,9 +289,9 @@ fn ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &Radian, 
         // ------ speed
         let speed_diff = target_speed.0 - custom_transform.speed.0;
         if speed_diff > acceleration.0 {
-            custom_transform.speed.0 = custom_transform.speed.0 + acceleration.0;
+            custom_transform.speed.0 += acceleration.0;
         } else if speed_diff < -acceleration.0 {
-            custom_transform.speed.0 = custom_transform.speed.0 - acceleration.0;
+            custom_transform.speed.0 -= acceleration.0;
         }
     }
 }
@@ -290,11 +303,11 @@ fn ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &Radian, 
     world_size: Single<&WorldSize>,
 ) {
     for (mut transform, mut custom, children, dimension) in transform_ship.iter_mut().filter(|(.., dimension)| dimension.0.is_some()) {
-        let mut translation = custom.position.to_vec3();
+        let mut translation = custom.position.to_vec3(transform.translation.z);
         if custom.reversed {
-            translation += move_with_rotation(transform.rotation, -custom.speed.0);
+            translation += move_with_rotation(transform.rotation, -custom.speed.0, transform.translation.z);
         } else {
-            translation += move_with_rotation(transform.rotation, custom.speed.0);  // ignores frame lagging temporary
+            translation += move_with_rotation(transform.rotation, custom.speed.0, transform.translation.z);  // ignores frame lagging temporary
         }
 
         

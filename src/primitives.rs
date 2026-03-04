@@ -2,7 +2,7 @@ use std::{f32::consts::PI, ops::{AddAssign, Neg}};
 
 use bevy::prelude::*;
 
-use crate::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK};
+use crate::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK, WATER_SURFACE};
 
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub(crate) struct CustomTransform {
@@ -30,27 +30,27 @@ impl CustomTransform {
     }
 }
 
-#[derive(Component, Debug, Copy, Clone)]
-pub(crate) struct Radius(pub(crate) f32);
+#[derive(Component, Debug, Copy, Clone, Deref)]
+pub(crate) struct Radius(pub f32);
 
 impl Radius {
     pub(crate) fn default_convert(&self) -> Self {
         Radius(self.0 * DEFAULT_SPRITE_SHRINK)
     }
 }
-#[derive(Component, Debug, Copy, Clone, Default)]
-pub(crate) struct Speed(pub(crate) f32);
-#[derive(Component, Debug, Copy, Clone)]
-pub(crate) struct MaxSpeed(pub(crate) f32);
-#[derive(Component, Debug, Copy, Clone)]
-pub(crate) struct ReverseSpeed(pub(crate) f32);
+#[derive(Component, Debug, Copy, Clone, Default, Deref)]
+pub(crate) struct Speed(pub f32);
+#[derive(Component, Debug, Copy, Clone, Default, Deref)]
+pub(crate) struct MaxSpeed(pub f32);
+#[derive(Component, Debug, Copy, Clone, Default, Deref)]
+pub(crate) struct ReverseSpeed(pub f32);
 
 /// currently interpretated as maximum pixels of speed per frame
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct Acceleration(pub(crate) f32);
+#[derive(Component, Debug, Clone, Copy, Default, Deref)]
+pub(crate) struct Acceleration(pub f32);
 
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub(crate) struct TargetRotation(pub(crate) Option<f32>);
+#[derive(Component, Debug, Clone, Copy, Default, Deref)]
+pub(crate) struct TargetRotation(pub Option<f32>);
 
 impl From<Option<f32>> for TargetRotation {
     fn from(value: Option<f32>) -> Self {
@@ -61,8 +61,8 @@ impl From<Option<f32>> for TargetRotation {
     }
 }
 
-#[derive(Component, Debug, Copy, Clone, Default)]
-pub(crate) struct TargetSpeed(pub(crate) f32);
+#[derive(Component, Debug, Copy, Clone, Default, Deref)]
+pub(crate) struct TargetSpeed(pub f32);
 
 impl From<f32> for TargetSpeed {
     fn from(value: f32) -> Self {
@@ -70,8 +70,8 @@ impl From<f32> for TargetSpeed {
     }
 }
 
-#[derive(Component, Debug, Copy, Clone, Default)]
-pub(crate) struct Radian(pub(crate) f32);
+#[derive(Component, Debug, Copy, Clone, Default, Deref)]
+pub(crate) struct Radian(pub f32);
 
 impl Radian {
     /// Replacement for [`f32::sin_cos`] (returns `vec2(cos, sin)`). Uses cross-platform
@@ -111,8 +111,8 @@ impl Radian {
     }
 }
 
-#[derive(Component, Debug, PartialEq, Copy, Clone, Default)]
-pub(crate) struct Position(pub(crate) Vec2);
+#[derive(Component, Debug, PartialEq, Copy, Clone, Default, Deref)]
+pub(crate) struct Position(pub Vec2);
 
 impl AddAssign for Position {
     fn add_assign(&mut self, rhs: Self) {
@@ -120,8 +120,8 @@ impl AddAssign for Position {
     }
 }
 impl Position {
-    pub(crate) fn to_vec3(self) -> Vec3 {
-        self.0.extend(0.0)
+    pub(crate) fn to_vec3(self, z_index: f32) -> Vec3 {
+        self.0.extend(z_index)
     }
 }
 
@@ -152,6 +152,7 @@ pub(crate) struct ShipBundle {
     acceleration: Acceleration,
     /// stores dimension of the image once loaded
     dimensions: Dimensions,
+    validated: Validated
 }
 
 impl ShipBundle {
@@ -169,7 +170,7 @@ impl ShipBundle {
         let sprite = Sprite::from_image(asset_server.load(sprite_name.to_owned()));
 
         let transform = Transform {
-            translation: position.extend(0.0),
+            translation: position.extend(WATER_SURFACE),
             rotation: Quat::from_rotation_z(SPRITE_ROTATION.to_radians()),
             ..default()
         };
@@ -191,7 +192,8 @@ impl ShipBundle {
             target_speed: TargetSpeed(0.0),
             reverse_released: ReleasedAfterReverse(false),
             acceleration: Acceleration(acceleration),
-            dimensions: Dimensions(None)
+            dimensions: Dimensions(None),
+            validated: Validated(false)
         }
     }
 }
@@ -216,8 +218,8 @@ pub(crate) enum DecimalPoint {
 /// the ship will reverse to any angle if LMB is held down after reversing.
 /// 
 /// once released, mouse being in the forward zone will be interpretated as forwards
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct ReleasedAfterReverse(pub(crate) bool);
+#[derive(Component, Debug, Clone, Copy, Deref)]
+pub(crate) struct ReleasedAfterReverse(pub bool);
 
 
 /// flips a radian 180 degrees
@@ -246,8 +248,8 @@ impl TrimRadian for f32 {
     }
 }
 
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct Dimensions(pub(crate) Option<WidthHeight>);
+#[derive(Component, Debug, Clone, Copy, Default, Deref)]
+pub(crate) struct Dimensions(pub Option<WidthHeight>);
 
 #[derive(Component, Debug, Copy, Clone)]
 pub(crate) struct WidthHeight {
@@ -304,6 +306,9 @@ impl RectIntersect for Rect {
     }
 }
 
+/// used to indicate that an entity (usually a `Sprite`) is validated to prevent reduntancy
+#[derive(Debug, Component, Clone, Copy, Deref)]
+pub(crate) struct Validated(pub bool);
 
 #[cfg(test)]
 mod tests {
