@@ -1,13 +1,13 @@
 //! nukes :D
-mod primitives;
 mod boat;
-mod util;
 mod collision;
-mod world;
 mod oil_rig;
+mod primitives;
+mod util;
+mod world;
 
-use bevy::prelude::*;
 use bevy::camera_controller::pan_camera::PanCamera;
+use bevy::prelude::*;
 
 /// # Warning
 /// Code will break silently if we use something else

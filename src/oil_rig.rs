@@ -6,21 +6,32 @@ use bevy::prelude::*;
 use enum_dispatch::enum_dispatch;
 use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
-use crate::{DEFAULT_SPRITE_SHRINK, WATER_SURFACE, collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects}, primitives::{DecimalPoint, Dimensions, Validated, WidthHeight}, boat::{CircleHud, PlayerScore}, util::{fill_dimensions, point_in_square, resize_inner, tiles_around_point}, world::WorldSize};
+use crate::{
+    DEFAULT_SPRITE_SHRINK, WATER_SURFACE,
+    boat::{CircleHud, PlayerScore},
+    collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects},
+    primitives::{DecimalPoint, Validated, WidthHeight},
+    util::{point_in_square, tiles_around_point},
+    world::WorldSize,
+};
 
 pub struct OilRigPlugin;
 
 impl Plugin for OilRigPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
-            .add_systems(Update, (
-                resize_rigs,
+        app.add_systems(Startup, setup).add_systems(
+            Update,
+            (
                 rig_spawn_points,
                 move_points,
-                points_obsorbed_despawn
-            ).chain());
+                points_obsorbed_despawn,
+            )
+                .chain(),
+        );
     }
 }
+
+const SPRITE_SIZE: Vec2 = Vec2::splat(1024.0);
 
 #[derive(Component, Debug, Copy, Clone)]
 struct OilRig;
@@ -31,13 +42,18 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     let oil_rig_image = asset_server.load("oil_platform.png".to_owned());
 
     let mut spawned_rigs = vec![];
-    for _ in 0..10 {  // temporary
-        spawned_rigs.push(
-            spawn_random_rig(commands.reborrow(), &mut rng, &world_size, oil_rig_image.clone(), &spawned_rigs)
-        );
+    for _ in 0..10 {
+        // temporary
+        spawned_rigs.push(spawn_random_rig(
+            commands.reborrow(),
+            &mut rng,
+            &world_size,
+            oil_rig_image.clone(),
+            &spawned_rigs,
+            SPRITE_SIZE * DEFAULT_SPRITE_SHRINK
+        ));
     }
 }
-
 
 #[enum_dispatch]
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -48,7 +64,6 @@ enum Point {
     Scrap,
 }
 
-
 #[enum_dispatch(Point)]
 trait PointData {
     fn worth(&self) -> u16;
@@ -58,15 +73,15 @@ trait PointData {
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 struct Barrel {
-    spawned_by: Option<Entity>
+    spawned_by: Option<Entity>,
 }
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 struct Coin {
-    spawned_by: Option<Entity>
+    spawned_by: Option<Entity>,
 }
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 struct Scrap {
-    spawned_by: Option<Entity>
+    spawned_by: Option<Entity>,
 }
 
 impl PointData for Coin {
@@ -115,7 +130,10 @@ impl PointAmount {
     fn new(rng: &mut ThreadRng) -> Self {
         let max_point = rng.random_range(SPAWN_POINT_AMOUNT_MAX);
 
-        PointAmount { points: 0, max_point }
+        PointAmount {
+            points: 0,
+            max_point,
+        }
     }
     /// add given amount to points
     fn add(&mut self, points: u16) {
@@ -131,17 +149,6 @@ impl PointAmount {
     }
 }
 
-
-fn resize_rigs(
-    mut queries: ParamSet<(
-        Query<&mut Sprite, With<OilRig>>,
-        Query<(&Sprite, &mut Dimensions), With<OilRig>>
-    )>,
-    assets: Res<Assets<Image>>
-) {
-    resize_inner(queries.p0(), &assets);
-    fill_dimensions(queries.p1(), &assets);
-}
 
 /// maximum amount of points a rig can spawn
 const SPAWN_POINT_AMOUNT_MAX: Range<u16> = 30..40;
@@ -161,21 +168,25 @@ fn rig_spawn_points(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut transforms: Query<(&mut PointAmount, &Transform, &Sprite, Entity), With<OilRig>>,
-    world_size: Single<&WorldSize>
+    world_size: Single<&WorldSize>,
 ) {
     let point_sprites: [(Point, Handle<Image>); 3] = [
         (Coin::default().into(), asset_server.load("coin.png")),
         (Barrel::default().into(), asset_server.load("barrel.png")),
-        (Scrap::default().into(), asset_server.load("scrap.png"))
+        (Scrap::default().into(), asset_server.load("scrap.png")),
     ];
 
     for (mut point_amount, transform, sprite, id) in transforms.iter_mut() {
-        let Some(sprite_size) = sprite.custom_size else { continue; };
-        if point_amount.is_max() { continue; }
+        let Some(sprite_size) = sprite.custom_size else {
+            continue;
+        };
+        if point_amount.is_max() {
+            continue;
+        }
 
         let avaliable_tiles = tiles_around_point(
             transform.translation.xy(),
-            sprite_size.x + SPAWN_POINT_RADIUS_MAX
+            sprite_size.x + SPAWN_POINT_RADIUS_MAX,
         );
         let avaliable_tiles: Vec<_> = avaliable_tiles
             .iter()
@@ -199,7 +210,7 @@ fn rig_spawn_points(
                     scale: Vec2::splat(DEFAULT_SPRITE_SHRINK.powi(2)).extend(0.0),
                     ..default()
                 },
-                chosen_type
+                chosen_type,
             ));
 
             point_amount.add(chosen_type.worth());
@@ -212,44 +223,43 @@ fn move_points(
     mut points_transform: Query<&mut Transform, With<Point>>,
     circle_huds: Query<&CircleHud>,
 ) {
-    for (intersect_huds, mut transform) in points_transform
-        .iter_mut()
-        .filter_map(|transform| {
-            let huds_in_point = circle_huds
-                .iter()
-                .filter(|hud| hud.contains(transform.translation.xy()))
-                .collect::<Vec<_>>();
+    for (intersect_huds, mut transform) in points_transform.iter_mut().filter_map(|transform| {
+        let huds_in_point = circle_huds
+            .iter()
+            .filter(|hud| hud.contains(transform.translation.xy()))
+            .collect::<Vec<_>>();
 
-            if huds_in_point.is_empty() {
-                None
-            } else {
-                Some((huds_in_point, transform))
-            }
-        })
-    {
+        if huds_in_point.is_empty() {
+            None
+        } else {
+            Some((huds_in_point, transform))
+        }
+    }) {
         // move the point toward player for those in 1 player's circle hud
         if intersect_huds.len() == 1 {
             transform.translation = transform.translation.move_towards(
-                intersect_huds.first().unwrap()
-                    .center
-                    .extend(WATER_SURFACE),
-                POINT_SPEED
+                intersect_huds.first().unwrap().center.extend(WATER_SURFACE),
+                POINT_SPEED,
             );
             continue;
         }
 
         // calculate the distance and make the point go to the nearest ship
-        let Some(closest_hud) = intersect_huds.iter()
-            .min_by(|a, b| {
-                let a_distance = transform.translation.distance_squared(a.center.extend(WATER_SURFACE));
-                let b_distance = transform.translation.distance_squared(b.center.extend(WATER_SURFACE));
-                a_distance.total_cmp(&b_distance)
-            }) else { return };
+        let Some(closest_hud) = intersect_huds.iter().min_by(|a, b| {
+            let a_distance = transform
+                .translation
+                .distance_squared(a.center.extend(WATER_SURFACE));
+            let b_distance = transform
+                .translation
+                .distance_squared(b.center.extend(WATER_SURFACE));
+            a_distance.total_cmp(&b_distance)
+        }) else {
+            return;
+        };
 
-        transform.translation = transform.translation.move_towards(
-            closest_hud.center.extend(WATER_SURFACE),
-            POINT_SPEED
-        );
+        transform.translation = transform
+            .translation
+            .move_towards(closest_hud.center.extend(WATER_SURFACE), POINT_SPEED);
     }
 }
 
@@ -258,7 +268,7 @@ fn points_obsorbed_despawn(
     points_transform: Query<(&Transform, &Point, Entity)>,
     circle_huds: Query<&CircleHud>,
     mut oil_rigs: Query<&mut PointAmount, With<OilRig>>,
-    mut player_score: ResMut<PlayerScore>
+    mut player_score: ResMut<PlayerScore>,
 ) {
     for (point_transform, point, id) in points_transform.iter() {
         if circle_huds
@@ -279,21 +289,18 @@ fn points_obsorbed_despawn(
 struct OilRigBundle {
     sprite: Sprite,
     point_amount: PointAmount,
-    dimensions: Dimensions,
     oil_rig: OilRig,
-    validated: Validated
+    validated: Validated,
 }
 
 impl OilRigBundle {
-    fn new(sprite: Handle<Image>, rng: &mut ThreadRng) -> Self {
-        let sprite = Sprite::from_image(sprite);
+    fn new(sprite: Sprite, rng: &mut ThreadRng) -> Self {
 
         OilRigBundle {
             sprite,
             point_amount: PointAmount::new(rng),
-            dimensions: Dimensions::default(),
             oil_rig: OilRig,
-            validated: Validated(false)
+            validated: Validated(false),
         }
     }
 }
@@ -303,17 +310,27 @@ struct RigInfo {
     width: f32,
 }
 
-// TODO hardcoded 
-const RESIZED_RIG_SIZE: f32 = 307.2;
 
+/// spawns a must-valid rig, returns the dimensions and Transform of the spawned rig
+/// ### Panics
+/// assumes that the rig is a square
+/// ### Hangs
+/// if there aren't space
 fn spawn_random_rig(
     mut commands: Commands,
     rng: &mut ThreadRng,
     world_size: &WorldSize,
     image: Handle<Image>,
-    other_rigs: &[(Dimensions, Transform)]
-) -> (Dimensions, Transform) {
-    let mut rotation ;
+    other_rigs: &[(Vec2, Transform)],
+    rig_dimensions: Vec2
+) -> (Vec2, Transform) {
+    assert!((rig_dimensions.x - rig_dimensions.y).abs() < 0.001);
+    let sprite = Sprite {
+        image,
+        custom_size: Some(rig_dimensions),
+        ..default()
+    };
+    let mut rotation;
     let mut x;
     let mut y;
 
@@ -321,18 +338,23 @@ fn spawn_random_rig(
         rotation = rng.random_range(-PI..PI);
         x = rng.random_range(-world_size.0.width / 2.0..world_size.0.width / 2.0);
         y = rng.random_range(-world_size.0.height / 2.0..world_size.0.height / 2.0);
-        if out_of_bounds(world_size, WidthHeight::splat(RESIZED_RIG_SIZE), vec2(x, y), Quat::from_rotation_z(rotation)) {
+        if out_of_bounds(
+            world_size,
+            rig_dimensions.into(),
+            vec2(x, y),
+            Quat::from_rotation_z(rotation),
+        ) {
             continue;
         }
         let rig = RigInfo {
             center: vec2(x, y),
-            width: RESIZED_RIG_SIZE
+            width: rig_dimensions.x,
         };
 
         for (dimension, transform) in other_rigs {
             let other = RigInfo {
                 center: transform.translation.xy(),
-                width: dimension.unwrap().width
+                width: dimension.x,
             };
 
             if !square_does_not_intersects(rig.center, rig.width, other.center, other.width) {
@@ -342,22 +364,19 @@ fn spawn_random_rig(
 
         break;
     }
-    
+
+    let spawn_transform = Transform {
+        translation: vec3(x, y, WATER_SURFACE),
+        rotation: Quat::from_rotation_z(rotation),
+        ..default()
+    };
     commands.spawn((
-        Transform {
-            translation: vec3(x, y, WATER_SURFACE),
-            rotation: Quat::from_rotation_z(rotation),
-            ..default()
-        },
-        OilRigBundle::new(image, rng)
+        spawn_transform,
+        OilRigBundle::new(sprite, rng),
     ));
 
     (
-        Dimensions(Some(WidthHeight::splat(RESIZED_RIG_SIZE))),
-        Transform {
-            translation: vec3(x, y, WATER_SURFACE),
-            rotation: Quat::from_rotation_z(rotation),
-            ..default()
-        },
+        rig_dimensions,
+        spawn_transform
     )
 }

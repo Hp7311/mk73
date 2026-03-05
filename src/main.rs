@@ -1,4 +1,7 @@
-use bevy::{camera_controller::pan_camera::PanCameraPlugin, prelude::*};
+use bevy::{
+    camera_controller::pan_camera::PanCameraPlugin,
+    prelude::*,
+};
 
 fn main() {
     App::new()

@@ -11,13 +11,11 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use crate::CIRCLE_HUD;
-use crate::MainCamera;
 use crate::DEFAULT_SPRITE_SHRINK;
+use crate::MainCamera;
 use crate::WATER_SURFACE;
-use crate::primitives::*;
-use crate::util::fill_dimensions;
 use crate::collision::out_of_bounds;
-use crate::util::resize_inner;
+use crate::primitives::*;
 use crate::util::{
     add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
     move_with_rotation,
@@ -30,15 +28,10 @@ impl Plugin for BoatPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup)
             .insert_resource(PlayerScore(0))
-            .add_systems(Update, (
-                resize_ship,
-                update_ship,
-                update_transform
-            ).chain())
+            .add_systems(Update, (update_ship, update_transform).chain())
             .add_systems(PostUpdate, move_camera.after(TransformSystems::Propagate));
     }
 }
-
 
 #[derive(Component, Debug, Copy, Clone)]
 struct Boat;
@@ -46,14 +39,14 @@ struct Boat;
 #[derive(Component, Debug, Copy, Clone)]
 enum SubKind {
     Submarine,
-    SurfaceShip
+    SurfaceShip,
 }
 
-const YASEN_MAX_SPEED: f32 = 35.0;  // using HashMap?
+const YASEN_MAX_SPEED: f32 = 35.0; // using HashMap?
 const YASEN_BACK_SPEED: f32 = 21.0;
 const YASEN_ACCELERATION: f32 = 0.7;
 
-const YASEN_RAW_SIZE: f32 = 1024.0;
+const YASEN_RAW_SIZE: Vec2 = vec2(1024.0, 156.0);
 /// absolute value of minimum radians that must be reached to reverse the Boat
 const MINIMUM_REVERSE: f32 = PI * (2. / 3.);
 
@@ -76,40 +69,44 @@ fn startup(
     asset_server: Res<AssetServer>,
 ) {
     let position = vec2(100.0, 0.0);
-    let radius = add_circle_hud(YASEN_RAW_SIZE / 2.0) * DEFAULT_SPRITE_SHRINK;
-    commands.spawn((
-        BoatBundle::new(
-            YASEN_MAX_SPEED,
-            YASEN_BACK_SPEED,
-            YASEN_ACCELERATION,
-            position,
-            "yasen.png",
-            asset_server.into_inner(),
-            YASEN_RAW_SIZE / 2.0,
-        ),
-        SubKind::Submarine,
-        Boat,
-    ))
-    .with_children(|parent | {
-        parent.spawn((
-            CircleHudBundle {
-                mesh: Mesh2d(meshes.add(Circle::new(radius)
-                        .to_ring(3.0),
-                )),
-                materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
-            },
-            Transform::from_translation(vec3(0.0, 0.0, CIRCLE_HUD)),
-            CircleHud { radius, center: position }
-        ));
-    });
+    let radius = add_circle_hud(YASEN_RAW_SIZE.x * DEFAULT_SPRITE_SHRINK / 2.0);
+    let sprite = Sprite {
+        image: asset_server.load("yasen.png"),
+        custom_size: Some(YASEN_RAW_SIZE * DEFAULT_SPRITE_SHRINK),
+        ..default()
+    };
+    commands
+        .spawn((
+            BoatBundle::new(
+                YASEN_MAX_SPEED,
+                YASEN_BACK_SPEED,
+                YASEN_ACCELERATION,
+                position,
+                sprite
+            ),
+            SubKind::Submarine,
+            Boat,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                CircleHudBundle {
+                    mesh: Mesh2d(meshes.add(Circle::new(radius).to_ring(3.0))),
+                    materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
+                },
+                Transform::from_translation(vec3(0.0, 0.0, CIRCLE_HUD)),
+                CircleHud {
+                    radius,
+                    center: position,
+                },
+            ));
+        });
 }
-
 
 /// helper struct for accessing the [`Boat`](crate::ship::Boat)'s circle HUD
 #[derive(Debug, Component, Copy, Clone)]
 pub(crate) struct CircleHud {
     pub(crate) radius: f32,
-    pub(crate) center: Vec2
+    pub(crate) center: Vec2,
 }
 
 impl CircleHud {
@@ -118,7 +115,7 @@ impl CircleHud {
         point.distance_squared(self.center) < self.radius.powi(2)
     }
     /// whether a point is at HUD's center
-    /// 
+    ///
     /// adjusted for decimal-point precision
     pub(crate) fn at_center(&self, point: Vec2, decimal_point: DecimalPoint) -> bool {
         let x_diff = (point.x - self.center.x).abs();
@@ -128,7 +125,7 @@ impl CircleHud {
             DecimalPoint::Zero => 1.0,
             DecimalPoint::One => 0.1,
             DecimalPoint::Two => 0.01,
-            DecimalPoint::Three => 0.001
+            DecimalPoint::Three => 0.001,
         };
 
         x_diff < max_distance && y_diff < max_distance
@@ -155,11 +152,41 @@ fn update_ship(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut queries: ParamSet<(
-        Query<(&Transform, &mut CustomTransform, &Radian, &mut TargetRotation, &mut ReleasedAfterReverse), With<Boat>>,
-        Query<(&Transform, &mut CustomTransform, &Radian, &TargetRotation, &TargetSpeed, &Acceleration), With<Boat>>,
-        Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed, &Acceleration, &mut TargetSpeed), With<Boat>>,
-        Query<(&CustomTransform, &mut ReleasedAfterReverse), With<Boat>>
-    )>
+        Query<
+            (
+                &Transform,
+                &mut CustomTransform,
+                &Radian,
+                &mut TargetRotation,
+                &mut ReleasedAfterReverse,
+            ),
+            With<Boat>,
+        >,
+        Query<
+            (
+                &Transform,
+                &mut CustomTransform,
+                &Radian,
+                &TargetRotation,
+                &TargetSpeed,
+                &Acceleration,
+            ),
+            With<Boat>,
+        >,
+        Query<
+            (
+                &Transform,
+                &mut CustomTransform,
+                &Radius,
+                &MaxSpeed,
+                &ReverseSpeed,
+                &Acceleration,
+                &mut TargetSpeed,
+            ),
+            With<Boat>,
+        >,
+        Query<(&CustomTransform, &mut ReleasedAfterReverse), With<Boat>>,
+    )>,
 ) {
     if let Some(cursor_pos) = get_cursor_pos(&window, &camera)
         && buttons.pressed(MouseButton::Left)
@@ -169,25 +196,39 @@ fn update_ship(
     } else {
         ship_to_target(&mut queries.p1());
     }
-    if get_cursor_pos(&window, &camera).is_some()
-        && buttons.just_released(MouseButton::Left)
-    {
+    if get_cursor_pos(&window, &camera).is_some() && buttons.just_released(MouseButton::Left) {
         try_release_after_rev(&mut queries.p3())
     }
 }
 
 /// handle rotation
 fn rotate_ship(
-    transforms: &mut Query<(&Transform, &mut CustomTransform, &Radian, &mut TargetRotation, &mut ReleasedAfterReverse), With<Boat>>,
+    transforms: &mut Query<
+        (
+            &Transform,
+            &mut CustomTransform,
+            &Radian,
+            &mut TargetRotation,
+            &mut ReleasedAfterReverse,
+        ),
+        With<Boat>,
+    >,
     cursor_pos: Vec2,
 ) {
-    for (transform, mut custom_transform, max_turn, mut target_rotation, mut released_after_reverse) in transforms.iter_mut() {
-
-        let raw_moved = get_rotate_radian(cursor_pos, transform.translation.xy());  // diff from radian 0
+    for (
+        transform,
+        mut custom_transform,
+        max_turn,
+        mut target_rotation,
+        mut released_after_reverse,
+    ) in transforms.iter_mut()
+    {
+        let raw_moved = get_rotate_radian(cursor_pos, transform.translation.xy()); // diff from radian 0
         let (.., current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
         let mut target_move = raw_moved;
 
-        let moved = {  // radians to move from current rotation
+        let moved = {
+            // radians to move from current rotation
             let mut moved_from_current = (raw_moved.to_degrees() - current_rotation.to_degrees())
                 .to_radians()
                 .trim();
@@ -197,11 +238,12 @@ fn rotate_ship(
                 custom_transform.reversed = true;
                 moved_from_current = moved_from_current.flip();
                 target_move = target_move.flip()
-
-            } else if custom_transform.reversed && released_after_reverse.0 {  // free to forward again
+            } else if custom_transform.reversed && released_after_reverse.0 {
+                // free to forward again
                 custom_transform.reversed = false;
-                released_after_reverse.0 = false;  // reset. setting to true is done in `try_release_after_rev`
-            } else if custom_transform.reversed {  // unable to go forward, haven't released key yet
+                released_after_reverse.0 = false; // reset. setting to true is done in `try_release_after_rev`
+            } else if custom_transform.reversed {
+                // unable to go forward, haven't released key yet
                 moved_from_current = moved_from_current.flip();
                 target_move = target_move.flip()
             }
@@ -217,18 +259,22 @@ fn rotate_ship(
             } else if moved < 0.0 {
                 custom_transform.rotate_local_z(-ship_max_turn.to_radian_unchecked());
             }
-        } else { // normal
+        } else {
+            // normal
             custom_transform.rotate_local_z(moved.to_radian_unchecked());
         }
 
-        
         *target_rotation = Some(target_move).into();
     }
 }
 
-fn try_release_after_rev(query: &mut Query<(&CustomTransform, &mut ReleasedAfterReverse), With<Boat>>) {
-    for (CustomTransform { reversed, ..}, mut release) in query {
-        if !reversed { continue; }
+fn try_release_after_rev(
+    query: &mut Query<(&CustomTransform, &mut ReleasedAfterReverse), With<Boat>>,
+) {
+    for (CustomTransform { reversed, .. }, mut release) in query {
+        if !reversed {
+            continue;
+        }
 
         release.0 = true;
     }
@@ -236,22 +282,43 @@ fn try_release_after_rev(query: &mut Query<(&CustomTransform, &mut ReleasedAfter
 
 /// handle moving
 fn move_ship(
-    datas: &mut Query<(&Transform, &mut CustomTransform, &Radius, &MaxSpeed, &ReverseSpeed, &Acceleration, &mut TargetSpeed), With<Boat>>,
+    datas: &mut Query<
+        (
+            &Transform,
+            &mut CustomTransform,
+            &Radius,
+            &MaxSpeed,
+            &ReverseSpeed,
+            &Acceleration,
+            &mut TargetSpeed,
+        ),
+        With<Boat>,
+    >,
     cursor_pos: Vec2,
 ) {
-    for (transform, mut custom_transform, radius, max_speed, reverse_speed, acceleration, mut target_speed) in datas.iter_mut() {
+    for (
+        transform,
+        mut custom_transform,
+        radius,
+        max_speed,
+        reverse_speed,
+        acceleration,
+        mut target_speed,
+    ) in datas.iter_mut()
+    {
         let cursor_distance = cursor_pos.distance(transform.translation.xy());
         let speed = if custom_transform.reversed {
             reverse_speed.0
         } else {
             max_speed.0
-        }.get_raw();
+        }
+        .get_raw();
 
         let speed = calculate_from_proportion(
             cursor_distance,
-            add_circle_hud(radius.default_convert().0),
+            add_circle_hud(radius.0),
             speed,
-            radius.default_convert().0,
+            radius.0,
         );
 
         target_speed.0 = Speed::from_raw(speed);
@@ -261,7 +328,9 @@ fn move_ship(
         if speed_diff > acceleration.0.get_raw() {
             custom_transform.speed.add_raw(acceleration.0.get_raw());
         } else if speed_diff < -acceleration.0.get_raw() {
-            custom_transform.speed.subtract_raw(acceleration.0.get_raw());
+            custom_transform
+                .speed
+                .subtract_raw(acceleration.0.get_raw());
         }
     }
 }
@@ -270,10 +339,26 @@ fn move_ship(
 // and not descriminating Bot/Player
 
 /// remember the last move angle and rotate toward it when button not pressed
-fn ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &Radian, &TargetRotation, &TargetSpeed, &Acceleration), With<Boat>>) {
-    for (transform, mut custom_transform, max_turn, target_rotation, target_speed, acceleration) in ships {
+fn ship_to_target(
+    ships: &mut Query<
+        (
+            &Transform,
+            &mut CustomTransform,
+            &Radian,
+            &TargetRotation,
+            &TargetSpeed,
+            &Acceleration,
+        ),
+        With<Boat>,
+    >,
+) {
+    for (transform, mut custom_transform, max_turn, target_rotation, target_speed, acceleration) in
+        ships
+    {
         // ------ rotation
-        let Some(target_rotation) = target_rotation.0 else { continue; };
+        let Some(target_rotation) = target_rotation.0 else {
+            continue;
+        };
 
         let (.., current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
 
@@ -296,27 +381,48 @@ fn ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &Radian, 
         if speed_diff > acceleration.0.get_raw() {
             custom_transform.speed.add_raw(acceleration.0.get_raw());
         } else if speed_diff < -acceleration.0.get_raw() {
-            custom_transform.speed.subtract_raw(acceleration.0.get_raw());
+            custom_transform
+                .speed
+                .subtract_raw(acceleration.0.get_raw());
         }
     }
 }
 
 /// updates [`Boat`]'s [`Transform`] according to its [`CustomTransform`]
- fn update_transform(
-    mut transform_ship: Query<(&mut Transform, &mut CustomTransform, &Children, &Dimensions), With<Boat>>,
+fn update_transform(
+    mut transform_ship: Query<
+        (&mut Transform, &mut CustomTransform, &Children, &Sprite),
+        With<Boat>,
+    >,
     mut circle_huds: Query<&mut CircleHud>,
     world_size: Single<&WorldSize>,
 ) {
-    for (mut transform, mut custom, children, dimension) in transform_ship.iter_mut().filter(|(.., dimension)| dimension.0.is_some()) {
+    for (mut transform, mut custom, children, sprite) in transform_ship.iter_mut() {
+        let Some(custom_size) = sprite.custom_size else {
+            continue;
+        };
+
         let mut translation = custom.position.to_vec3(transform.translation.z);
         if custom.reversed {
-            translation += move_with_rotation(transform.rotation, -custom.speed.get_raw(), transform.translation.z);
+            translation += move_with_rotation(
+                transform.rotation,
+                -custom.speed.get_raw(),
+                transform.translation.z,
+            );
         } else {
-            translation += move_with_rotation(transform.rotation, custom.speed.get_raw(), transform.translation.z);  // ignores frame lagging temporary
+            translation += move_with_rotation(
+                transform.rotation,
+                custom.speed.get_raw(),
+                transform.translation.z,
+            ); // ignores frame lagging temporary
         }
 
-        
-        if out_of_bounds(&world_size, dimension.0.unwrap(), translation.xy(), custom.rotation.to_quat()) {
+        if out_of_bounds(
+            &world_size,
+            custom_size.into(),
+            translation.xy(),
+            custom.rotation.to_quat(),
+        ) {
             println!("Out of bounds");
             return;
         }
@@ -339,15 +445,4 @@ fn ship_to_target(ships: &mut Query<(&Transform, &mut CustomTransform, &Radian, 
 
         // println!("Speed: {} knots", custom.speed.get_knots() as i32);
     }
-}
-
-fn resize_ship(
-    mut queries: ParamSet<(
-        Query<&mut Sprite, With<Boat>>,
-        Query<(&Sprite, &mut Dimensions), With<Boat>>
-    )>,
-    assets: Res<Assets<Image>>
-) {
-    resize_inner(queries.p0(), &assets);
-    fill_dimensions(queries.p1(), &assets);
 }

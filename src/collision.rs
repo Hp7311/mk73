@@ -2,12 +2,16 @@
 
 use bevy::prelude::*;
 
-use crate::{primitives::{CustomTransform, WidthHeight}, util::rotate_vec2, world::WorldSize};
+use crate::{
+    primitives::{CustomTransform, WidthHeight},
+    util::rotate_vec2,
+    world::WorldSize,
+};
 
 /// check if a Sprite is out-of-bounds by checking it's 4 corners
-/// 
+///
 /// `sprite_size` takes a full width * length of a Sprite,
-/// 
+///
 /// `pos` has center point at the center.
 /// ### Performance
 /// slow if close to the border
@@ -15,7 +19,7 @@ pub(crate) fn out_of_bounds(
     bound: &WorldSize,
     sprite_size: WidthHeight,
     pos: Vec2,
-    rotation: Quat
+    rotation: Quat,
 ) -> bool {
     // if not near the border, return without redundant operations
     if !near_bound_coarse(sprite_size, pos, bound) {
@@ -24,9 +28,9 @@ pub(crate) fn out_of_bounds(
 
     let world_bound = Rect::new(
         -bound.0.width / 2.0,
-        -bound.0.height / 2.0, 
+        -bound.0.height / 2.0,
         bound.0.width / 2.0,
-        bound.0.height / 2.0
+        bound.0.height / 2.0,
     );
     let half_size = vec2(sprite_size.width / 2.0, sprite_size.height / 2.0);
 
@@ -35,7 +39,7 @@ pub(crate) fn out_of_bounds(
         vec2(-half_size.x, -half_size.y),
         vec2(half_size.x, -half_size.y),
         vec2(half_size.x, half_size.y),
-        vec2(-half_size.x, half_size.y)
+        vec2(-half_size.x, half_size.y),
     ];
 
     if corners
@@ -48,12 +52,12 @@ pub(crate) fn out_of_bounds(
     {
         return true;
     }
-    
+
     false
 }
 
 /// determine whether perform slow trignometry to calculate out_of_bound
-/// 
+///
 /// `corners` are relative to `pos`
 /// ### Implementation
 /// given a rectangle, a square of side length longer_side ^ 2 will always cover the entirety of the rectangle
@@ -64,7 +68,14 @@ fn near_bound_coarse(sprite_size: WidthHeight, pos: Vec2, bound: &WorldSize) -> 
         sprite_size.width
     } * 2.0;
 
-    out_of_bound_no_rotation(bound, WidthHeight { width: longer_sprite_side, height: longer_sprite_side }, &pos)
+    out_of_bound_no_rotation(
+        bound,
+        WidthHeight {
+            width: longer_sprite_side,
+            height: longer_sprite_side,
+        },
+        &pos,
+    )
 }
 
 /// faster version of out_of_bounds with a point, no rotation
@@ -75,9 +86,9 @@ pub(crate) fn out_of_bound_no_rotation(
 ) -> bool {
     let world_bound = Rect::new(
         -bound.0.width / 2.0,
-        -bound.0.height / 2.0, 
+        -bound.0.height / 2.0,
         bound.0.width / 2.0,
-        bound.0.height / 2.0
+        bound.0.height / 2.0,
     );
     let half_size = vec2(sprite_size.width / 2.0, sprite_size.height / 2.0);
 
@@ -86,7 +97,7 @@ pub(crate) fn out_of_bound_no_rotation(
         vec2(-half_size.x, -half_size.y),
         vec2(half_size.x, -half_size.y),
         vec2(half_size.x, half_size.y),
-        vec2(-half_size.x, half_size.y)
+        vec2(-half_size.x, half_size.y),
     ];
 
     if corners.iter().any(|corner| {
@@ -95,7 +106,7 @@ pub(crate) fn out_of_bound_no_rotation(
     }) {
         return true;
     }
-    
+
     false
 }
 
@@ -106,7 +117,7 @@ pub(crate) fn square_does_not_intersects(
     center: Vec2,
     mut length: f32,
     other_center: Vec2,
-    mut other_length: f32
+    mut other_length: f32,
 ) -> bool {
     length *= 1.5;
     other_length *= 1.5;
@@ -124,10 +135,7 @@ pub(crate) fn square_does_not_intersects(
     let other_top = other_center.y + other_length;
     let other_bottom = other_center.y - other_length;
 
-    right <= other_left
-        || left >= other_right
-        || top <= other_bottom
-        || bottom >= other_top
+    right <= other_left || left >= other_right || top <= other_bottom || bottom >= other_top
 }
 
 // copied from https://github.com/SoftbearStudios/mk48/tree/main/server/src/collision.rs with minor modifications
@@ -148,7 +156,8 @@ pub(crate) fn sat_collision(
     let other_sweep = other_transform.speed.get_raw(); // * delta_seconds;
 
     let d2 = transform
-        .position.0
+        .position
+        .0
         .distance_squared(other_transform.position.0);
     let r2 = (radius + other_radius + sweep + other_sweep).powi(2);
     if d2 > r2 {
@@ -242,17 +251,21 @@ fn sat_collision_half(
     true
 }
 
-
 #[cfg(test)]
 mod tests {
     use bevy::math::vec2;
 
-
     use super::*;
     #[test]
     fn test_outofbound() {
-        let bound = WorldSize(WidthHeight { width: 10.0, height: 10.0 });
-        let sprite_size = WidthHeight { width: 4.0, height: 4.0 };
+        let bound = WorldSize(WidthHeight {
+            width: 10.0,
+            height: 10.0,
+        });
+        let sprite_size = WidthHeight {
+            width: 4.0,
+            height: 4.0,
+        };
         let pos = vec2(3.0, 3.01);
         let rotation = Quat::from_rotation_z(90.0f32.to_radians());
 

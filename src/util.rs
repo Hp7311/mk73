@@ -3,8 +3,7 @@
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
 
-use crate::{DEFAULT_SPRITE_SHRINK, MainCamera, primitives::{Dimensions, WidthHeight}};
-
+use crate::{DEFAULT_SPRITE_SHRINK, MainCamera};
 
 /// gets the rotation in radians according to `source` and `destination`
 ///
@@ -23,10 +22,8 @@ pub(crate) fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
 pub(crate) fn move_with_rotation(rotation: Quat, speed: f32, z_index: f32) -> Vec3 {
     let (.., move_angle) = rotation.to_euler(EulerRot::XYZ);
 
-    (vec2(move_angle.cos(), move_angle.sin()) * speed)
-        .extend(z_index)
+    (vec2(move_angle.cos(), move_angle.sin()) * speed).extend(z_index)
 }
-
 
 /// centre point at middle of window
 pub(crate) fn get_cursor_pos(
@@ -96,7 +93,6 @@ pub(crate) fn add_circle_hud(length: f32) -> f32 {
     length * 0.7 + length
 }
 
-
 pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
     let angle = angle.to_euler(EulerRot::XYZ).2;
 
@@ -106,32 +102,14 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
     )
 }
 
-
-/// fill in the dimensions of a Sprite using it's `custom_size`
-pub(crate) fn fill_dimensions<T: Component>(mut query: Query<(&Sprite, &mut Dimensions), With<T>>, images: &Res<Assets<Image>>) {
-    for (sprite, mut dimension) in query.iter_mut() {
-        if images.get(&sprite.image).is_none() {
-            continue;
-        };
-        let Some(size) = sprite.custom_size else {
-            continue;
-        };
-        if dimension.0.is_some() {
-            continue;
-        }
-
-        *dimension = Dimensions(Some(WidthHeight {
-            width: size.x,
-            height: size.y
-        }));
-    }
-}
-
 /// resize [`Sprite`]s by default constant
 /// ### The sprite's `custom_size` attribute is modified, NOT the `transform`
-pub(crate) fn resize_inner<T: Component>(mut sprites: Query<&mut Sprite, With<T>>, assets: &Res<Assets<Image>>) {
+#[deprecated]
+pub(crate) fn resize_inner<T: Component>(
+    mut sprites: Query<&mut Sprite, With<T>>,
+    assets: &Res<Assets<Image>>,
+) {
     for mut sprite in sprites.iter_mut() {
-
         let Some(image) = assets.get(&sprite.image) else {
             continue;
         };

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::primitives::WidthHeight;
 
-const WORLD_MIN: Vec2 = vec2(2000.0, 1000.0);
+const WORLD_MIN: Vec2 = vec2(3000.0, 1500.0);
 const WORLD_EXPAND: f32 = 500.0;
 
 const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
@@ -26,7 +26,6 @@ impl Default for WorldSize {
 
 #[derive(Component, Debug, Copy, Clone)]
 struct Background;
-
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // in Sprites, translation is the center point of the Sprite
@@ -52,12 +51,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
         Background,
     ));
-    
+
     commands.spawn(WorldSize(world_size));
 }
 
 /// gets the size of the World from the `minimum_size` and provided expand by per multiple
-/// 
+///
 /// assumes that expand both axis
 fn get_map_size(player_num: u32, minimum_size: Vec2, expand_per_multiple: f32) -> Vec2 {
     let expand_per_multiple = Vec2::splat(expand_per_multiple);

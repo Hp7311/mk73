@@ -1,8 +1,11 @@
-use std::{f32::consts::PI, ops::{AddAssign, Neg}};
+use std::{
+    f32::consts::PI,
+    ops::{AddAssign, Neg},
+};
 
 use bevy::prelude::*;
 
-use crate::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK, WATER_SURFACE};
+use crate::{DEFAULT_MAX_TURN_DEG, WATER_SURFACE};
 
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub(crate) struct CustomTransform {
@@ -10,7 +13,7 @@ pub(crate) struct CustomTransform {
     pub(crate) speed: Speed,
     pub(crate) position: Position,
     /// stores the radian to move, with -> of Sprite as 0
-    /// 
+    ///
     /// ignores any reverse, calculates them like normal
     pub(crate) rotation: Radian,
     pub(crate) reversed: bool,
@@ -33,11 +36,6 @@ impl CustomTransform {
 #[derive(Component, Debug, Copy, Clone, Deref)]
 pub(crate) struct Radius(pub f32);
 
-impl Radius {
-    pub(crate) fn default_convert(&self) -> Self {
-        Radius(self.0 * DEFAULT_SPRITE_SHRINK)
-    }
-}
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub(crate) struct Speed(f32);
 
@@ -141,7 +139,7 @@ impl Position {
     }
 }
 /// the altitude of an entity, with 0 being the surface and going up with increasing
-/// 
+///
 /// implemented as a trait to sync with [`Transform::translation`]'s `z`-ordering
 // TODO
 pub(crate) trait Altitude {}
@@ -171,24 +169,21 @@ pub(crate) struct BoatBundle {
     target_speed: TargetSpeed,
     /// maximum speed acceleration per frame
     acceleration: Acceleration,
-    /// stores dimension of the image once loaded
-    dimensions: Dimensions,
-    validated: Validated
 }
 
 impl BoatBundle {
-    /// default to rotated 90 degrees and 2.0 turning
+    /// all Speeds are in knots
+    ///
+    /// radius derived
     pub(crate) fn new(
         max_speed: f32,
         reverse_speed: f32,
         acceleration: f32,
         position: Vec2,
-        sprite_name: &str,
-        asset_server: &AssetServer,
-        radius: f32,
+        sprite: Sprite
     ) -> Self {
         const SPRITE_ROTATION: f32 = 90.0;
-        let sprite = Sprite::from_image(asset_server.load(sprite_name.to_owned()));
+        assert!(sprite.custom_size.is_some());
 
         let transform = Transform {
             translation: position.extend(WATER_SURFACE),
@@ -196,25 +191,24 @@ impl BoatBundle {
             ..default()
         };
 
+        println!("Radius: {}", sprite.custom_size.unwrap().x / 2.0);
         BoatBundle {
             max_turn: Radian::from_deg(DEFAULT_MAX_TURN_DEG),
             max_speed: MaxSpeed(Speed::from_knots(max_speed)),
             reverse_speed: ReverseSpeed(Speed::from_knots(reverse_speed)),
             transform,
+            radius: Radius(sprite.custom_size.unwrap().x / 2.0),
             sprite,
-            radius: Radius(radius),
             custom_transform: CustomTransform {
                 speed: Speed(0.0),
                 position: Position(position),
                 rotation: Radian::from_deg(SPRITE_ROTATION),
-                reversed: false
+                reversed: false,
             },
             mouse_target: None.into(),
             target_speed: TargetSpeed(Speed::from_knots(0.0)),
             reverse_released: ReleasedAfterReverse(false),
             acceleration: Acceleration(Speed::from_knots(acceleration)),
-            dimensions: Dimensions(None),
-            validated: Validated(false)
         }
     }
 }
@@ -237,11 +231,10 @@ pub(crate) enum DecimalPoint {
 }
 
 /// the ship will reverse to any angle if LMB is held down after reversing.
-/// 
+///
 /// once released, mouse being in the forward zone will be interpretated as forwards
 #[derive(Component, Debug, Clone, Copy, Deref)]
 pub(crate) struct ReleasedAfterReverse(pub bool);
-
 
 /// flips a radian 180 degrees
 pub(crate) trait FlipRadian {
@@ -269,9 +262,6 @@ impl TrimRadian for f32 {
     }
 }
 
-#[derive(Component, Debug, Clone, Copy, Default, Deref)]
-pub(crate) struct Dimensions(pub Option<WidthHeight>);
-
 #[derive(Component, Debug, Copy, Clone)]
 pub(crate) struct WidthHeight {
     pub(crate) width: f32,
@@ -279,7 +269,10 @@ pub(crate) struct WidthHeight {
 }
 
 impl WidthHeight {
-    pub(crate) const ZERO: Self = WidthHeight { width: 0.0, height: 0.0 };
+    pub(crate) const ZERO: Self = WidthHeight {
+        width: 0.0,
+        height: 0.0,
+    };
     pub(crate) fn to_rect(self, center_pos: Vec2) -> Rect {
         Rect::from_center_size(center_pos, vec2(self.width, self.height))
     }
@@ -287,13 +280,19 @@ impl WidthHeight {
         vec2(self.width, self.height)
     }
     pub(crate) fn splat(num: f32) -> Self {
-        WidthHeight { width: num, height: num }
+        WidthHeight {
+            width: num,
+            height: num,
+        }
     }
 }
 
 impl From<Vec2> for WidthHeight {
     fn from(value: Vec2) -> Self {
-        WidthHeight { width: value.x, height: value.y }
+        WidthHeight {
+            width: value.x,
+            height: value.y,
+        }
     }
 }
 
@@ -315,7 +314,10 @@ mod tests {
     }
     #[test]
     fn test_circle_hud() {
-        let circle_hud = CircleHud { radius: 3.0, center: vec2(0., 0.)};
+        let circle_hud = CircleHud {
+            radius: 3.0,
+            center: vec2(0., 0.),
+        };
 
         let target = vec2(2.8, 0.0);
 
