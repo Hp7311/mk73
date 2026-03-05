@@ -1,5 +1,6 @@
+//! nukes :D
 mod primitives;
-mod ship;
+mod boat;
 mod util;
 mod collision;
 mod world;
@@ -19,7 +20,7 @@ const DEFAULT_MAX_ZOOM: f32 = 2.0;
 const WATER_SURFACE: f32 = 0.0;
 const CIRCLE_HUD: f32 = 30.0;
 
-pub use ship::ShipPlugin;
+pub use boat::BoatPlugin;
 pub use oil_rig::OilRigPlugin;
 pub use world::WorldPlugin;
 

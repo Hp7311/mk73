@@ -38,16 +38,38 @@ impl Radius {
         Radius(self.0 * DEFAULT_SPRITE_SHRINK)
     }
 }
+#[derive(Component, Debug, Copy, Clone, Default)]
+pub(crate) struct Speed(f32);
+
+impl Speed {
+    pub(crate) fn from_knots(knots: f32) -> Self {
+        Speed(knots / 23.0)
+    }
+    pub(crate) fn from_raw(raw: f32) -> Self {
+        Speed(raw)
+    }
+    pub(crate) fn add_raw(&mut self, raw: f32) {
+        self.0 += raw;
+    }
+    pub(crate) fn subtract_raw(&mut self, raw: f32) {
+        self.0 -= raw;
+    }
+    pub(crate) fn get_knots(&self) -> f32 {
+        self.0 * 23.0
+    }
+    pub(crate) fn get_raw(&self) -> f32 {
+        self.0
+    }
+}
+
 #[derive(Component, Debug, Copy, Clone, Default, Deref)]
-pub(crate) struct Speed(pub f32);
+pub(crate) struct MaxSpeed(pub Speed);
 #[derive(Component, Debug, Copy, Clone, Default, Deref)]
-pub(crate) struct MaxSpeed(pub f32);
-#[derive(Component, Debug, Copy, Clone, Default, Deref)]
-pub(crate) struct ReverseSpeed(pub f32);
+pub(crate) struct ReverseSpeed(pub Speed);
 
 /// currently interpretated as maximum pixels of speed per frame
 #[derive(Component, Debug, Clone, Copy, Default, Deref)]
-pub(crate) struct Acceleration(pub f32);
+pub(crate) struct Acceleration(pub Speed);
 
 #[derive(Component, Debug, Clone, Copy, Default, Deref)]
 pub(crate) struct TargetRotation(pub Option<f32>);
@@ -62,13 +84,7 @@ impl From<Option<f32>> for TargetRotation {
 }
 
 #[derive(Component, Debug, Copy, Clone, Default, Deref)]
-pub(crate) struct TargetSpeed(pub f32);
-
-impl From<f32> for TargetSpeed {
-    fn from(value: f32) -> Self {
-        TargetSpeed(value)
-    }
-}
+pub(crate) struct TargetSpeed(pub Speed);
 
 #[derive(Component, Debug, Copy, Clone, Default, Deref)]
 pub(crate) struct Radian(pub f32);
@@ -124,14 +140,19 @@ impl Position {
         self.0.extend(z_index)
     }
 }
+/// the altitude of an entity, with 0 being the surface and going up with increasing
+/// 
+/// implemented as a trait to sync with [`Transform::translation`]'s `z`-ordering
+// TODO
+pub(crate) trait Altitude {}
 
 #[derive(Bundle, Debug, Clone)]
-pub(crate) struct ShipBundle {
+pub(crate) struct BoatBundle {
     /// maximum angle in radians that you can turn per frame, consider deriving from `max_speed`
     /// ### Warning
     /// keep the value small
     max_turn: Radian,
-    /// max speed that the Ship can have
+    /// max speed that the Boat can have
     max_speed: MaxSpeed,
     reverse_speed: ReverseSpeed,
     /// tranform to update in seperate system
@@ -146,7 +167,7 @@ pub(crate) struct ShipBundle {
     radius: Radius,
     /// where the user's mouse was facing
     mouse_target: TargetRotation,
-    /// the target speed of the Ship
+    /// the target speed of the Boat
     target_speed: TargetSpeed,
     /// maximum speed acceleration per frame
     acceleration: Acceleration,
@@ -155,7 +176,7 @@ pub(crate) struct ShipBundle {
     validated: Validated
 }
 
-impl ShipBundle {
+impl BoatBundle {
     /// default to rotated 90 degrees and 2.0 turning
     pub(crate) fn new(
         max_speed: f32,
@@ -163,7 +184,7 @@ impl ShipBundle {
         acceleration: f32,
         position: Vec2,
         sprite_name: &str,
-        asset_server: AssetServer,
+        asset_server: &AssetServer,
         radius: f32,
     ) -> Self {
         const SPRITE_ROTATION: f32 = 90.0;
@@ -175,10 +196,10 @@ impl ShipBundle {
             ..default()
         };
 
-        ShipBundle {
+        BoatBundle {
             max_turn: Radian::from_deg(DEFAULT_MAX_TURN_DEG),
-            max_speed: MaxSpeed(max_speed),
-            reverse_speed: ReverseSpeed(reverse_speed),
+            max_speed: MaxSpeed(Speed::from_knots(max_speed)),
+            reverse_speed: ReverseSpeed(Speed::from_knots(reverse_speed)),
             transform,
             sprite,
             radius: Radius(radius),
@@ -189,9 +210,9 @@ impl ShipBundle {
                 reversed: false
             },
             mouse_target: None.into(),
-            target_speed: TargetSpeed(0.0),
+            target_speed: TargetSpeed(Speed::from_knots(0.0)),
             reverse_released: ReleasedAfterReverse(false),
-            acceleration: Acceleration(acceleration),
+            acceleration: Acceleration(Speed::from_knots(acceleration)),
             dimensions: Dimensions(None),
             validated: Validated(false)
         }
@@ -265,44 +286,14 @@ impl WidthHeight {
     pub(crate) fn to_vec2(self) -> Vec2 {
         vec2(self.width, self.height)
     }
+    pub(crate) fn splat(num: f32) -> Self {
+        WidthHeight { width: num, height: num }
+    }
 }
 
 impl From<Vec2> for WidthHeight {
     fn from(value: Vec2) -> Self {
         WidthHeight { width: value.x, height: value.y }
-    }
-}
-
-pub(crate) trait RectIntersect {
-    fn intersects_with(&self, rhs: &Self) -> bool;
-    fn x(&self) -> f32;
-    fn y(&self) -> f32;
-    fn right(&self) -> f32;
-    fn bottom(&self) -> f32;
-}
-
-impl RectIntersect for Rect {
-    fn intersects_with(&self, rhs: &Self) -> bool {
-        self.x() < rhs.right()
-            && self.right() > rhs.x()
-            && self.y() < rhs.bottom()
-            && self.bottom() > rhs.y()
-    }
-    
-    fn x(&self) -> f32 {
-        self.min.x
-    }
-    
-    fn y(&self) -> f32 {
-        self.min.y
-    }
-    
-    fn right(&self) -> f32 {
-        self.max.x
-    }
-    
-    fn bottom(&self) -> f32 {
-        self.max.y
     }
 }
 
@@ -312,7 +303,7 @@ pub(crate) struct Validated(pub bool);
 
 #[cfg(test)]
 mod tests {
-    use crate::ship::CircleHud;
+    use crate::boat::CircleHud;
 
     use super::*;
     #[test]

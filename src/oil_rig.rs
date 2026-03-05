@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use enum_dispatch::enum_dispatch;
 use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
-use crate::{DEFAULT_SPRITE_SHRINK, WATER_SURFACE, collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects}, primitives::{DecimalPoint, Dimensions, RectIntersect, Validated, WidthHeight}, ship::{CircleHud, PlayerScore}, util::{fill_dimensions, point_in_square, resize_inner, tiles_around_point}, world::WorldSize};
+use crate::{DEFAULT_SPRITE_SHRINK, WATER_SURFACE, collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects}, primitives::{DecimalPoint, Dimensions, Validated, WidthHeight}, boat::{CircleHud, PlayerScore}, util::{fill_dimensions, point_in_square, resize_inner, tiles_around_point}, world::WorldSize};
 
 pub struct OilRigPlugin;
 
@@ -15,7 +15,6 @@ impl Plugin for OilRigPlugin {
         app.add_systems(Startup, setup)
             .add_systems(Update, (
                 resize_rigs,
-                validate_rigs,
                 rig_spawn_points,
                 move_points,
                 points_obsorbed_despawn
@@ -27,23 +26,15 @@ impl Plugin for OilRigPlugin {
 struct OilRig;
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let world_size = WorldSize::default().0;
+    let world_size = WorldSize::default();
     let mut rng = rand::rng();
     let oil_rig_image = asset_server.load("oil_platform.png".to_owned());
 
+    let mut spawned_rigs = vec![];
     for _ in 0..10 {  // temporary
-        let rotation = rng.random_range(-PI..PI);
-        let x = rng.random_range(-world_size.width.round() as i32 / 2..world_size.width.round() as i32 / 2) as f32;
-        let y = rng.random_range(-world_size.height.round() as i32 / 2..world_size.height.round() as i32 / 2) as f32;
-        
-        commands.spawn((
-            Transform {
-                translation: vec3(x, y, WATER_SURFACE),
-                rotation: Quat::from_rotation_z(rotation),
-                ..default()
-            },
-            OilRigBundle::new(oil_rig_image.clone(), &mut rng)
-        ));
+        spawned_rigs.push(
+            spawn_random_rig(commands.reborrow(), &mut rng, &world_size, oil_rig_image.clone(), &spawned_rigs)
+        );
     }
 }
 
@@ -150,72 +141,6 @@ fn resize_rigs(
 ) {
     resize_inner(queries.p0(), &assets);
     fill_dimensions(queries.p1(), &assets);
-}
-
-/// despawn rigs that intersect with another rig
-fn validate_rigs(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut sprites: Query<(&Dimensions, &Transform, Entity, &mut Validated), With<OilRig>>,
-    world_size: Single<&WorldSize>
-) {
-    let mut rigs = vec![];
-    
-    for (dimension, transform, id, mut validated) in sprites.iter_mut().filter(|(d, ..)| d.0.is_some()) {
-        if validated.0 {
-            continue;
-        }
-        validated.0 = true;
-        let WidthHeight { width, height } = dimension.unwrap();
-
-        assert!((width - height).abs() < 0.01);
-        rigs.push((
-            (width, transform.translation.xy()),
-            transform.rotation,
-            id
-        ));
-    }
-
-    let despawning = validate_rig_raw(rigs, *world_size);
-    for id in despawning.iter() {
-        commands.get_entity(*id).unwrap()
-            .despawn();
-    }
-
-    let mut rng = rand::rng();
-    let oil_rig_image = asset_server.load("oil_platform.png");
-    for _ in 0..despawning.len() {
-        let rotation = rng.random_range(-PI..PI);
-        let x = rng.random_range(-world_size.0.width.round() as i32 / 2..world_size.0.width.round() as i32 / 2) as f32;
-        let y = rng.random_range(-world_size.0.height.round() as i32 / 2..world_size.0.height.round() as i32 / 2) as f32;
-        
-        commands.spawn((
-            Transform {
-                translation: vec3(x, y, WATER_SURFACE),
-                rotation: Quat::from_rotation_z(rotation),
-                ..default()
-            },
-            OilRigBundle::new(oil_rig_image.clone(), &mut rng)
-        ));
-        // here, we don't need to validate again because the systems is run every Update, so next frame will call again
-    }
-}
-
-/// returns vector of Entities to despawn
-fn validate_rig_raw(rigs: Vec<((f32, Vec2), Quat, Entity)>, world_size: &WorldSize) -> Vec<Entity> {
-    let mut despawning_id = vec![];
-    for (rect, rotation, id) in rigs.iter() {
-        if rigs.iter()
-            .filter(|(target, ..)| target != rect)
-            .any(|(target, ..)| !square_does_not_intersects(rect.1, rect.0, target.1, target.0))
-            || out_of_bounds(world_size, WidthHeight { width: rect.0, height: rect.0 }, rect.1, *rotation)
-        {
-            despawning_id.push(*id);
-        }
-        // TODO create a Rect-like structure instead of operating with WidthHeight and Vec2 etc.
-    }
-
-    despawning_id
 }
 
 /// maximum amount of points a rig can spawn
@@ -371,4 +296,68 @@ impl OilRigBundle {
             validated: Validated(false)
         }
     }
+}
+
+struct RigInfo {
+    center: Vec2,
+    width: f32,
+}
+
+// TODO hardcoded 
+const RESIZED_RIG_SIZE: f32 = 307.2;
+
+fn spawn_random_rig(
+    mut commands: Commands,
+    rng: &mut ThreadRng,
+    world_size: &WorldSize,
+    image: Handle<Image>,
+    other_rigs: &[(Dimensions, Transform)]
+) -> (Dimensions, Transform) {
+    let mut rotation ;
+    let mut x;
+    let mut y;
+
+    'outer: loop {
+        rotation = rng.random_range(-PI..PI);
+        x = rng.random_range(-world_size.0.width / 2.0..world_size.0.width / 2.0);
+        y = rng.random_range(-world_size.0.height / 2.0..world_size.0.height / 2.0);
+        if out_of_bounds(world_size, WidthHeight::splat(RESIZED_RIG_SIZE), vec2(x, y), Quat::from_rotation_z(rotation)) {
+            continue;
+        }
+        let rig = RigInfo {
+            center: vec2(x, y),
+            width: RESIZED_RIG_SIZE
+        };
+
+        for (dimension, transform) in other_rigs {
+            let other = RigInfo {
+                center: transform.translation.xy(),
+                width: dimension.unwrap().width
+            };
+
+            if !square_does_not_intersects(rig.center, rig.width, other.center, other.width) {
+                continue 'outer;
+            }
+        }
+
+        break;
+    }
+    
+    commands.spawn((
+        Transform {
+            translation: vec3(x, y, WATER_SURFACE),
+            rotation: Quat::from_rotation_z(rotation),
+            ..default()
+        },
+        OilRigBundle::new(image, rng)
+    ));
+
+    (
+        Dimensions(Some(WidthHeight::splat(RESIZED_RIG_SIZE))),
+        Transform {
+            translation: vec3(x, y, WATER_SURFACE),
+            rotation: Quat::from_rotation_z(rotation),
+            ..default()
+        },
+    )
 }

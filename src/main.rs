@@ -7,7 +7,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(PanCameraPlugin)
         .add_plugins(mk73::WorldPlugin)
-        .add_plugins(mk73::ShipPlugin)
+        .add_plugins(mk73::BoatPlugin)
         .add_plugins(mk73::OilRigPlugin)
         .run();
 }

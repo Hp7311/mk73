@@ -116,13 +116,13 @@ pub(crate) fn square_does_not_intersects(
 
     let left = center.x - length;
     let right = center.x + length;
-    let top = center.y - length;
-    let bottom = center.y + length;
+    let top = center.y + length;
+    let bottom = center.y - length;
 
     let other_left = other_center.x - other_length;
     let other_right = other_center.x + other_length;
-    let other_top = other_center.y - other_length;
-    let other_bottom = other_center.y + other_length;
+    let other_top = other_center.y + other_length;
+    let other_bottom = other_center.y - other_length;
 
     right <= other_left
         || left >= other_right
@@ -144,8 +144,8 @@ pub(crate) fn sat_collision(
     mut other_dimensions: Vec2,
     other_radius: f32,
 ) -> bool {
-    let sweep = transform.speed.0; // * delta_seconds;  // mk48 uses a meter -> actual speed
-    let other_sweep = other_transform.speed.0; // * delta_seconds;
+    let sweep = transform.speed.get_raw(); // * delta_seconds;  // mk48 uses a meter -> actual speed
+    let other_sweep = other_transform.speed.get_raw(); // * delta_seconds;
 
     let d2 = transform
         .position.0

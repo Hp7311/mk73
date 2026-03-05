@@ -2,8 +2,8 @@ use bevy::prelude::*;
 
 use crate::primitives::WidthHeight;
 
-const WORLD_MIN: Vec2 = vec2(4000.0, 2000.0);
-const WORLD_EXPAND: f32 = 2000.0;
+const WORLD_MIN: Vec2 = vec2(2000.0, 1000.0);
+const WORLD_EXPAND: f32 = 500.0;
 
 const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
 
