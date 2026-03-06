@@ -44,7 +44,7 @@ enum SubKind {
 
 const YASEN_MAX_SPEED: f32 = 35.0; // using HashMap?
 const YASEN_BACK_SPEED: f32 = 21.0;
-const YASEN_ACCELERATION: f32 = 0.7;
+const YASEN_ACCELERATION: f32 = 0.3;
 
 const YASEN_RAW_SIZE: Vec2 = vec2(1024.0, 156.0);
 /// absolute value of minimum radians that must be reached to reverse the Boat
@@ -105,8 +105,8 @@ fn startup(
 /// helper struct for accessing the [`Boat`](crate::ship::Boat)'s circle HUD
 #[derive(Debug, Component, Copy, Clone)]
 pub(crate) struct CircleHud {
-    pub(crate) radius: f32,
-    pub(crate) center: Vec2,
+    pub radius: f32,
+    pub center: Vec2,
 }
 
 impl CircleHud {
@@ -158,7 +158,7 @@ fn update_ship(
                 &mut CustomTransform,
                 &Radian,
                 &mut TargetRotation,
-                &mut ReleasedAfterReverse,
+                &LmbReleased,
             ),
             With<Boat>,
         >,
@@ -185,7 +185,7 @@ fn update_ship(
             ),
             With<Boat>,
         >,
-        Query<(&CustomTransform, &mut ReleasedAfterReverse), With<Boat>>,
+        Query<&mut LmbReleased, With<Boat>>,
     )>,
 ) {
     if let Some(cursor_pos) = get_cursor_pos(&window, &camera)
@@ -196,8 +196,15 @@ fn update_ship(
     } else {
         ship_to_target(&mut queries.p1());
     }
+
     if get_cursor_pos(&window, &camera).is_some() && buttons.just_released(MouseButton::Left) {
-        try_release_after_rev(&mut queries.p3())
+        for mut released in queries.p3() {
+            released.0 = true;
+        }
+    } else if buttons.pressed(MouseButton::Left) {
+        for mut released in queries.p3() {
+            released.0 = false;
+        }
     }
 }
 
@@ -209,7 +216,7 @@ fn rotate_ship(
             &mut CustomTransform,
             &Radian,
             &mut TargetRotation,
-            &mut ReleasedAfterReverse,
+            &LmbReleased,
         ),
         With<Boat>,
     >,
@@ -220,9 +227,10 @@ fn rotate_ship(
         mut custom_transform,
         max_turn,
         mut target_rotation,
-        mut released_after_reverse,
+        released,
     ) in transforms.iter_mut()
     {
+
         let raw_moved = get_rotate_radian(cursor_pos, transform.translation.xy()); // diff from radian 0
         let (.., current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
         let mut target_move = raw_moved;
@@ -233,17 +241,15 @@ fn rotate_ship(
                 .to_radians()
                 .trim();
 
-            // if reversing, adjust return value
-            if moved_from_current.abs() > MINIMUM_REVERSE {
+            // -- adjust for reversed ---
+            if moved_from_current.abs() > MINIMUM_REVERSE && released.0 {  // mouse in area and LMB released
                 custom_transform.reversed = true;
                 moved_from_current = moved_from_current.flip();
                 target_move = target_move.flip()
-            } else if custom_transform.reversed && released_after_reverse.0 {
-                // free to forward again
+            }
+            else if custom_transform.reversed && released.0 {  // already reversing but LMB released
                 custom_transform.reversed = false;
-                released_after_reverse.0 = false; // reset. setting to true is done in `try_release_after_rev`
-            } else if custom_transform.reversed {
-                // unable to go forward, haven't released key yet
+            } else if custom_transform.reversed {  // unable to go forward, haven't released key yet
                 moved_from_current = moved_from_current.flip();
                 target_move = target_move.flip()
             }
@@ -268,17 +274,6 @@ fn rotate_ship(
     }
 }
 
-fn try_release_after_rev(
-    query: &mut Query<(&CustomTransform, &mut ReleasedAfterReverse), With<Boat>>,
-) {
-    for (CustomTransform { reversed, .. }, mut release) in query {
-        if !reversed {
-            continue;
-        }
-
-        release.0 = true;
-    }
-}
 
 /// handle moving
 fn move_ship(
@@ -307,17 +302,16 @@ fn move_ship(
     ) in datas.iter_mut()
     {
         let cursor_distance = cursor_pos.distance(transform.translation.xy());
-        let speed = if custom_transform.reversed {
-            reverse_speed.0
+        let max_speed = if custom_transform.reversed {
+            - reverse_speed.0.get_raw()
         } else {
-            max_speed.0
-        }
-        .get_raw();
+            max_speed.0.get_raw()
+        };
 
         let speed = calculate_from_proportion(
             cursor_distance,
             add_circle_hud(radius.0),
-            speed,
+            max_speed,
             radius.0,
         );
 
@@ -325,12 +319,15 @@ fn move_ship(
 
         // adjust for acceleration
         let speed_diff = speed - custom_transform.speed.get_raw();
-        if speed_diff > acceleration.0.get_raw() {
+
+        if speed_diff > acceleration.0.get_raw() {  // accelerating too much forwards
             custom_transform.speed.add_raw(acceleration.0.get_raw());
-        } else if speed_diff < -acceleration.0.get_raw() {
-            custom_transform
-                .speed
-                .subtract_raw(acceleration.0.get_raw());
+        } else if speed_diff < -acceleration.0.get_raw() {  // accelerating too much backwards
+            custom_transform.speed.subtract_raw(acceleration.0.get_raw());
+        }
+        // not exceeding acceleration
+        else if speed_diff.abs() > 0.1 {
+            custom_transform.speed.overwrite_with_raw(speed);
         }
     }
 }
@@ -403,19 +400,12 @@ fn update_transform(
         };
 
         let mut translation = custom.position.to_vec3(transform.translation.z);
-        if custom.reversed {
-            translation += move_with_rotation(
-                transform.rotation,
-                -custom.speed.get_raw(),
-                transform.translation.z,
-            );
-        } else {
-            translation += move_with_rotation(
-                transform.rotation,
-                custom.speed.get_raw(),
-                transform.translation.z,
-            ); // ignores frame lagging temporary
-        }
+        
+        translation += move_with_rotation(
+            transform.rotation,
+            custom.speed.get_raw(),
+            transform.translation.z,
+        ); // ignores frame lagging temporary
 
         if out_of_bounds(
             &world_size,
@@ -443,6 +433,6 @@ fn update_transform(
             }
         }
 
-        // println!("Speed: {} knots", custom.speed.get_knots() as i32);
+        println!("Speed: {} knots", custom.speed.get_knots());
     }
 }

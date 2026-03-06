@@ -58,6 +58,9 @@ impl Speed {
     pub(crate) fn get_raw(&self) -> f32 {
         self.0
     }
+    pub(crate) fn overwrite_with_raw(&mut self, raw: f32) {
+        self.0 = raw
+    }
 }
 
 #[derive(Component, Debug, Copy, Clone, Default, Deref)]
@@ -160,7 +163,7 @@ pub(crate) struct BoatBundle {
     /// whether reversed, speed etc
     custom_transform: CustomTransform,
     /// if reversed, whether LMB has been released since reversing
-    reverse_released: ReleasedAfterReverse,
+    button_released: LmbReleased,
     /// raw image radius
     radius: Radius,
     /// where the user's mouse was facing
@@ -207,7 +210,7 @@ impl BoatBundle {
             },
             mouse_target: None.into(),
             target_speed: TargetSpeed(Speed::from_knots(0.0)),
-            reverse_released: ReleasedAfterReverse(false),
+            button_released: LmbReleased(false),
             acceleration: Acceleration(Speed::from_knots(acceleration)),
         }
     }
@@ -230,11 +233,9 @@ pub(crate) enum DecimalPoint {
     Three = 3,
 }
 
-/// the ship will reverse to any angle if LMB is held down after reversing.
-///
-/// once released, mouse being in the forward zone will be interpretated as forwards
+/// the user MUST release the LMB to switch betweeen reversed and forwards.
 #[derive(Component, Debug, Clone, Copy, Deref)]
-pub(crate) struct ReleasedAfterReverse(pub bool);
+pub(crate) struct LmbReleased(pub bool);
 
 /// flips a radian 180 degrees
 pub(crate) trait FlipRadian {
