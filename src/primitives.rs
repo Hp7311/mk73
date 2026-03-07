@@ -33,6 +33,49 @@ impl CustomTransform {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MkRect {
+    pub center: Vec2,
+    pub dimensions: WidthHeight
+}
+
+impl MkRect {
+    pub(crate) fn get_corners(&self) -> [Vec2; 4] {
+        [
+            vec2(self.center.x - self.dimensions.width / 2.0, self.center.y + self.dimensions.height / 2.0),
+            vec2(self.center.x + self.dimensions.width / 2.0, self.center.y + self.dimensions.height / 2.0),
+            vec2(self.center.x + self.dimensions.width / 2.0, self.center.y - self.dimensions.height / 2.0),
+            vec2(self.center.x - self.dimensions.width / 2.0, self.center.y - self.dimensions.height / 2.0),
+        ]
+    }
+    pub(crate) fn get_relative_corners(&self) -> [Vec2; 4] {
+        [
+            vec2(- self.dimensions.width / 2.0,  self.dimensions.height / 2.0),
+            vec2(self.dimensions.width / 2.0,  self.dimensions.height / 2.0),
+            vec2(self.dimensions.width / 2.0, - self.dimensions.height / 2.0),
+            vec2(- self.dimensions.width / 2.0, - self.dimensions.height / 2.0),
+        ]
+    }
+    pub(crate) fn width(&self) -> f32 {
+        self.dimensions.width
+    }
+    pub(crate) fn height(&self) -> f32 {
+        self.dimensions.height
+    }
+    pub(crate) fn new(
+        center: Vec2,
+        width: f32,
+        height: f32
+    ) -> Self {
+        MkRect { center, dimensions: WidthHeight { width, height } }
+    }
+    pub(crate) fn contains(&self, pos: Vec2) -> bool {
+        self.to_rect().contains(pos)
+    }
+    pub(crate) fn to_rect(&self) -> Rect {
+        Rect::from_center_size(self.center, self.dimensions.to_vec2())
+    }
+}
 #[derive(Component, Debug, Copy, Clone, Deref)]
 pub(crate) struct Radius(pub f32);
 
@@ -142,10 +185,33 @@ impl Position {
     }
 }
 /// the altitude of an entity, with 0 being the surface and going up with increasing
-///
-/// implemented as a trait to sync with [`Transform::translation`]'s `z`-ordering
-// TODO
-pub(crate) trait Altitude {}
+pub(crate) struct Altitude;
+
+impl Altitude {
+    const ALTITUDE_MULTIPLIER: f32 = 3.0;
+    const FLOAT_PRECISION: f32 = 0.1;
+
+    /// gives the altitude in meters
+    pub(crate) fn from_translation(translation: &Vec3) -> f32 {
+        translation.z * Altitude::ALTITUDE_MULTIPLIER
+    }
+    /// set the altitude in meters
+    pub(crate) fn set_meter(translation: &mut Vec3, value: f32) {
+        translation.z = value / Altitude::ALTITUDE_MULTIPLIER
+    }
+    pub(crate) fn is_near(first: &Vec3, second: &Vec3) -> bool {
+        (first.z - second.z).abs() < Altitude::FLOAT_PRECISION
+    }
+    pub(crate) fn decrease(translation: &mut Vec3, meter: f32) {
+        translation.z -= meter
+    }
+}
+
+#[derive(Debug, Component, Clone, Copy)]
+pub(crate) struct DivingSpeed(pub f32);
+
+#[derive(Debug, Component, Clone, Copy)]
+pub(crate) struct OutOfBound(pub bool);
 
 #[derive(Bundle, Debug, Clone)]
 pub(crate) struct BoatBundle {
@@ -156,6 +222,7 @@ pub(crate) struct BoatBundle {
     /// max speed that the Boat can have
     max_speed: MaxSpeed,
     reverse_speed: ReverseSpeed,
+    diving_speed: DivingSpeed,
     /// tranform to update in seperate system
     transform: Transform,
     /// ship's sprite
@@ -172,6 +239,7 @@ pub(crate) struct BoatBundle {
     target_speed: TargetSpeed,
     /// maximum speed acceleration per frame
     acceleration: Acceleration,
+    out_of_bound: OutOfBound
 }
 
 impl BoatBundle {
@@ -181,6 +249,7 @@ impl BoatBundle {
     pub(crate) fn new(
         max_speed: f32,
         reverse_speed: f32,
+        diving_speed: f32,
         acceleration: f32,
         position: Vec2,
         sprite: Sprite
@@ -199,6 +268,7 @@ impl BoatBundle {
             max_turn: Radian::from_deg(DEFAULT_MAX_TURN_DEG),
             max_speed: MaxSpeed(Speed::from_knots(max_speed)),
             reverse_speed: ReverseSpeed(Speed::from_knots(reverse_speed)),
+            diving_speed: DivingSpeed(diving_speed),
             transform,
             radius: Radius(sprite.custom_size.unwrap().x / 2.0),
             sprite,
@@ -212,6 +282,7 @@ impl BoatBundle {
             target_speed: TargetSpeed(Speed::from_knots(0.0)),
             button_released: LmbReleased(false),
             acceleration: Acceleration(Speed::from_knots(acceleration)),
+            out_of_bound: OutOfBound(false)
         }
     }
 }
@@ -286,6 +357,13 @@ impl WidthHeight {
             height: num,
         }
     }
+    pub(crate) fn max_side(&self) -> f32 {
+        if self.width > self.height {
+            self.width
+        } else {
+            self.height
+        }
+    }
 }
 
 impl From<Vec2> for WidthHeight {
@@ -323,5 +401,21 @@ mod tests {
         let target = vec2(2.8, 0.0);
 
         assert!(circle_hud.contains(target))
+    }
+    #[test]
+    fn test_mkrect() {
+        let rect = MkRect {
+            center: vec2(0.0, 0.0),
+            dimensions: WidthHeight::splat(10.0)
+        };
+
+        let expected = [
+            vec2(-5.0, 5.0),
+            vec2(5.0, 5.0),
+            vec2(5.0, -5.0),
+            vec2(-5.0, -5.0)
+        ];
+
+        assert_eq!(rect.get_corners(), expected);
     }
 }

@@ -10,7 +10,7 @@ use crate::{
     DEFAULT_SPRITE_SHRINK, WATER_SURFACE,
     boat::{CircleHud, PlayerScore},
     collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects},
-    primitives::{DecimalPoint, Validated, WidthHeight},
+    primitives::{DecimalPoint, MkRect, Validated, WidthHeight},
     util::{point_in_square, tiles_around_point},
     world::WorldSize,
 };
@@ -188,10 +188,11 @@ fn rig_spawn_points(
             transform.translation.xy(),
             sprite_size.x + SPAWN_POINT_RADIUS_MAX,
         );
+        
         let avaliable_tiles: Vec<_> = avaliable_tiles
             .iter()
             .filter(|&tile| !point_in_square(*tile, sprite_size.x, transform.translation.xy()))
-            .filter(|&tile| !out_of_bound_no_rotation(&world_size, WidthHeight::ZERO, tile))
+            .filter(|&tile| !out_of_bound_no_rotation(&world_size, MkRect { center: *tile, dimensions: WidthHeight::ZERO }))
             .collect();
 
         let mut rng = rand::rng();
@@ -317,11 +318,11 @@ struct RigInfo {
 /// ### Hangs
 /// if there aren't space
 fn spawn_random_rig(
-    mut commands: Commands,
-    rng: &mut ThreadRng,
-    world_size: &WorldSize,
-    image: Handle<Image>,
-    other_rigs: &[(Vec2, Transform)],
+    mut commands:   Commands,
+    rng:            &mut ThreadRng,
+    world_size:     &WorldSize,
+    image:          Handle<Image>,
+    other_rigs:     &[(Vec2, Transform)],
     rig_dimensions: Vec2
 ) -> (Vec2, Transform) {
     assert!((rig_dimensions.x - rig_dimensions.y).abs() < 0.001);
@@ -340,8 +341,10 @@ fn spawn_random_rig(
         y = rng.random_range(-world_size.0.height / 2.0..world_size.0.height / 2.0);
         if out_of_bounds(
             world_size,
-            rig_dimensions.into(),
-            vec2(x, y),
+            MkRect {
+                center: vec2(x, y),
+                dimensions: rig_dimensions.into()
+            },
             Quat::from_rotation_z(rotation),
         ) {
             continue;

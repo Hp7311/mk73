@@ -7,6 +7,7 @@
 use std::f32::consts::PI;
 
 use bevy::color::palettes::css::*;
+use bevy::input::keyboard::Key;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
@@ -29,6 +30,7 @@ impl Plugin for BoatPlugin {
         app.add_systems(Startup, startup)
             .insert_resource(PlayerScore(0))
             .add_systems(Update, (update_ship, update_transform).chain())
+            .add_systems(Update, diving)
             .add_systems(PostUpdate, move_camera.after(TransformSystems::Propagate));
     }
 }
@@ -36,14 +38,21 @@ impl Plugin for BoatPlugin {
 #[derive(Component, Debug, Copy, Clone)]
 struct Boat;
 
-#[derive(Component, Debug, Copy, Clone)]
+#[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
 enum SubKind {
     Submarine,
-    SurfaceShip,
+    SurfaceShip
+}
+
+#[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
+enum BoatOwner {
+    Player,
+    Bot
 }
 
 const YASEN_MAX_SPEED: f32 = 35.0; // using HashMap?
 const YASEN_BACK_SPEED: f32 = 21.0;
+const YASEN_DIVING_SPEED: f32 = 0.1;
 const YASEN_ACCELERATION: f32 = 0.3;
 
 const YASEN_RAW_SIZE: Vec2 = vec2(1024.0, 156.0);
@@ -80,11 +89,13 @@ fn startup(
             BoatBundle::new(
                 YASEN_MAX_SPEED,
                 YASEN_BACK_SPEED,
+                YASEN_DIVING_SPEED,
                 YASEN_ACCELERATION,
                 position,
                 sprite
             ),
             SubKind::Submarine,
+            BoatOwner::Player,
             Boat,
         ))
         .with_children(|parent| {
@@ -216,7 +227,7 @@ fn rotate_ship(
             &mut CustomTransform,
             &Radian,
             &mut TargetRotation,
-            &LmbReleased,
+            &LmbReleased
         ),
         With<Boat>,
     >,
@@ -227,7 +238,7 @@ fn rotate_ship(
         mut custom_transform,
         max_turn,
         mut target_rotation,
-        released,
+        released
     ) in transforms.iter_mut()
     {
 
@@ -285,7 +296,7 @@ fn move_ship(
             &MaxSpeed,
             &ReverseSpeed,
             &Acceleration,
-            &mut TargetSpeed,
+            &mut TargetSpeed
         ),
         With<Boat>,
     >,
@@ -298,7 +309,7 @@ fn move_ship(
         max_speed,
         reverse_speed,
         acceleration,
-        mut target_speed,
+        mut target_speed
     ) in datas.iter_mut()
     {
         let cursor_distance = cursor_pos.distance(transform.translation.xy());
@@ -388,13 +399,13 @@ fn ship_to_target(
 /// updates [`Boat`]'s [`Transform`] according to its [`CustomTransform`]
 fn update_transform(
     mut transform_ship: Query<
-        (&mut Transform, &mut CustomTransform, &Children, &Sprite),
+        (&mut Transform, &mut CustomTransform, &Children, &Sprite, &mut OutOfBound),
         With<Boat>,
     >,
     mut circle_huds: Query<&mut CircleHud>,
     world_size: Single<&WorldSize>,
 ) {
-    for (mut transform, mut custom, children, sprite) in transform_ship.iter_mut() {
+    for (mut transform, mut custom, children, sprite, mut out_of_bound) in transform_ship.iter_mut() {
         let Some(custom_size) = sprite.custom_size else {
             continue;
         };
@@ -409,13 +420,19 @@ fn update_transform(
 
         if out_of_bounds(
             &world_size,
-            custom_size.into(),
-            translation.xy(),
+            MkRect {
+                center: translation.xy(),
+                dimensions: custom_size.into(),
+            },
             custom.rotation.to_quat(),
         ) {
-            println!("Out of bounds");
-            return;
+            custom.position.0 = transform.translation.truncate();
+            out_of_bound.0 = true;
+            continue;
+        } else if out_of_bound.0 {
+            out_of_bound.0 = false;
         }
+
         let target = Transform {
             translation,
             rotation: custom.rotation.to_quat(),
@@ -434,5 +451,22 @@ fn update_transform(
         }
 
         println!("Speed: {} knots", custom.speed.get_knots());
+    }
+}
+
+
+fn diving(
+    mut ships: Query<(&mut Transform, &DivingSpeed, &SubKind, &BoatOwner), With<Boat>>,
+    buttons: Res<ButtonInput<Key>>,
+) {
+    let (mut transform, diving_speed, subkind, _) = ships
+        .iter_mut()
+        .find(|(.., owner)| matches!(owner, BoatOwner::Player))
+        .expect("Player died?");
+
+    if buttons.just_released(Key::Character("r".into())) || buttons.just_released(Key::Character("R".into()))
+        && *subkind == SubKind::Submarine
+    {
+        Altitude::decrease(&mut transform.translation, diving_speed.0);
     }
 }

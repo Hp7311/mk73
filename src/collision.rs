@@ -3,10 +3,12 @@
 use bevy::prelude::*;
 
 use crate::{
-    primitives::{CustomTransform, WidthHeight},
+    primitives::{CustomTransform, MkRect, WidthHeight},
     util::rotate_vec2,
     world::WorldSize,
 };
+
+// perfecting out of bound not the priority, will be when polishing
 
 /// check if a Sprite is out-of-bounds by checking it's 4 corners
 ///
@@ -17,43 +19,23 @@ use crate::{
 /// slow if close to the border
 pub(crate) fn out_of_bounds(
     bound: &WorldSize,
-    sprite_size: WidthHeight,
-    pos: Vec2,
+    sprite: MkRect,
     rotation: Quat,
 ) -> bool {
     // if not near the border, return without redundant operations
-    if !near_bound_coarse(sprite_size, pos, bound) {
+    if !near_bound_coarse(sprite, bound) {
         return false;
     }
 
-    let world_bound = Rect::new(
-        -bound.0.width / 2.0,
-        -bound.0.height / 2.0,
-        bound.0.width / 2.0,
-        bound.0.height / 2.0,
-    );
-    let half_size = vec2(sprite_size.width / 2.0, sprite_size.height / 2.0);
+    let world_bound = bound.0.to_rect(vec2(0.0, 0.0));
 
-    // relative to centre of sprite
-    let corners = [
-        vec2(-half_size.x, -half_size.y),
-        vec2(half_size.x, -half_size.y),
-        vec2(half_size.x, half_size.y),
-        vec2(-half_size.x, half_size.y),
-    ];
-
-    if corners
+    sprite.get_relative_corners()
         .iter()
         .map(|corner| rotate_vec2(*corner, rotation))
         .any(|corner| {
-            let in_world_pos = pos + corner;
-            !world_bound.contains(in_world_pos)
+            let corner = sprite.center + corner;
+            !world_bound.contains(corner)
         })
-    {
-        return true;
-    }
-
-    false
 }
 
 /// determine whether perform slow trignometry to calculate out_of_bound
@@ -61,53 +43,30 @@ pub(crate) fn out_of_bounds(
 /// `corners` are relative to `pos`
 /// ### Implementation
 /// given a rectangle, a square of side length longer_side ^ 2 will always cover the entirety of the rectangle
-fn near_bound_coarse(sprite_size: WidthHeight, pos: Vec2, bound: &WorldSize) -> bool {
-    let longer_sprite_side = if sprite_size.width < sprite_size.height {
-        sprite_size.height
-    } else {
-        sprite_size.width
-    } * 2.0;
+fn near_bound_coarse(sprite: MkRect, bound: &WorldSize) -> bool {
+    let longer_side = sprite.dimensions.max_side() * 2.0;
 
     out_of_bound_no_rotation(
         bound,
-        WidthHeight {
-            width: longer_sprite_side,
-            height: longer_sprite_side,
-        },
-        &pos,
+        MkRect { center: sprite.center, dimensions: WidthHeight::splat(longer_side) }
     )
 }
 
 /// faster version of out_of_bounds with a point, no rotation
 pub(crate) fn out_of_bound_no_rotation(
     bound: &WorldSize,
-    sprite_size: WidthHeight,
-    pos: &Vec2,
+    sprite: MkRect
 ) -> bool {
-    let world_bound = Rect::new(
-        -bound.0.width / 2.0,
-        -bound.0.height / 2.0,
-        bound.0.width / 2.0,
-        bound.0.height / 2.0,
-    );
-    let half_size = vec2(sprite_size.width / 2.0, sprite_size.height / 2.0);
+    let world_bound: MkRect = MkRect {
+        center: Vec2::ZERO,
+        dimensions: bound.0
+    };
 
-    // relative to centre of sprite
-    let corners = [
-        vec2(-half_size.x, -half_size.y),
-        vec2(half_size.x, -half_size.y),
-        vec2(half_size.x, half_size.y),
-        vec2(-half_size.x, half_size.y),
-    ];
-
-    if corners.iter().any(|corner| {
-        let in_world_pos = pos + corner;
-        !world_bound.contains(in_world_pos)
-    }) {
-        return true;
-    }
-
-    false
+    sprite.get_corners()
+        .iter()
+        .any(|corner| {
+            !world_bound.contains(*corner)
+        })
 }
 
 /// primarily used for rig spawning,
@@ -262,13 +221,12 @@ mod tests {
             width: 10.0,
             height: 10.0,
         });
-        let sprite_size = WidthHeight {
-            width: 4.0,
-            height: 4.0,
+        let sprite = MkRect {
+            center: vec2(3.0, 3.01),
+            dimensions: WidthHeight::splat(4.0)
         };
-        let pos = vec2(3.0, 3.01);
         let rotation = Quat::from_rotation_z(90.0f32.to_radians());
 
-        assert!(out_of_bounds(&bound, sprite_size, pos, rotation));
+        assert!(out_of_bounds(&bound, sprite, rotation));
     }
 }

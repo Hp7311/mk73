@@ -3,7 +3,7 @@
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
 
-use crate::{DEFAULT_SPRITE_SHRINK, MainCamera};
+use crate::{MainCamera, primitives::{MkRect, WidthHeight}};
 
 /// gets the rotation in radians according to `source` and `destination`
 ///
@@ -57,7 +57,10 @@ pub(crate) fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
 }
 
 pub(crate) fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
-    let square = Rect::from_center_size(square_center, Vec2::splat(square_len));
+    let square = MkRect {
+        center: square_center,
+        dimensions: WidthHeight::splat(square_len)
+    };
 
     square.contains(point)
 }
@@ -102,27 +105,14 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
     )
 }
 
-/// resize [`Sprite`]s by default constant
-/// ### The sprite's `custom_size` attribute is modified, NOT the `transform`
-#[deprecated]
-pub(crate) fn resize_inner<T: Component>(
-    mut sprites: Query<&mut Sprite, With<T>>,
-    assets: &Res<Assets<Image>>,
-) {
-    for mut sprite in sprites.iter_mut() {
-        let Some(image) = assets.get(&sprite.image) else {
-            continue;
-        };
-        if sprite.custom_size.is_some() {
-            continue;
-        }
-
-        sprite.custom_size = Some(vec2(
-            image.width() as f32 * DEFAULT_SPRITE_SHRINK,
-            image.height() as f32 * DEFAULT_SPRITE_SHRINK,
-        ));
+/// create a large bounding box that is guaranteed to contain the specified rectangle no matter the rotation
+pub(crate) fn large_bounding_box(center: Vec2, dimensions: WidthHeight) -> MkRect {
+    MkRect {
+        center,
+        dimensions: WidthHeight::splat(dimensions.max_side() * 1.5)
     }
 }
+
 
 #[cfg(test)]
 mod tests {
