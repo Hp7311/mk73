@@ -14,9 +14,11 @@ use bevy::window::PrimaryWindow;
 use crate::CIRCLE_HUD;
 use crate::DEFAULT_SPRITE_SHRINK;
 use crate::MainCamera;
+use crate::OCEAN_FLOOR;
 use crate::WATER_SURFACE;
 use crate::collision::out_of_bounds;
 use crate::primitives::*;
+use crate::shaders::DivingOverlay;
 use crate::util::{
     add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
     move_with_rotation,
@@ -75,9 +77,11 @@ fn startup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut dark_overlay_materials: ResMut<Assets<DivingOverlay>>,
     asset_server: Res<AssetServer>,
+    window: Single<&Window, With<PrimaryWindow>>,
 ) {
-    let position = vec2(100.0, 0.0);
+    let position = vec2(0.0, 0.0);
     let radius = add_circle_hud(YASEN_RAW_SIZE.x * DEFAULT_SPRITE_SHRINK / 2.0);
     let sprite = Sprite {
         image: asset_server.load("yasen.png"),
@@ -111,6 +115,13 @@ fn startup(
                 },
             ));
         });
+
+    commands.spawn((
+        Transform::from_xyz(0.0, 0.0, 40.0),
+        MeshMaterial2d(dark_overlay_materials.add(DivingOverlay::new(0.4))),  // TODO
+        Mesh2d(meshes.add(Rectangle::from_length(window.width().max(window.height()))))
+    ));
+
 }
 
 /// helper struct for accessing the [`Boat`](crate::ship::Boat)'s circle HUD
@@ -414,8 +425,7 @@ fn update_transform(
         
         translation += move_with_rotation(
             transform.rotation,
-            custom.speed.get_raw(),
-            transform.translation.z,
+            custom.speed.get_raw()
         ); // ignores frame lagging temporary
 
         if out_of_bounds(
@@ -450,7 +460,7 @@ fn update_transform(
             }
         }
 
-        println!("Speed: {} knots", custom.speed.get_knots());
+        // println!("Speed: {} knots", custom.speed.get_knots());
     }
 }
 
@@ -464,9 +474,9 @@ fn diving(
         .find(|(.., owner)| matches!(owner, BoatOwner::Player))
         .expect("Player died?");
 
-    if buttons.just_released(Key::Character("r".into())) || buttons.just_released(Key::Character("R".into()))
+    if (buttons.just_pressed(Key::Character("r".into())) || buttons.just_pressed(Key::Character("R".into())))
         && *subkind == SubKind::Submarine
     {
-        Altitude::decrease(&mut transform.translation, diving_speed.0);
+        transform.decrease_with_limit(diving_speed.0, OCEAN_FLOOR);
     }
 }

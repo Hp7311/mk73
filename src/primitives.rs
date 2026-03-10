@@ -185,27 +185,60 @@ impl Position {
     }
 }
 /// the altitude of an entity, with 0 being the surface and going up with increasing
-pub(crate) struct Altitude;
+pub(crate) trait Altitude {
+    fn decrease_with_limit(&mut self, meter: f32, limit: f32);
+}
 
-impl Altitude {
-    const ALTITUDE_MULTIPLIER: f32 = 3.0;
-    const FLOAT_PRECISION: f32 = 0.1;
-
-    /// gives the altitude in meters
-    pub(crate) fn from_translation(translation: &Vec3) -> f32 {
-        translation.z * Altitude::ALTITUDE_MULTIPLIER
-    }
-    /// set the altitude in meters
-    pub(crate) fn set_meter(translation: &mut Vec3, value: f32) {
-        translation.z = value / Altitude::ALTITUDE_MULTIPLIER
-    }
-    pub(crate) fn is_near(first: &Vec3, second: &Vec3) -> bool {
-        (first.z - second.z).abs() < Altitude::FLOAT_PRECISION
-    }
-    pub(crate) fn decrease(translation: &mut Vec3, meter: f32) {
-        translation.z -= meter
+impl Altitude for Transform {
+    fn decrease_with_limit(&mut self, meter: f32, limit: f32) {
+        // dbg!(&self);
+        // dbg!(meter);
+        // dbg!(limit);
+        info!("Called once");
+        self.translation.z = (self.translation.z - meter).max(limit);
     }
 }
+
+#[test]
+fn test_dcs_limit() {
+    let mut transform = Transform {
+        translation: Vec3 {
+            z: 0.0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    transform.decrease_with_limit(3.0, -2.0);
+
+    assert!(transform.translation.z == -2.0);
+}
+// impl Altitude {
+//     const ALTITUDE_MULTIPLIER: f32 = 3.0;
+//     const FLOAT_PRECISION: f32 = 0.1;
+
+//     /// gives the altitude in meters
+//     pub(crate) fn from_translation(translation: &Vec3) -> f32 {
+//         translation.z * Altitude::ALTITUDE_MULTIPLIER
+//     }
+//     /// set the altitude in meters
+//     pub(crate) fn set_meter(translation: &mut Vec3, value: f32) {
+//         translation.z = value / Altitude::ALTITUDE_MULTIPLIER
+//     }
+//     pub(crate) fn is_near(first: &Vec3, second: &Vec3) -> bool {
+//         (first.z - second.z).abs() < Altitude::FLOAT_PRECISION
+//     }
+//     pub(crate) fn decrease(translation: &mut Vec3, meter: f32) {
+//         translation.z -= meter
+//     }
+//     pub(crate) fn decrease_with_limit(translation: &mut Vec3, meter: f32, limit: f32) {
+//         dbg!(meter);
+//         dbg!(limit);
+//         dbg!(translation.z);
+//         if translation.z - meter >= limit {
+//             Altitude::decrease(translation, meter);
+//         }
+//     }
+// }
 
 #[derive(Debug, Component, Clone, Copy)]
 pub(crate) struct DivingSpeed(pub f32);

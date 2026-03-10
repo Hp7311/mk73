@@ -9,6 +9,7 @@ fn main() {
         .add_systems(Startup, mk73::setup)
         .add_plugins(DefaultPlugins)
         .add_plugins(PanCameraPlugin)
+        .add_plugins(mk73::ShadersPlugin)
         .add_plugins(mk73::WorldPlugin)
         .add_plugins(mk73::BoatPlugin)
         .add_plugins(mk73::OilRigPlugin)

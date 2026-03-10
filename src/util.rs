@@ -19,10 +19,10 @@ pub(crate) fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
 /// calculates Vec3 to add to `Transform.translation` from the rotation and speed
 /// ### Note
 /// assumes 2D
-pub(crate) fn move_with_rotation(rotation: Quat, speed: f32, z_index: f32) -> Vec3 {
+pub(crate) fn move_with_rotation(rotation: Quat, speed: f32) -> Vec3 {
     let (.., move_angle) = rotation.to_euler(EulerRot::XYZ);
 
-    (vec2(move_angle.cos(), move_angle.sin()) * speed).extend(z_index)
+    (vec2(move_angle.cos(), move_angle.sin()) * speed).extend(0.0)
 }
 
 /// centre point at middle of window
@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn test_move_with_rotation() {
         let rotation = Quat::from_rotation_z(90.0_f32.to_radians());
-        assert_eq!(move_with_rotation(rotation, 2.0, 0.0).y, 2.0);
+        assert_eq!(move_with_rotation(rotation, 2.0).y, 2.0);
     }
     #[test]
     fn test_add_circle_hud() {
