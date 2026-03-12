@@ -56,6 +56,28 @@ pub(crate) fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
     ret
 }
 
+/// returns the radius to be passed into shaders with range of 0.0-1.0
+/// 
+/// the closer to the surface(0.0), the bigger the return type and vice versaa
+pub(crate) fn calculate_diving_overlay(altitude: f32, ocean_floor: f32, min_radius: f32, max_radius: f32) -> f32 {
+    if altitude > 0.0 {
+        return max_radius;  // consider panicking?
+    }
+
+    assert!(ocean_floor < 0.0);
+    assert!(altitude >= ocean_floor);
+    assert!(max_radius > min_radius);
+
+    (ocean_floor - altitude).abs() / ocean_floor.abs() * (max_radius - min_radius) + min_radius
+}
+
+#[test]
+fn test_div_overlay() {
+    let target = calculate_diving_overlay(0.0, -2.0, 30.0, 50.0);
+
+    assert_eq!(target, 50.0);
+}
+
 pub(crate) fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
     let square = MkRect {
         center: square_center,

@@ -187,15 +187,17 @@ impl Position {
 /// the altitude of an entity, with 0 being the surface and going up with increasing
 pub(crate) trait Altitude {
     fn decrease_with_limit(&mut self, meter: f32, limit: f32);
+    fn is_submerged(&self) -> bool;
 }
 
 impl Altitude for Transform {
     fn decrease_with_limit(&mut self, meter: f32, limit: f32) {
-        // dbg!(&self);
-        // dbg!(meter);
-        // dbg!(limit);
-        info!("Called once");
+        info!("Decreasing altitude by {}", meter);
         self.translation.z = (self.translation.z - meter).max(limit);
+    }
+
+    fn is_submerged(&self) -> bool {
+        self.translation.z < 0.0
     }
 }
 

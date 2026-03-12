@@ -13,16 +13,13 @@ impl Plugin for ShadersPlugin {
 #[derive(Asset, TypePath, AsBindGroup, Clone, Debug)]
 pub(crate) struct DivingOverlay {
     #[uniform(0)]
-    radius: f32
+    pub radius: f32,
+    #[uniform(1)]
+    pub player_pos: Vec2,
+    #[uniform(2)]
+    pub darkness: f32
 }
 
-impl DivingOverlay {
-    pub fn new(radius: f32) -> Self {
-        Self {
-            radius
-        }
-    }
-}
 
 impl Material2d for DivingOverlay {
     fn fragment_shader() -> bevy::shader::ShaderRef {

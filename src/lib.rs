@@ -21,6 +21,7 @@ const DEFAULT_MAX_ZOOM: f32 = 2.0;
 const WATER_SURFACE: f32 = 0.0;
 const OCEAN_FLOOR: f32 = -0.4;
 const CIRCLE_HUD: f32 = 30.0;
+const DIVING_OVERLAY: f32 = 35.0;
 
 pub use boat::BoatPlugin;
 pub use oil_rig::OilRigPlugin;
@@ -30,7 +31,9 @@ pub use shaders::ShadersPlugin;
 #[derive(Component)]
 struct MainCamera;
 
-pub fn setup(mut commands: Commands) {
+pub fn setup(
+    mut commands: Commands
+) {
     commands.spawn((
         Camera2d,
         PanCamera {

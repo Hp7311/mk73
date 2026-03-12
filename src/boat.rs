@@ -13,6 +13,7 @@ use bevy::window::PrimaryWindow;
 
 use crate::CIRCLE_HUD;
 use crate::DEFAULT_SPRITE_SHRINK;
+use crate::DIVING_OVERLAY;
 use crate::MainCamera;
 use crate::OCEAN_FLOOR;
 use crate::WATER_SURFACE;
@@ -30,6 +31,7 @@ pub struct BoatPlugin;
 impl Plugin for BoatPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup)
+            .add_systems(Startup, spawn_diving_overlay.after(crate::setup))
             .insert_resource(PlayerScore(0))
             .add_systems(Update, (update_ship, update_transform).chain())
             .add_systems(Update, diving)
@@ -77,9 +79,7 @@ fn startup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    mut dark_overlay_materials: ResMut<Assets<DivingOverlay>>,
-    asset_server: Res<AssetServer>,
-    window: Single<&Window, With<PrimaryWindow>>,
+    asset_server: Res<AssetServer>
 ) {
     let position = vec2(0.0, 0.0);
     let radius = add_circle_hud(YASEN_RAW_SIZE.x * DEFAULT_SPRITE_SHRINK / 2.0);
@@ -100,7 +100,7 @@ fn startup(
             ),
             SubKind::Submarine,
             BoatOwner::Player,
-            Boat,
+            Boat
         ))
         .with_children(|parent| {
             parent.spawn((
@@ -115,13 +115,28 @@ fn startup(
                 },
             ));
         });
+}
 
-    commands.spawn((
-        Transform::from_xyz(0.0, 0.0, 40.0),
-        MeshMaterial2d(dark_overlay_materials.add(DivingOverlay::new(0.4))),  // TODO
-        Mesh2d(meshes.add(Rectangle::from_length(window.width().max(window.height()))))
-    ));
-
+fn spawn_diving_overlay(
+    mut commands: Commands,
+    mut diving_overlay_material: ResMut<Assets<DivingOverlay>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    camera: Single<Entity, With<MainCamera>>
+) {
+    if let Ok(mut camera) = commands.get_entity(*camera) {
+        camera.with_children(|parent| {
+            parent.spawn((
+                Transform::from_xyz(0.0, 0.0, DIVING_OVERLAY),
+                MeshMaterial2d(diving_overlay_material.add(DivingOverlay {
+                    radius: 500.0,
+                    player_pos: vec2(0.0, 0.0),  // assume
+                    darkness: 0.0
+                })),
+                Mesh2d(meshes.add(Rectangle::from_length(2000.0))),
+                DivingOverlayIdentifier
+            ));
+        });
+    }
 }
 
 /// helper struct for accessing the [`Boat`](crate::ship::Boat)'s circle HUD
@@ -153,6 +168,10 @@ impl CircleHud {
         x_diff < max_distance && y_diff < max_distance
     }
 }
+
+
+#[derive(Debug, Component, Clone, Copy)]
+struct DivingOverlayIdentifier;
 
 fn move_camera(
     mut camera: Single<&mut Transform, With<MainCamera>>,
@@ -479,4 +498,23 @@ fn diving(
     {
         transform.decrease_with_limit(diving_speed.0, OCEAN_FLOOR);
     }
+}
+
+fn update_diving_overlay(
+    ship_pos: Query<&CustomTransform, With<Boat>>,
+    transforms: Query<&Transform, With<Boat>>,
+    mut diving_overlay_material: ResMut<Assets<DivingOverlay>>,
+    diving_overlay: Query<&MeshMaterial2d<DivingOverlay>>
+) {
+    // currently ignores possibility of multiple ships
+    let Some(ship) = ship_pos.iter().last() else {
+        return;
+    };
+
+    for id in diving_overlay {
+        if let Some(diving_material) = diving_overlay_material.get_mut(id) {
+            diving_material.player_pos = ship.position.0;
+        }
+    }
+
 }
