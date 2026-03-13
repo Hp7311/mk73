@@ -21,12 +21,7 @@ impl Plugin for OilRigPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup).add_systems(
             Update,
-            (
-                rig_spawn_points,
-                move_points,
-                points_obsorbed_despawn,
-            )
-                .chain(),
+            (rig_spawn_points, move_points, points_obsorbed_despawn).chain(),
         );
     }
 }
@@ -50,7 +45,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             &world_size,
             oil_rig_image.clone(),
             &spawned_rigs,
-            SPRITE_SIZE * DEFAULT_SPRITE_SHRINK
+            SPRITE_SIZE * DEFAULT_SPRITE_SHRINK,
         ));
     }
 }
@@ -149,7 +144,6 @@ impl PointAmount {
     }
 }
 
-
 /// maximum amount of points a rig can spawn
 const SPAWN_POINT_AMOUNT_MAX: Range<u16> = 30..40;
 /// spawns a point around a rig every x-y seconds
@@ -188,11 +182,19 @@ fn rig_spawn_points(
             transform.translation.xy(),
             sprite_size.x + SPAWN_POINT_RADIUS_MAX,
         );
-        
+
         let avaliable_tiles: Vec<_> = avaliable_tiles
             .iter()
             .filter(|&tile| !point_in_square(*tile, sprite_size.x, transform.translation.xy()))
-            .filter(|&tile| !out_of_bound_no_rotation(&world_size, MkRect { center: *tile, dimensions: WidthHeight::ZERO }))
+            .filter(|&tile| {
+                !out_of_bound_no_rotation(
+                    &world_size,
+                    MkRect {
+                        center: *tile,
+                        dimensions: WidthHeight::ZERO,
+                    },
+                )
+            })
             .collect();
 
         let mut rng = rand::rng();
@@ -296,7 +298,6 @@ struct OilRigBundle {
 
 impl OilRigBundle {
     fn new(sprite: Sprite, rng: &mut ThreadRng) -> Self {
-
         OilRigBundle {
             sprite,
             point_amount: PointAmount::new(rng),
@@ -311,19 +312,18 @@ struct RigInfo {
     width: f32,
 }
 
-
 /// spawns a must-valid rig, returns the dimensions and Transform of the spawned rig
 /// ### Panics
 /// assumes that the rig is a square
 /// ### Hangs
 /// if there aren't space
 fn spawn_random_rig(
-    mut commands:   Commands,
-    rng:            &mut ThreadRng,
-    world_size:     &WorldSize,
-    image:          Handle<Image>,
-    other_rigs:     &[(Vec2, Transform)],
-    rig_dimensions: Vec2
+    mut commands: Commands,
+    rng: &mut ThreadRng,
+    world_size: &WorldSize,
+    image: Handle<Image>,
+    other_rigs: &[(Vec2, Transform)],
+    rig_dimensions: Vec2,
 ) -> (Vec2, Transform) {
     assert!((rig_dimensions.x - rig_dimensions.y).abs() < 0.001);
     let sprite = Sprite {
@@ -343,7 +343,7 @@ fn spawn_random_rig(
             world_size,
             MkRect {
                 center: vec2(x, y),
-                dimensions: rig_dimensions.into()
+                dimensions: rig_dimensions.into(),
             },
             Quat::from_rotation_z(rotation),
         ) {
@@ -373,13 +373,7 @@ fn spawn_random_rig(
         rotation: Quat::from_rotation_z(rotation),
         ..default()
     };
-    commands.spawn((
-        spawn_transform,
-        OilRigBundle::new(sprite, rng),
-    ));
+    commands.spawn((spawn_transform, OilRigBundle::new(sprite, rng)));
 
-    (
-        rig_dimensions,
-        spawn_transform
-    )
+    (rig_dimensions, spawn_transform)
 }

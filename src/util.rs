@@ -3,7 +3,10 @@
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
 
-use crate::{MainCamera, primitives::{MkRect, WidthHeight}};
+use crate::{
+    MainCamera, OCEAN_FLOOR,
+    primitives::{MkRect, WidthHeight},
+};
 
 /// gets the rotation in radians according to `source` and `destination`
 ///
@@ -56,32 +59,46 @@ pub(crate) fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
     ret
 }
 
-/// returns the radius to be passed into shaders with range of 0.0-1.0
-/// 
-/// the closer to the surface(0.0), the bigger the return type and vice versaa
-pub(crate) fn calculate_diving_overlay(altitude: f32, ocean_floor: f32, min_radius: f32, max_radius: f32) -> f32 {
+/// returns the (radius, darkness (0..1)) to be passed into shaders
+///
+/// the closer to the surface(0.0), the bigger the radius and vice versa
+pub(crate) fn calculate_diving_overlay(
+    altitude: f32,
+    ocean_floor: f32,
+    min_radius: f32,
+    max_radius: f32,
+    max_darkness: f32,
+) -> (f32, f32) {
     if altitude > 0.0 {
-        return max_radius;  // consider panicking?
+        return (max_radius, 0.0); // consider panicking?
     }
 
     assert!(ocean_floor < 0.0);
     assert!(altitude >= ocean_floor);
     assert!(max_radius > min_radius);
 
-    (ocean_floor - altitude).abs() / ocean_floor.abs() * (max_radius - min_radius) + min_radius
+    let diff = (ocean_floor - altitude).abs();
+    let radius = diff / ocean_floor.abs() * (max_radius - min_radius) + min_radius;
+    let darkness = 1.0 - (diff / ocean_floor.abs());
+
+    if darkness > max_darkness {
+        (radius, max_darkness)
+    } else {
+        (radius, darkness) // FIXME
+    }
 }
 
 #[test]
 fn test_div_overlay() {
-    let target = calculate_diving_overlay(0.0, -2.0, 30.0, 50.0);
+    let target = calculate_diving_overlay(-1.0, -2.0, 30.0, 50.0, 0.4);
 
-    assert_eq!(target, 50.0);
+    assert_eq!(target, (40.0, 0.2));
 }
 
 pub(crate) fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
     let square = MkRect {
         center: square_center,
-        dimensions: WidthHeight::splat(square_len)
+        dimensions: WidthHeight::splat(square_len),
     };
 
     square.contains(point)
@@ -131,10 +148,9 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
 pub(crate) fn large_bounding_box(center: Vec2, dimensions: WidthHeight) -> MkRect {
     MkRect {
         center,
-        dimensions: WidthHeight::splat(dimensions.max_side() * 1.5)
+        dimensions: WidthHeight::splat(dimensions.max_side() * 1.5),
     }
 }
-
 
 #[cfg(test)]
 mod tests {

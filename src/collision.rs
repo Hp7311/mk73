@@ -17,11 +17,7 @@ use crate::{
 /// `pos` has center point at the center.
 /// ### Performance
 /// slow if close to the border
-pub(crate) fn out_of_bounds(
-    bound: &WorldSize,
-    sprite: MkRect,
-    rotation: Quat,
-) -> bool {
+pub(crate) fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool {
     // if not near the border, return without redundant operations
     if !near_bound_coarse(sprite, bound) {
         return false;
@@ -29,7 +25,8 @@ pub(crate) fn out_of_bounds(
 
     let world_bound = bound.0.to_rect(vec2(0.0, 0.0));
 
-    sprite.get_relative_corners()
+    sprite
+        .get_relative_corners()
         .iter()
         .map(|corner| rotate_vec2(*corner, rotation))
         .any(|corner| {
@@ -48,25 +45,24 @@ fn near_bound_coarse(sprite: MkRect, bound: &WorldSize) -> bool {
 
     out_of_bound_no_rotation(
         bound,
-        MkRect { center: sprite.center, dimensions: WidthHeight::splat(longer_side) }
+        MkRect {
+            center: sprite.center,
+            dimensions: WidthHeight::splat(longer_side),
+        },
     )
 }
 
 /// faster version of out_of_bounds with a point, no rotation
-pub(crate) fn out_of_bound_no_rotation(
-    bound: &WorldSize,
-    sprite: MkRect
-) -> bool {
+pub(crate) fn out_of_bound_no_rotation(bound: &WorldSize, sprite: MkRect) -> bool {
     let world_bound: MkRect = MkRect {
         center: Vec2::ZERO,
-        dimensions: bound.0
+        dimensions: bound.0,
     };
 
-    sprite.get_corners()
+    sprite
+        .get_corners()
         .iter()
-        .any(|corner| {
-            !world_bound.contains(*corner)
-        })
+        .any(|corner| !world_bound.contains(*corner))
 }
 
 /// primarily used for rig spawning,
@@ -223,7 +219,7 @@ mod tests {
         });
         let sprite = MkRect {
             center: vec2(3.0, 3.01),
-            dimensions: WidthHeight::splat(4.0)
+            dimensions: WidthHeight::splat(4.0),
         };
         let rotation = Quat::from_rotation_z(90.0f32.to_radians());
 

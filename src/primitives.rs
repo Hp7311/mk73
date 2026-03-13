@@ -36,24 +36,36 @@ impl CustomTransform {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MkRect {
     pub center: Vec2,
-    pub dimensions: WidthHeight
+    pub dimensions: WidthHeight,
 }
 
 impl MkRect {
     pub(crate) fn get_corners(&self) -> [Vec2; 4] {
         [
-            vec2(self.center.x - self.dimensions.width / 2.0, self.center.y + self.dimensions.height / 2.0),
-            vec2(self.center.x + self.dimensions.width / 2.0, self.center.y + self.dimensions.height / 2.0),
-            vec2(self.center.x + self.dimensions.width / 2.0, self.center.y - self.dimensions.height / 2.0),
-            vec2(self.center.x - self.dimensions.width / 2.0, self.center.y - self.dimensions.height / 2.0),
+            vec2(
+                self.center.x - self.dimensions.width / 2.0,
+                self.center.y + self.dimensions.height / 2.0,
+            ),
+            vec2(
+                self.center.x + self.dimensions.width / 2.0,
+                self.center.y + self.dimensions.height / 2.0,
+            ),
+            vec2(
+                self.center.x + self.dimensions.width / 2.0,
+                self.center.y - self.dimensions.height / 2.0,
+            ),
+            vec2(
+                self.center.x - self.dimensions.width / 2.0,
+                self.center.y - self.dimensions.height / 2.0,
+            ),
         ]
     }
     pub(crate) fn get_relative_corners(&self) -> [Vec2; 4] {
         [
-            vec2(- self.dimensions.width / 2.0,  self.dimensions.height / 2.0),
-            vec2(self.dimensions.width / 2.0,  self.dimensions.height / 2.0),
-            vec2(self.dimensions.width / 2.0, - self.dimensions.height / 2.0),
-            vec2(- self.dimensions.width / 2.0, - self.dimensions.height / 2.0),
+            vec2(-self.dimensions.width / 2.0, self.dimensions.height / 2.0),
+            vec2(self.dimensions.width / 2.0, self.dimensions.height / 2.0),
+            vec2(self.dimensions.width / 2.0, -self.dimensions.height / 2.0),
+            vec2(-self.dimensions.width / 2.0, -self.dimensions.height / 2.0),
         ]
     }
     pub(crate) fn width(&self) -> f32 {
@@ -62,12 +74,11 @@ impl MkRect {
     pub(crate) fn height(&self) -> f32 {
         self.dimensions.height
     }
-    pub(crate) fn new(
-        center: Vec2,
-        width: f32,
-        height: f32
-    ) -> Self {
-        MkRect { center, dimensions: WidthHeight { width, height } }
+    pub(crate) fn new(center: Vec2, width: f32, height: f32) -> Self {
+        MkRect {
+            center,
+            dimensions: WidthHeight { width, height },
+        }
     }
     pub(crate) fn contains(&self, pos: Vec2) -> bool {
         self.to_rect().contains(pos)
@@ -192,8 +203,8 @@ pub(crate) trait Altitude {
 
 impl Altitude for Transform {
     fn decrease_with_limit(&mut self, meter: f32, limit: f32) {
-        info!("Decreasing altitude by {}", meter);
         self.translation.z = (self.translation.z - meter).max(limit);
+        info!("Altitude: {}", self.translation.z);
     }
 
     fn is_submerged(&self) -> bool {
@@ -274,7 +285,7 @@ pub(crate) struct BoatBundle {
     target_speed: TargetSpeed,
     /// maximum speed acceleration per frame
     acceleration: Acceleration,
-    out_of_bound: OutOfBound
+    out_of_bound: OutOfBound,
 }
 
 impl BoatBundle {
@@ -287,7 +298,7 @@ impl BoatBundle {
         diving_speed: f32,
         acceleration: f32,
         position: Vec2,
-        sprite: Sprite
+        sprite: Sprite,
     ) -> Self {
         const SPRITE_ROTATION: f32 = 90.0;
         assert!(sprite.custom_size.is_some());
@@ -317,7 +328,7 @@ impl BoatBundle {
             target_speed: TargetSpeed(Speed::from_knots(0.0)),
             button_released: LmbReleased(false),
             acceleration: Acceleration(Speed::from_knots(acceleration)),
-            out_of_bound: OutOfBound(false)
+            out_of_bound: OutOfBound(false),
         }
     }
 }
@@ -441,14 +452,14 @@ mod tests {
     fn test_mkrect() {
         let rect = MkRect {
             center: vec2(0.0, 0.0),
-            dimensions: WidthHeight::splat(10.0)
+            dimensions: WidthHeight::splat(10.0),
         };
 
         let expected = [
             vec2(-5.0, 5.0),
             vec2(5.0, 5.0),
             vec2(5.0, -5.0),
-            vec2(-5.0, -5.0)
+            vec2(-5.0, -5.0),
         ];
 
         assert_eq!(rect.get_corners(), expected);

@@ -20,6 +20,7 @@ use crate::WATER_SURFACE;
 use crate::collision::out_of_bounds;
 use crate::primitives::*;
 use crate::shaders::DivingOverlay;
+use crate::util::calculate_diving_overlay;
 use crate::util::{
     add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
     move_with_rotation,
@@ -35,6 +36,7 @@ impl Plugin for BoatPlugin {
             .insert_resource(PlayerScore(0))
             .add_systems(Update, (update_ship, update_transform).chain())
             .add_systems(Update, diving)
+            .add_systems(Update, update_diving_overlay)
             .add_systems(PostUpdate, move_camera.after(TransformSystems::Propagate));
     }
 }
@@ -45,19 +47,24 @@ struct Boat;
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
 enum SubKind {
     Submarine,
-    SurfaceShip
+    SurfaceShip,
 }
 
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
 enum BoatOwner {
     Player,
-    Bot
+    Bot,
 }
 
 const YASEN_MAX_SPEED: f32 = 35.0; // using HashMap?
 const YASEN_BACK_SPEED: f32 = 21.0;
 const YASEN_DIVING_SPEED: f32 = 0.1;
 const YASEN_ACCELERATION: f32 = 0.3;
+
+const DIVING_OVERLAY_MIN_RADIUS: f32 = 800.0;
+const DIVING_OVERLAY_SIZE: Rectangle = Rectangle::from_length(2000.0);
+const DIVING_OVERLAY_MAX_RADIUS: f32 = 1000.0;
+const DIVING_OVERLAY_MAX_DARKNESS: f32 = 0.6;
 
 const YASEN_RAW_SIZE: Vec2 = vec2(1024.0, 156.0);
 /// absolute value of minimum radians that must be reached to reverse the Boat
@@ -79,7 +86,7 @@ fn startup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    asset_server: Res<AssetServer>
+    asset_server: Res<AssetServer>,
 ) {
     let position = vec2(0.0, 0.0);
     let radius = add_circle_hud(YASEN_RAW_SIZE.x * DEFAULT_SPRITE_SHRINK / 2.0);
@@ -96,11 +103,11 @@ fn startup(
                 YASEN_DIVING_SPEED,
                 YASEN_ACCELERATION,
                 position,
-                sprite
+                sprite,
             ),
             SubKind::Submarine,
             BoatOwner::Player,
-            Boat
+            Boat,
         ))
         .with_children(|parent| {
             parent.spawn((
@@ -121,19 +128,19 @@ fn spawn_diving_overlay(
     mut commands: Commands,
     mut diving_overlay_material: ResMut<Assets<DivingOverlay>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    camera: Single<Entity, With<MainCamera>>
+    camera: Single<Entity, With<MainCamera>>,
 ) {
     if let Ok(mut camera) = commands.get_entity(*camera) {
         camera.with_children(|parent| {
             parent.spawn((
                 Transform::from_xyz(0.0, 0.0, DIVING_OVERLAY),
                 MeshMaterial2d(diving_overlay_material.add(DivingOverlay {
-                    radius: 500.0,
-                    player_pos: vec2(0.0, 0.0),  // assume
-                    darkness: 0.0
+                    radius: DIVING_OVERLAY_MAX_RADIUS,
+                    player_pos: vec2(0.0, 0.0), // assume
+                    darkness: 0.0,
                 })),
-                Mesh2d(meshes.add(Rectangle::from_length(2000.0))),
-                DivingOverlayIdentifier
+                Mesh2d(meshes.add(DIVING_OVERLAY_SIZE)),
+                DivingOverlayIdentifier,
             ));
         });
     }
@@ -168,7 +175,6 @@ impl CircleHud {
         x_diff < max_distance && y_diff < max_distance
     }
 }
-
 
 #[derive(Debug, Component, Clone, Copy)]
 struct DivingOverlayIdentifier;
@@ -257,21 +263,15 @@ fn rotate_ship(
             &mut CustomTransform,
             &Radian,
             &mut TargetRotation,
-            &LmbReleased
+            &LmbReleased,
         ),
         With<Boat>,
     >,
     cursor_pos: Vec2,
 ) {
-    for (
-        transform,
-        mut custom_transform,
-        max_turn,
-        mut target_rotation,
-        released
-    ) in transforms.iter_mut()
+    for (transform, mut custom_transform, max_turn, mut target_rotation, released) in
+        transforms.iter_mut()
     {
-
         let raw_moved = get_rotate_radian(cursor_pos, transform.translation.xy()); // diff from radian 0
         let (.., current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
         let mut target_move = raw_moved;
@@ -283,14 +283,16 @@ fn rotate_ship(
                 .trim();
 
             // -- adjust for reversed ---
-            if moved_from_current.abs() > MINIMUM_REVERSE && released.0 {  // mouse in area and LMB released
+            if moved_from_current.abs() > MINIMUM_REVERSE && released.0 {
+                // mouse in area and LMB released
                 custom_transform.reversed = true;
                 moved_from_current = moved_from_current.flip();
                 target_move = target_move.flip()
-            }
-            else if custom_transform.reversed && released.0 {  // already reversing but LMB released
+            } else if custom_transform.reversed && released.0 {
+                // already reversing but LMB released
                 custom_transform.reversed = false;
-            } else if custom_transform.reversed {  // unable to go forward, haven't released key yet
+            } else if custom_transform.reversed {
+                // unable to go forward, haven't released key yet
                 moved_from_current = moved_from_current.flip();
                 target_move = target_move.flip()
             }
@@ -315,7 +317,6 @@ fn rotate_ship(
     }
 }
 
-
 /// handle moving
 fn move_ship(
     datas: &mut Query<
@@ -326,7 +327,7 @@ fn move_ship(
             &MaxSpeed,
             &ReverseSpeed,
             &Acceleration,
-            &mut TargetSpeed
+            &mut TargetSpeed,
         ),
         With<Boat>,
     >,
@@ -339,12 +340,12 @@ fn move_ship(
         max_speed,
         reverse_speed,
         acceleration,
-        mut target_speed
+        mut target_speed,
     ) in datas.iter_mut()
     {
         let cursor_distance = cursor_pos.distance(transform.translation.xy());
         let max_speed = if custom_transform.reversed {
-            - reverse_speed.0.get_raw()
+            -reverse_speed.0.get_raw()
         } else {
             max_speed.0.get_raw()
         };
@@ -361,10 +362,14 @@ fn move_ship(
         // adjust for acceleration
         let speed_diff = speed - custom_transform.speed.get_raw();
 
-        if speed_diff > acceleration.0.get_raw() {  // accelerating too much forwards
+        if speed_diff > acceleration.0.get_raw() {
+            // accelerating too much forwards
             custom_transform.speed.add_raw(acceleration.0.get_raw());
-        } else if speed_diff < -acceleration.0.get_raw() {  // accelerating too much backwards
-            custom_transform.speed.subtract_raw(acceleration.0.get_raw());
+        } else if speed_diff < -acceleration.0.get_raw() {
+            // accelerating too much backwards
+            custom_transform
+                .speed
+                .subtract_raw(acceleration.0.get_raw());
         }
         // not exceeding acceleration
         else if speed_diff.abs() > 0.1 {
@@ -429,23 +434,27 @@ fn ship_to_target(
 /// updates [`Boat`]'s [`Transform`] according to its [`CustomTransform`]
 fn update_transform(
     mut transform_ship: Query<
-        (&mut Transform, &mut CustomTransform, &Children, &Sprite, &mut OutOfBound),
+        (
+            &mut Transform,
+            &mut CustomTransform,
+            &Children,
+            &Sprite,
+            &mut OutOfBound,
+        ),
         With<Boat>,
     >,
     mut circle_huds: Query<&mut CircleHud>,
     world_size: Single<&WorldSize>,
 ) {
-    for (mut transform, mut custom, children, sprite, mut out_of_bound) in transform_ship.iter_mut() {
+    for (mut transform, mut custom, children, sprite, mut out_of_bound) in transform_ship.iter_mut()
+    {
         let Some(custom_size) = sprite.custom_size else {
             continue;
         };
 
         let mut translation = custom.position.to_vec3(transform.translation.z);
-        
-        translation += move_with_rotation(
-            transform.rotation,
-            custom.speed.get_raw()
-        ); // ignores frame lagging temporary
+
+        translation += move_with_rotation(transform.rotation, custom.speed.get_raw()); // ignores frame lagging temporary
 
         if out_of_bounds(
             &world_size,
@@ -483,7 +492,6 @@ fn update_transform(
     }
 }
 
-
 fn diving(
     mut ships: Query<(&mut Transform, &DivingSpeed, &SubKind, &BoatOwner), With<Boat>>,
     buttons: Res<ButtonInput<Key>>,
@@ -493,7 +501,8 @@ fn diving(
         .find(|(.., owner)| matches!(owner, BoatOwner::Player))
         .expect("Player died?");
 
-    if (buttons.just_pressed(Key::Character("r".into())) || buttons.just_pressed(Key::Character("R".into())))
+    if (buttons.just_pressed(Key::Character("r".into()))
+        || buttons.just_pressed(Key::Character("R".into())))
         && *subkind == SubKind::Submarine
     {
         transform.decrease_with_limit(diving_speed.0, OCEAN_FLOOR);
@@ -504,17 +513,24 @@ fn update_diving_overlay(
     ship_pos: Query<&CustomTransform, With<Boat>>,
     transforms: Query<&Transform, With<Boat>>,
     mut diving_overlay_material: ResMut<Assets<DivingOverlay>>,
-    diving_overlay: Query<&MeshMaterial2d<DivingOverlay>>
+    id: Single<&MeshMaterial2d<DivingOverlay>>,
 ) {
     // currently ignores possibility of multiple ships
     let Some(ship) = ship_pos.iter().last() else {
         return;
     };
+    let Some(ship_transform) = transforms.iter().last() else {
+        return;
+    };
 
-    for id in diving_overlay {
-        if let Some(diving_material) = diving_overlay_material.get_mut(id) {
-            diving_material.player_pos = ship.position.0;
-        }
+    if let Some(diving_material) = diving_overlay_material.get_mut(*id) {
+        diving_material.player_pos = ship.position.0;
+        (diving_material.radius, diving_material.darkness) = calculate_diving_overlay(
+            ship_transform.translation.z,
+            OCEAN_FLOOR,
+            DIVING_OVERLAY_MIN_RADIUS,
+            DIVING_OVERLAY_MAX_RADIUS,
+            DIVING_OVERLAY_MAX_DARKNESS
+        )
     }
-
 }

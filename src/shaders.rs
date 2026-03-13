@@ -1,5 +1,7 @@
 use bevy::{
-    prelude::*, render::render_resource::AsBindGroup, sprite_render::{AlphaMode2d, Material2d, Material2dPlugin}
+    prelude::*,
+    render::render_resource::AsBindGroup,
+    sprite_render::{AlphaMode2d, Material2d, Material2dPlugin},
 };
 
 pub struct ShadersPlugin;
@@ -17,9 +19,8 @@ pub(crate) struct DivingOverlay {
     #[uniform(1)]
     pub player_pos: Vec2,
     #[uniform(2)]
-    pub darkness: f32
+    pub darkness: f32,
 }
-
 
 impl Material2d for DivingOverlay {
     fn fragment_shader() -> bevy::shader::ShaderRef {
