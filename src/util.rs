@@ -4,9 +4,14 @@
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
 
 use crate::{
-    MainCamera, OCEAN_FLOOR,
-    primitives::{MkRect, WidthHeight},
+    MainCamera,
+    primitives::{DecimalPoint, MkRect, WidthHeight},
 };
+
+/// the equivalent of `==` only with a specified precision
+pub(crate) fn eq(x: f32, y: f32, precision: DecimalPoint) -> bool {
+    (x - y).abs() <= precision.to_f32()
+}
 
 /// gets the rotation in radians according to `source` and `destination`
 ///
@@ -62,6 +67,9 @@ pub(crate) fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
 /// returns the (radius, darkness (0..1)) to be passed into shaders
 ///
 /// the closer to the surface(0.0), the bigger the radius and vice versa
+/// 
+/// note that we're returning the maximum darkness if calculated value exceeds instead of calculating the darkness according
+/// to the range between 0 and max_darkness
 pub(crate) fn calculate_diving_overlay(
     altitude: f32,
     ocean_floor: f32,
@@ -84,13 +92,13 @@ pub(crate) fn calculate_diving_overlay(
     if darkness > max_darkness {
         (radius, max_darkness)
     } else {
-        (radius, darkness) // FIXME
+        (radius, darkness)
     }
 }
 
 #[test]
 fn test_div_overlay() {
-    let target = calculate_diving_overlay(-1.0, -2.0, 30.0, 50.0, 0.4);
+    let target = calculate_diving_overlay(-0.4, -2.0, 30.0, 50.0, 0.4);
 
     assert_eq!(target, (40.0, 0.2));
 }

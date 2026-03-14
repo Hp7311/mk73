@@ -198,17 +198,31 @@ impl Position {
 /// the altitude of an entity, with 0 being the surface and going up with increasing
 pub(crate) trait Altitude {
     fn decrease_with_limit(&mut self, meter: f32, limit: f32);
-    fn is_submerged(&self) -> bool;
+    fn increase_with_limit(&mut self, meter: f32, limit: f32);
+    fn reached(&mut self, target: f32, precision: DecimalPoint) -> bool;
 }
 
 impl Altitude for Transform {
     fn decrease_with_limit(&mut self, meter: f32, limit: f32) {
         self.translation.z = (self.translation.z - meter).max(limit);
-        info!("Altitude: {}", self.translation.z);
+        // info!("Altitude: {}", self.translation.z);
     }
 
-    fn is_submerged(&self) -> bool {
-        self.translation.z < 0.0
+    fn increase_with_limit(&mut self, meter: f32, limit: f32) {
+        self.translation.z = (self.translation.z + meter).max(limit);
+    }
+
+    fn reached(&mut self, target: f32, precision: DecimalPoint) -> bool {
+        let max_diff = match precision {
+            DecimalPoint::Zero => 1.0,
+            DecimalPoint::One => 0.1,
+            DecimalPoint::Two => 0.01,
+            DecimalPoint::Three => 0.001,
+        };
+
+        let diff = (target - self.translation.z).abs();
+
+        diff <= max_diff
     }
 }
 
@@ -225,33 +239,6 @@ fn test_dcs_limit() {
 
     assert!(transform.translation.z == -2.0);
 }
-// impl Altitude {
-//     const ALTITUDE_MULTIPLIER: f32 = 3.0;
-//     const FLOAT_PRECISION: f32 = 0.1;
-
-//     /// gives the altitude in meters
-//     pub(crate) fn from_translation(translation: &Vec3) -> f32 {
-//         translation.z * Altitude::ALTITUDE_MULTIPLIER
-//     }
-//     /// set the altitude in meters
-//     pub(crate) fn set_meter(translation: &mut Vec3, value: f32) {
-//         translation.z = value / Altitude::ALTITUDE_MULTIPLIER
-//     }
-//     pub(crate) fn is_near(first: &Vec3, second: &Vec3) -> bool {
-//         (first.z - second.z).abs() < Altitude::FLOAT_PRECISION
-//     }
-//     pub(crate) fn decrease(translation: &mut Vec3, meter: f32) {
-//         translation.z -= meter
-//     }
-//     pub(crate) fn decrease_with_limit(translation: &mut Vec3, meter: f32, limit: f32) {
-//         dbg!(meter);
-//         dbg!(limit);
-//         dbg!(translation.z);
-//         if translation.z - meter >= limit {
-//             Altitude::decrease(translation, meter);
-//         }
-//     }
-// }
 
 #[derive(Debug, Component, Clone, Copy)]
 pub(crate) struct DivingSpeed(pub f32);
@@ -285,8 +272,9 @@ pub(crate) struct BoatBundle {
     target_speed: TargetSpeed,
     /// maximum speed acceleration per frame
     acceleration: Acceleration,
-    out_of_bound: OutOfBound,
+    out_of_bound: OutOfBound
 }
+
 
 impl BoatBundle {
     /// all Speeds are in knots
@@ -298,7 +286,7 @@ impl BoatBundle {
         diving_speed: f32,
         acceleration: f32,
         position: Vec2,
-        sprite: Sprite,
+        sprite: Sprite
     ) -> Self {
         const SPRITE_ROTATION: f32 = 90.0;
         assert!(sprite.custom_size.is_some());
@@ -328,7 +316,7 @@ impl BoatBundle {
             target_speed: TargetSpeed(Speed::from_knots(0.0)),
             button_released: LmbReleased(false),
             acceleration: Acceleration(Speed::from_knots(acceleration)),
-            out_of_bound: OutOfBound(false),
+            out_of_bound: OutOfBound(false)
         }
     }
 }
@@ -342,12 +330,24 @@ pub(crate) struct CircleHudBundle {
 /// # Example
 /// Zero = 1.0,
 /// Two = 0.01
-#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum DecimalPoint {
-    Zero = 0,
-    One = 1,
-    Two = 2,
-    Three = 3,
+    Zero,
+    One,
+    Two,
+    Three,
+}
+
+impl DecimalPoint {
+    pub(crate) fn to_f32(&self) -> f32 {
+        use DecimalPoint as D;
+        match self {
+            D::Zero => 1.0,
+            D::One => 0.1,
+            D::Two => 0.01,
+            D::Three => 0.001,
+        }
+    }
 }
 
 /// the user MUST release the LMB to switch betweeen reversed and forwards.
@@ -427,7 +427,7 @@ pub(crate) struct Validated(pub bool);
 
 #[cfg(test)]
 mod tests {
-    use crate::boat::CircleHud;
+    use crate::{boat::CircleHud, util::eq};
 
     use super::*;
     #[test]
@@ -435,7 +435,7 @@ mod tests {
         let src = 80.0f32.to_radians();
         let expected = -100.0f32.to_radians();
 
-        assert!((src.flip() - expected).abs() < 0.1);
+        assert!(eq(src.flip(), expected, DecimalPoint::Three));
     }
     #[test]
     fn test_circle_hud() {

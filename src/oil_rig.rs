@@ -11,7 +11,7 @@ use crate::{
     boat::{CircleHud, PlayerScore},
     collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects},
     primitives::{DecimalPoint, MkRect, Validated, WidthHeight},
-    util::{point_in_square, tiles_around_point},
+    util::{eq, point_in_square, tiles_around_point},
     world::WorldSize,
 };
 
@@ -325,7 +325,7 @@ fn spawn_random_rig(
     other_rigs: &[(Vec2, Transform)],
     rig_dimensions: Vec2,
 ) -> (Vec2, Transform) {
-    assert!((rig_dimensions.x - rig_dimensions.y).abs() < 0.001);
+    assert!(eq(rig_dimensions.x, rig_dimensions.y, DecimalPoint::Three));
     let sprite = Sprite {
         image,
         custom_size: Some(rig_dimensions),

@@ -21,6 +21,7 @@ use crate::collision::out_of_bounds;
 use crate::primitives::*;
 use crate::shaders::DivingOverlay;
 use crate::util::calculate_diving_overlay;
+use crate::util::eq;
 use crate::util::{
     add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
     move_with_rotation,
@@ -58,7 +59,7 @@ enum BoatOwner {
 
 const YASEN_MAX_SPEED: f32 = 35.0; // using HashMap?
 const YASEN_BACK_SPEED: f32 = 21.0;
-const YASEN_DIVING_SPEED: f32 = 0.1;
+const YASEN_DIVING_SPEED: f32 = 0.004;
 const YASEN_ACCELERATION: f32 = 0.3;
 
 const DIVING_OVERLAY_MIN_RADIUS: f32 = 800.0;
@@ -80,6 +81,15 @@ impl PlayerScore {
     pub(crate) fn get_score(&self) -> u32 {
         self.0
     }
+}
+
+#[derive(Debug, Component, Clone, Copy, Default)]
+enum DivingStatus {
+    Diving,
+    Surfacing,
+    /// when the submarine shouldn't be moving in altitude
+    #[default]
+    None
 }
 
 fn startup(
@@ -105,6 +115,7 @@ fn startup(
                 position,
                 sprite,
             ),
+            DivingStatus::default(),
             SubKind::Submarine,
             BoatOwner::Player,
             Boat,
@@ -493,19 +504,52 @@ fn update_transform(
 }
 
 fn diving(
-    mut ships: Query<(&mut Transform, &DivingSpeed, &SubKind, &BoatOwner), With<Boat>>,
+    mut ships: Query<(&mut Transform, &mut DivingStatus, &DivingSpeed, &SubKind, &BoatOwner), With<Boat>>,
     buttons: Res<ButtonInput<Key>>,
 ) {
-    let (mut transform, diving_speed, subkind, _) = ships
+    let (mut transform, mut diving_status, diving_speed, subkind, _) = ships
         .iter_mut()
         .find(|(.., owner)| matches!(owner, BoatOwner::Player))
         .expect("Player died?");
 
-    if (buttons.just_pressed(Key::Character("r".into()))
-        || buttons.just_pressed(Key::Character("R".into())))
-        && *subkind == SubKind::Submarine
+    if *subkind != SubKind::Submarine {
+        return;
+    }
+
+    if buttons.just_pressed(Key::Character("r".into()))
+        || buttons.just_pressed(Key::Character("R".into()))
     {
-        transform.decrease_with_limit(diving_speed.0, OCEAN_FLOOR);
+        match *diving_status {
+            DivingStatus::None => {
+                if eq(transform.translation.z, 0.0, DecimalPoint::Three) {  // TODO DecimalPoint util for this
+                    *diving_status = DivingStatus::Diving;
+                } else {
+                    *diving_status = DivingStatus::Surfacing;
+                }
+            },
+            DivingStatus::Surfacing => {
+                *diving_status = DivingStatus::Diving;
+            },
+            DivingStatus::Diving => {
+                *diving_status = DivingStatus::Surfacing;
+            },
+        }
+    }
+
+    match *diving_status {
+        DivingStatus::Diving => transform.decrease_with_limit(diving_speed.0, OCEAN_FLOOR),
+        DivingStatus::Surfacing => transform.increase_with_limit(diving_speed.0, OCEAN_FLOOR),
+        DivingStatus::None => {}
+    }
+    
+    match *diving_status {
+        DivingStatus::Diving => if transform.reached(OCEAN_FLOOR, DecimalPoint::Three) {
+            *diving_status = DivingStatus::None;
+        },
+        DivingStatus::Surfacing => if transform.reached(WATER_SURFACE, DecimalPoint::Three) {
+            *diving_status = DivingStatus::None;
+        },
+        DivingStatus::None => {}
     }
 }
 
