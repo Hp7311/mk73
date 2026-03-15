@@ -5,10 +5,12 @@
 // doc outdated
 
 use std::f32::consts::PI;
+use std::time::Duration;
 
 use bevy::color::palettes::css::*;
 use bevy::input::keyboard::Key;
 use bevy::prelude::*;
+use bevy::reflect::DynamicTypePath;
 use bevy::window::PrimaryWindow;
 
 use crate::CIRCLE_HUD;
@@ -26,6 +28,8 @@ use crate::util::{
     add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
     move_with_rotation,
 };
+use crate::weapons::SpawnWeaponMessage;
+use crate::weapons::Weapon;
 use crate::world::WorldSize;
 
 pub struct BoatPlugin;
@@ -34,7 +38,8 @@ impl Plugin for BoatPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup)
             .add_systems(Startup, spawn_diving_overlay.after(crate::setup))
-            .insert_resource(PlayerScore(0))
+            .init_resource::<PlayerScore>()
+            .init_resource::<FiringButtonPressed>()
             .add_systems(Update, (update_ship, update_transform).chain())
             .add_systems(Update, diving)
             .add_systems(Update, update_diving_overlay)
@@ -44,6 +49,11 @@ impl Plugin for BoatPlugin {
 
 #[derive(Component, Debug, Copy, Clone)]
 struct Boat;
+
+#[derive(Component, Debug, Copy, Clone)]
+enum BoatType {
+    Yasen
+}
 
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
 enum SubKind {
@@ -71,7 +81,9 @@ const YASEN_RAW_SIZE: Vec2 = vec2(1024.0, 156.0);
 /// absolute value of minimum radians that must be reached to reverse the Boat
 const MINIMUM_REVERSE: f32 = PI * (2. / 3.);
 
-#[derive(Debug, Clone, Copy, Resource)]
+const TIME_TO_LAUNCH_WEAPON: Duration = Duration::from_millis(100);
+
+#[derive(Debug, Clone, Copy, Resource, Default)]
 pub(crate) struct PlayerScore(u32);
 
 impl PlayerScore {
@@ -81,6 +93,12 @@ impl PlayerScore {
     pub(crate) fn get_score(&self) -> u32 {
         self.0
     }
+}
+
+#[derive(Debug, Clone, Copy, Resource, Default)]
+struct FiringButtonPressed {
+    firing_angle: Option<f32>,
+    time_since_key_down: Duration
 }
 
 #[derive(Debug, Component, Clone, Copy, Default)]
@@ -118,15 +136,16 @@ fn startup(
             DivingStatus::default(),
             SubKind::Submarine,
             BoatOwner::Player,
+            BoatType::Yasen,
             Boat,
         ))
-        .with_children(|parent| {
+        .with_children(|parent: &mut bevy::ecs::relationship::RelatedSpawnerCommands<'_, ChildOf>| {
             parent.spawn((
                 CircleHudBundle {
                     mesh: Mesh2d(meshes.add(Circle::new(radius).to_ring(3.0))),
                     materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
                 },
-                Transform::from_translation(vec3(0.0, 0.0, CIRCLE_HUD)),
+                Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
                 CircleHud {
                     radius,
                     center: position,
@@ -190,6 +209,11 @@ impl CircleHud {
 #[derive(Debug, Component, Clone, Copy)]
 struct DivingOverlayIdentifier;
 
+#[derive(Debug, Component, Clone, Default)]
+pub(crate) struct WeaponCounter {
+    weapons: Vec<Weapon>  // FIXME
+}
+
 fn move_camera(
     mut camera: Single<&mut Transform, With<MainCamera>>,
     ship_pos: Query<&CustomTransform, With<Boat>>,
@@ -207,6 +231,7 @@ fn move_camera(
 /// modifys [`Transform`] of [`Boat`]
 fn update_ship(
     buttons: Res<ButtonInput<MouseButton>>,
+    mut firing_button: ResMut<FiringButtonPressed>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut queries: ParamSet<(
@@ -244,7 +269,10 @@ fn update_ship(
             With<Boat>,
         >,
         Query<&mut LmbReleased, With<Boat>>,
+        Query<(&Transform, &BoatType), With<Boat>>
     )>,
+    mut spawn_weapon_writer: MessageWriter<SpawnWeaponMessage>,
+    time: Res<Time>
 ) {
     if let Some(cursor_pos) = get_cursor_pos(&window, &camera)
         && buttons.pressed(MouseButton::Left)
@@ -263,6 +291,40 @@ fn update_ship(
         for mut released in queries.p3() {
             released.0 = false;
         }
+    }
+
+    let Some(cursor_pos) = get_cursor_pos(&window, &camera) else { return };
+    // TODO assume single ship
+    let datas = queries.p4();
+    let (transform, boat_type) = datas.single().unwrap();
+
+    // fire a weapon if pressed down time smaller than const specified
+    if firing_button.pressed() {
+        firing_button.time_since_key_down += time.delta();
+    }
+    if buttons.just_pressed(MouseButton::Left) {
+        match firing_button.firing_angle {
+            Some(_) => unreachable!(),
+            None => {
+                let target = get_rotate_radian(cursor_pos, transform.translation.xy());
+                firing_button.firing_angle = Some(target);
+            }
+        }
+    } else if buttons.just_released(MouseButton::Left) && firing_button.pressed() {
+        for weapon in boat_type.get_armanents() {
+            spawn_weapon_writer.write(SpawnWeaponMessage {
+                weapon,
+                position: transform.translation.xy()
+            });
+        }
+
+    } else if firing_button.time_since_key_down > TIME_TO_LAUNCH_WEAPON {
+        if firing_button.firing_angle.is_some() {
+            firing_button.reset();
+        }
+    }
+    if buttons.just_released(MouseButton::Left) {
+        firing_button.reset();
     }
 }
 
@@ -521,7 +583,7 @@ fn diving(
     {
         match *diving_status {
             DivingStatus::None => {
-                if eq(transform.translation.z, 0.0, DecimalPoint::Three) {  // TODO DecimalPoint util for this
+                if eq(transform.translation.z, 0.0, DecimalPoint::Three) {
                     *diving_status = DivingStatus::Diving;
                 } else {
                     *diving_status = DivingStatus::Surfacing;
@@ -576,5 +638,23 @@ fn update_diving_overlay(
             DIVING_OVERLAY_MAX_RADIUS,
             DIVING_OVERLAY_MAX_DARKNESS
         )
+    }
+}
+
+
+impl BoatType {
+    fn get_armanents(&self) -> Vec<Weapon> {
+        match self {
+            BoatType::Yasen => vec![Weapon::Set65]
+        }
+    }
+}
+
+impl FiringButtonPressed {
+    fn pressed(&self) -> bool {
+        self.firing_angle.is_some()
+    }
+    fn reset(&mut self) {
+        *self = Self::default();
     }
 }

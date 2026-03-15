@@ -4,8 +4,9 @@ use std::{
 };
 
 use bevy::prelude::*;
+use enum_dispatch::enum_dispatch;
 
-use crate::{DEFAULT_MAX_TURN_DEG, WATER_SURFACE};
+use crate::{DEFAULT_MAX_TURN_DEG, WATER_SURFACE, boat::WeaponCounter};
 
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub(crate) struct CustomTransform {
@@ -272,7 +273,8 @@ pub(crate) struct BoatBundle {
     target_speed: TargetSpeed,
     /// maximum speed acceleration per frame
     acceleration: Acceleration,
-    out_of_bound: OutOfBound
+    out_of_bound: OutOfBound,
+    weapon_counter: WeaponCounter
 }
 
 
@@ -316,7 +318,8 @@ impl BoatBundle {
             target_speed: TargetSpeed(Speed::from_knots(0.0)),
             button_released: LmbReleased(false),
             acceleration: Acceleration(Speed::from_knots(acceleration)),
-            out_of_bound: OutOfBound(false)
+            out_of_bound: OutOfBound(false),
+            weapon_counter: WeaponCounter::default()
         }
     }
 }
@@ -424,6 +427,7 @@ impl From<Vec2> for WidthHeight {
 /// used to indicate that an entity (usually a `Sprite`) is validated to prevent reduntancy
 #[derive(Debug, Component, Clone, Copy, Deref)]
 pub(crate) struct Validated(pub bool);
+
 
 #[cfg(test)]
 mod tests {

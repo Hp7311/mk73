@@ -6,6 +6,7 @@ mod primitives;
 mod shaders;
 mod util;
 mod world;
+mod weapons;
 
 use bevy::camera_controller::pan_camera::PanCamera;
 use bevy::prelude::*;
@@ -27,6 +28,7 @@ pub use boat::BoatPlugin;
 pub use oil_rig::OilRigPlugin;
 pub use shaders::ShadersPlugin;
 pub use world::WorldPlugin;
+pub use weapons::WeaponPlugin;
 
 #[derive(Component)]
 struct MainCamera;

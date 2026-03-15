@@ -143,6 +143,7 @@ pub(crate) fn add_circle_hud(length: f32) -> f32 {
     length * 0.7 + length
 }
 
+/// rotates a local point by angle
 pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
     let angle = angle.to_euler(EulerRot::XYZ).2;
 
@@ -150,6 +151,10 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
         source.x * angle.cos() - source.y * angle.sin(),
         source.y * angle.cos() + source.x * angle.sin(),
     )
+}
+
+pub(crate) fn get_head(position: Vec2, angle: Quat, sprite_length: f32) -> Vec2 {
+    todo!()
 }
 
 /// create a large bounding box that is guaranteed to contain the specified rectangle no matter the rotation

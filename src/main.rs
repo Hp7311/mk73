@@ -10,5 +10,6 @@ fn main() {
         .add_plugins(mk73::WorldPlugin)
         .add_plugins(mk73::BoatPlugin)
         .add_plugins(mk73::OilRigPlugin)
+        .add_plugins(mk73::WeaponPlugin)
         .run();
 }
