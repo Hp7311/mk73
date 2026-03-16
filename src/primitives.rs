@@ -273,8 +273,7 @@ pub(crate) struct BoatBundle {
     target_speed: TargetSpeed,
     /// maximum speed acceleration per frame
     acceleration: Acceleration,
-    out_of_bound: OutOfBound,
-    weapon_counter: WeaponCounter
+    out_of_bound: OutOfBound
 }
 
 
@@ -282,6 +281,8 @@ impl BoatBundle {
     /// all Speeds are in knots
     ///
     /// radius derived
+    /// 
+    /// ship rotated 90 degrees counter-clockwise
     pub(crate) fn new(
         max_speed: f32,
         reverse_speed: f32,
@@ -318,8 +319,7 @@ impl BoatBundle {
             target_speed: TargetSpeed(Speed::from_knots(0.0)),
             button_released: LmbReleased(false),
             acceleration: Acceleration(Speed::from_knots(acceleration)),
-            out_of_bound: OutOfBound(false),
-            weapon_counter: WeaponCounter::default()
+            out_of_bound: OutOfBound(false)
         }
     }
 }

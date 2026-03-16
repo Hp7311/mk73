@@ -10,7 +10,6 @@ use std::time::Duration;
 use bevy::color::palettes::css::*;
 use bevy::input::keyboard::Key;
 use bevy::prelude::*;
-use bevy::reflect::DynamicTypePath;
 use bevy::window::PrimaryWindow;
 
 use crate::CIRCLE_HUD;
@@ -48,10 +47,14 @@ impl Plugin for BoatPlugin {
 }
 
 #[derive(Component, Debug, Copy, Clone)]
-struct Boat;
+struct Boat {
+    data: BoatData,
+    subkind: SubKind,
+    owner: BoatOwner
+}
 
 #[derive(Component, Debug, Copy, Clone)]
-enum BoatType {
+enum BoatData {
     Yasen
 }
 
@@ -133,11 +136,16 @@ fn startup(
                 position,
                 sprite,
             ),
+            WeaponCounter {
+                aval_weapons: BoatData::Yasen.get_armanents(),
+                selected_weapon: BoatData::Yasen.default_weapon()
+            },
             DivingStatus::default(),
-            SubKind::Submarine,
-            BoatOwner::Player,
-            BoatType::Yasen,
-            Boat,
+            Boat {
+                data: BoatData::Yasen,
+                subkind: SubKind::Submarine,
+                owner: BoatOwner::Player
+            }
         ))
         .with_children(|parent: &mut bevy::ecs::relationship::RelatedSpawnerCommands<'_, ChildOf>| {
             parent.spawn((
@@ -209,9 +217,10 @@ impl CircleHud {
 #[derive(Debug, Component, Clone, Copy)]
 struct DivingOverlayIdentifier;
 
-#[derive(Debug, Component, Clone, Default)]
+#[derive(Debug, Component, Clone)]
 pub(crate) struct WeaponCounter {
-    weapons: Vec<Weapon>  // FIXME
+    aval_weapons: Vec<Weapon>,  // FIXME and maybe HashMap<Weapon, u16>
+    selected_weapon: Option<Weapon>  // potential terry fox
 }
 
 fn move_camera(
@@ -269,14 +278,60 @@ fn update_ship(
             With<Boat>,
         >,
         Query<&mut LmbReleased, With<Boat>>,
-        Query<(&Transform, &BoatType), With<Boat>>
+        Query<(&Transform, &Boat)>
     )>,
     mut spawn_weapon_writer: MessageWriter<SpawnWeaponMessage>,
     time: Res<Time>
 ) {
+    // assume single ship
+    let datas = queries.p4();
+    let (transform, boat) = datas.single().unwrap();
+    
+    if let Some(cursor_pos) = get_cursor_pos(&window, &camera) {
+
+        // fire a weapon if pressed down time smaller than const specified
+        if firing_button.pressed() {
+            firing_button.time_since_key_down += time.delta();
+        }
+        if buttons.just_pressed(MouseButton::Left) {
+            match firing_button.firing_angle {
+                Some(_) => unreachable!(),
+                None => {
+                    let target = get_rotate_radian(cursor_pos, transform.translation.xy());
+                    firing_button.firing_angle = Some(target);
+                }
+            }
+        } else if firing_button.time_since_key_down > TIME_TO_LAUNCH_WEAPON {
+            if firing_button.pressed() {
+                firing_button.reset();
+            }
+        }
+        
+        if buttons.just_released(MouseButton::Left) && let Some(firing_angle) = firing_button.firing_angle {
+            // --- fires a weapon
+            if let Some(weapon) = boat.data.default_weapon() {
+                spawn_weapon_writer.write(SpawnWeaponMessage {
+                    weapon,
+                    position: transform.translation.xy(),
+                    rotation: transform.rotation,
+                    target_rotation: firing_angle
+                });
+                return;  //TODO messy state machine with duplication
+            }
+            
+        } else if buttons.just_released(MouseButton::Left) {
+            firing_button.reset();
+        }
+        
+        if firing_button.time_since_key_down < TIME_TO_LAUNCH_WEAPON {
+            return;
+        }
+    }
+
     if let Some(cursor_pos) = get_cursor_pos(&window, &camera)
         && buttons.pressed(MouseButton::Left)
     {
+        println!("rotating ship");
         rotate_ship(&mut queries.p0(), cursor_pos);
         move_ship(&mut queries.p2(), cursor_pos);
     } else {
@@ -291,40 +346,6 @@ fn update_ship(
         for mut released in queries.p3() {
             released.0 = false;
         }
-    }
-
-    let Some(cursor_pos) = get_cursor_pos(&window, &camera) else { return };
-    // TODO assume single ship
-    let datas = queries.p4();
-    let (transform, boat_type) = datas.single().unwrap();
-
-    // fire a weapon if pressed down time smaller than const specified
-    if firing_button.pressed() {
-        firing_button.time_since_key_down += time.delta();
-    }
-    if buttons.just_pressed(MouseButton::Left) {
-        match firing_button.firing_angle {
-            Some(_) => unreachable!(),
-            None => {
-                let target = get_rotate_radian(cursor_pos, transform.translation.xy());
-                firing_button.firing_angle = Some(target);
-            }
-        }
-    } else if buttons.just_released(MouseButton::Left) && firing_button.pressed() {
-        for weapon in boat_type.get_armanents() {
-            spawn_weapon_writer.write(SpawnWeaponMessage {
-                weapon,
-                position: transform.translation.xy()
-            });
-        }
-
-    } else if firing_button.time_since_key_down > TIME_TO_LAUNCH_WEAPON {
-        if firing_button.firing_angle.is_some() {
-            firing_button.reset();
-        }
-    }
-    if buttons.just_released(MouseButton::Left) {
-        firing_button.reset();
     }
 }
 
@@ -566,15 +587,15 @@ fn update_transform(
 }
 
 fn diving(
-    mut ships: Query<(&mut Transform, &mut DivingStatus, &DivingSpeed, &SubKind, &BoatOwner), With<Boat>>,
-    buttons: Res<ButtonInput<Key>>,
+    mut ships: Query<(&mut Transform, &mut DivingStatus, &DivingSpeed, &Boat)>,
+    buttons: Res<ButtonInput<Key>>
 ) {
-    let (mut transform, mut diving_status, diving_speed, subkind, _) = ships
+    let (mut transform, mut diving_status, diving_speed, boat) = ships
         .iter_mut()
-        .find(|(.., owner)| matches!(owner, BoatOwner::Player))
+        .find(|(.., boat)| matches!(boat.owner, BoatOwner::Player))
         .expect("Player died?");
 
-    if *subkind != SubKind::Submarine {
+    if boat.subkind != SubKind::Submarine {
         return;
     }
 
@@ -642,10 +663,15 @@ fn update_diving_overlay(
 }
 
 
-impl BoatType {
+impl BoatData {
     fn get_armanents(&self) -> Vec<Weapon> {
         match self {
-            BoatType::Yasen => vec![Weapon::Set65]
+            Self::Yasen => vec![Weapon::Set65]
+        }
+    }
+    fn default_weapon(&self) -> Option<Weapon> {
+        match self {
+            Self::Yasen => Some(Weapon::Set65)
         }
     }
 }
