@@ -70,17 +70,11 @@ enum BoatOwner {
     Bot,
 }
 
-const YASEN_MAX_SPEED: f32 = 35.0; // using HashMap?
-const YASEN_BACK_SPEED: f32 = 21.0;
-const YASEN_DIVING_SPEED: f32 = 0.004;
-const YASEN_ACCELERATION: f32 = 0.3;
-
 const DIVING_OVERLAY_MIN_RADIUS: f32 = 800.0;
 const DIVING_OVERLAY_SIZE: Rectangle = Rectangle::from_length(2000.0);
 const DIVING_OVERLAY_MAX_RADIUS: f32 = 1000.0;
 const DIVING_OVERLAY_MAX_DARKNESS: f32 = 0.6;
 
-const YASEN_RAW_SIZE: Vec2 = vec2(1024.0, 156.0);
 /// absolute value of minimum radians that must be reached to reverse the Boat
 const MINIMUM_REVERSE: f32 = PI * (2. / 3.);
 
@@ -100,7 +94,7 @@ impl PlayerScore {
 
 #[derive(Debug, Clone, Copy, Resource, Default)]
 struct FiringButtonPressed {
-    firing_angle: Option<f32>,
+    firing_angle: Option<Vec2>,
     time_since_key_down: Duration
 }
 
@@ -113,32 +107,35 @@ enum DivingStatus {
     None
 }
 
+// TODO modify all things that take Speed related to take Yasen seeing as it's a method on it
 fn startup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
+    let yasen = BoatData::Yasen;
+
     let position = vec2(0.0, 0.0);
-    let radius = add_circle_hud(YASEN_RAW_SIZE.x * DEFAULT_SPRITE_SHRINK / 2.0);
+    let radius = add_circle_hud(yasen.sprite_size().x / 2.0);
     let sprite = Sprite {
         image: asset_server.load("yasen.png"),
-        custom_size: Some(YASEN_RAW_SIZE * DEFAULT_SPRITE_SHRINK),
+        custom_size: Some(yasen.sprite_size()),
         ..default()
     };
     commands
         .spawn((
             BoatBundle::new(
-                YASEN_MAX_SPEED,
-                YASEN_BACK_SPEED,
-                YASEN_DIVING_SPEED,
-                YASEN_ACCELERATION,
+                yasen.max_speed(),
+                yasen.rev_max_speed(),
+                yasen.diving_speed(),
+                yasen.acceleration(),
                 position,
                 sprite,
             ),
             WeaponCounter {
-                aval_weapons: BoatData::Yasen.get_armanents(),
-                selected_weapon: BoatData::Yasen.default_weapon()
+                aval_weapons: yasen.get_armanents(),
+                selected_weapon: yasen.default_weapon()
             },
             DivingStatus::default(),
             Boat {
@@ -203,14 +200,7 @@ impl CircleHud {
         let x_diff = (point.x - self.center.x).abs();
         let y_diff = (point.y - self.center.y).abs();
 
-        let max_distance = match decimal_point {
-            DecimalPoint::Zero => 1.0,
-            DecimalPoint::One => 0.1,
-            DecimalPoint::Two => 0.01,
-            DecimalPoint::Three => 0.001,
-        };
-
-        x_diff < max_distance && y_diff < max_distance
+        x_diff < decimal_point.to_f32() && y_diff < decimal_point.to_f32()
     }
 }
 
@@ -297,8 +287,7 @@ fn update_ship(
             match firing_button.firing_angle {
                 Some(_) => unreachable!(),
                 None => {
-                    let target = get_rotate_radian(cursor_pos, transform.translation.xy());
-                    firing_button.firing_angle = Some(target);
+                    firing_button.firing_angle = Some(cursor_pos);
                 }
             }
         } else if firing_button.time_since_key_down > TIME_TO_LAUNCH_WEAPON {
@@ -314,7 +303,7 @@ fn update_ship(
                     weapon,
                     position: transform.translation.xy(),
                     rotation: transform.rotation,
-                    target_rotation: firing_angle
+                    mouse_pos: firing_angle  // should we just do `cursor_pos`
                 });
                 return;  //TODO messy state machine with duplication
             }
@@ -323,7 +312,8 @@ fn update_ship(
             firing_button.reset();
         }
         
-        if firing_button.time_since_key_down < TIME_TO_LAUNCH_WEAPON {
+        if firing_button.time_since_key_down < TIME_TO_LAUNCH_WEAPON && firing_button.pressed() {
+            // don't move when unclear
             return;
         }
     }
@@ -331,7 +321,6 @@ fn update_ship(
     if let Some(cursor_pos) = get_cursor_pos(&window, &camera)
         && buttons.pressed(MouseButton::Left)
     {
-        println!("rotating ship");
         rotate_ship(&mut queries.p0(), cursor_pos);
         move_ship(&mut queries.p2(), cursor_pos);
     } else {
@@ -514,13 +503,15 @@ fn ship_to_target(
             custom_transform.rotate_local_z(moved.to_radian_unchecked());
         }
         // ------ speed
-        let speed_diff = target_speed.0.get_raw() - custom_transform.speed.get_raw();
-        if speed_diff > acceleration.0.get_raw() {
+        let speed_diff = target_speed.get_raw() - custom_transform.speed.get_raw();
+        if speed_diff > acceleration.get_raw() {
             custom_transform.speed.add_raw(acceleration.0.get_raw());
-        } else if speed_diff < -acceleration.0.get_raw() {
+        } else if speed_diff < -acceleration.get_raw() {
             custom_transform
                 .speed
-                .subtract_raw(acceleration.0.get_raw());
+                .subtract_raw(acceleration.get_raw());
+        } else {
+            custom_transform.speed.overwrite_with_raw(target_speed.get_raw());
         }
     }
 }
@@ -673,6 +664,32 @@ impl BoatData {
         match self {
             Self::Yasen => Some(Weapon::Set65)
         }
+    }
+    fn max_speed(&self) -> f32 {
+        match self {
+            Self::Yasen => 35.0
+        }
+    }
+    fn rev_max_speed(&self) -> f32 {
+        match self {
+            Self::Yasen => 21.0
+        }
+    }
+    fn diving_speed(&self) -> f32 {
+        match self {
+            Self::Yasen => 0.004
+        }
+    }
+    fn acceleration(&self) -> f32 {
+        match self {
+            Self::Yasen => 0.3
+        }
+    }
+    /// raw file size * [`DEFAULT_SPRITE_SHRINK`]
+    fn sprite_size(&self) -> Vec2 {
+        ( match self {    
+            Self::Yasen => vec2(1024.0, 156.0)
+        } ) * DEFAULT_SPRITE_SHRINK
     }
 }
 

@@ -4,9 +4,8 @@ use std::{
 };
 
 use bevy::prelude::*;
-use enum_dispatch::enum_dispatch;
 
-use crate::{DEFAULT_MAX_TURN_DEG, WATER_SURFACE, boat::WeaponCounter};
+use crate::{DEFAULT_MAX_TURN_DEG, WATER_SURFACE};
 
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub(crate) struct CustomTransform {
@@ -196,6 +195,10 @@ impl Position {
         self.0.extend(z_index)
     }
 }
+
+#[derive(Component, Debug, PartialEq, Copy, Clone, Default, Deref)]
+pub(crate) struct MousePos(pub Option<Vec2>);
+
 /// the altitude of an entity, with 0 being the surface and going up with increasing
 pub(crate) trait Altitude {
     fn decrease_with_limit(&mut self, meter: f32, limit: f32);
@@ -214,16 +217,10 @@ impl Altitude for Transform {
     }
 
     fn reached(&mut self, target: f32, precision: DecimalPoint) -> bool {
-        let max_diff = match precision {
-            DecimalPoint::Zero => 1.0,
-            DecimalPoint::One => 0.1,
-            DecimalPoint::Two => 0.01,
-            DecimalPoint::Three => 0.001,
-        };
 
         let diff = (target - self.translation.z).abs();
 
-        diff <= max_diff
+        diff <= precision.to_f32()
     }
 }
 
@@ -285,7 +282,7 @@ impl BoatBundle {
     /// ship rotated 90 degrees counter-clockwise
     pub(crate) fn new(
         max_speed: f32,
-        reverse_speed: f32,
+        rev_speed: f32,
         diving_speed: f32,
         acceleration: f32,
         position: Vec2,
@@ -304,7 +301,7 @@ impl BoatBundle {
         BoatBundle {
             max_turn: Radian::from_deg(DEFAULT_MAX_TURN_DEG),
             max_speed: MaxSpeed(Speed::from_knots(max_speed)),
-            reverse_speed: ReverseSpeed(Speed::from_knots(reverse_speed)),
+            reverse_speed: ReverseSpeed(Speed::from_knots(rev_speed)),
             diving_speed: DivingSpeed(diving_speed),
             transform,
             radius: Radius(sprite.custom_size.unwrap().x / 2.0),
@@ -335,6 +332,7 @@ pub(crate) struct CircleHudBundle {
 /// Two = 0.01
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum DecimalPoint {
+    TwentyPixels,
     Zero,
     One,
     Two,
@@ -349,6 +347,7 @@ impl DecimalPoint {
             D::One => 0.1,
             D::Two => 0.01,
             D::Three => 0.001,
+            D::TwentyPixels => 20.0
         }
     }
 }

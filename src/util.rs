@@ -13,6 +13,13 @@ pub(crate) fn eq(x: f32, y: f32, precision: DecimalPoint) -> bool {
     (x - y).abs() <= precision.to_f32()
 }
 
+/// the equivalent of `==` only with a specified precision
+pub(crate) fn vec2_eq(x: Vec2, y: Vec2, precision: DecimalPoint) -> bool {
+    let subtracted = (x - y).abs();
+    subtracted.x <= precision.to_f32()
+        && subtracted.y <= precision.to_f32()
+}
+
 /// gets the rotation in radians according to `source` and `destination`
 ///
 /// starts from the X axis of source(right), **counter clock-wise**
@@ -154,7 +161,7 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
 }
 
 pub(crate) fn get_head(position: Vec2, angle: Quat, sprite_length: f32) -> Vec2 {
-    todo!()
+    todo!("used to calculate weapon launch spot? outdated params")
 }
 
 /// create a large bounding box that is guaranteed to contain the specified rectangle no matter the rotation

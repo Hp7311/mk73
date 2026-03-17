@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{DEFAULT_MAX_TURN_DEG, primitives::{Acceleration, DecimalPoint, Speed, TargetRotation, TrimRadian}, util::eq};
+use crate::{DEFAULT_MAX_TURN_DEG, primitives::{Acceleration, DecimalPoint, MousePos, Speed, TrimRadian}, util::{eq, get_rotate_radian, move_with_rotation, vec2_eq}};
 
 const MAX_TURN_RADIAN: f32 = DEFAULT_MAX_TURN_DEG.to_radians();
 
@@ -10,13 +10,13 @@ impl Plugin for WeaponPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<SpawnWeaponMessage>()
             .add_systems(Update, spawn_weapon)
-            .add_systems(Update, move_weapon);
+            .add_systems(Update, (rotate_weapon, move_weapon, check_reached).chain());
     }
 }
 
 #[derive(Debug, Component, Clone, Copy)]
 pub(crate) enum Weapon {
-    Set65  // TODO seperate torp/shell/etc
+    Set65
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -25,7 +25,6 @@ enum WeaponType {
 }
 
 impl Weapon {
-    // TODO do similar thing in boat.rs instead of constants
     fn file_name(&self) -> &'static str {
         match self {
             Weapon::Set65 => "Set65.png"
@@ -42,9 +41,9 @@ impl Weapon {
             Weapon::Set65 => WeaponType::Torpedo
         }
     }
-    fn speed(&self) -> Speed {
+    fn max_speed(&self) -> Speed {
         Speed::from_knots(match self {
-            Weapon::Set65 => 30.0
+            Weapon::Set65 => 40.0
         })
     }
     fn acceleration(&self) -> Acceleration {
@@ -59,11 +58,12 @@ pub(crate) struct SpawnWeaponMessage{
     pub weapon: Weapon,
     pub position: Vec2,
     pub rotation: Quat,
-    pub target_rotation: f32  // Z-rotation in radians
+    pub mouse_pos: Vec2
 }
 
+// TODO direct the torpedo toward the mouse pos, not in a direction
 fn spawn_weapon(mut commands: Commands, mut reader: MessageReader<SpawnWeaponMessage>, asset_server: Res<AssetServer>) {
-    for SpawnWeaponMessage { weapon, position, rotation, target_rotation } in reader.read() {
+    for SpawnWeaponMessage { weapon, position, rotation, mouse_pos } in reader.read() {
         commands.spawn((
             Sprite {
                 image: asset_server.load(weapon.file_name()),
@@ -75,18 +75,21 @@ fn spawn_weapon(mut commands: Commands, mut reader: MessageReader<SpawnWeaponMes
                 rotation: *rotation,
                 ..default()
             },
-            TargetRotation(Some(*target_rotation)),  // guaranteed Some, stores quat
+            MousePos(Some(*mouse_pos)),
+            Speed::from_knots(0.0),
             Weapon::Set65
         ));
         println!("Spawned one")
     }
 }
 
-fn move_weapon(mut weapons: Query<(&mut Transform, &TargetRotation, &Weapon)>) {
-    for (mut transform, target_rotation, weapon) in weapons.iter_mut() {
+fn rotate_weapon(mut query: Query<(&mut Transform, &MousePos), With<Weapon>>) {
+    for (mut transform, mouse_pos) in query.iter_mut() {
+        let Some(mouse_pos) = mouse_pos.0 else { continue; };  // TODO don't continue if guided
+        let target_rotation = get_rotate_radian(mouse_pos, transform.translation.xy());
         let current_rotation = transform.rotation.to_euler(EulerRot::XYZ).2;
 
-        let moved_from_current = (target_rotation.0.unwrap().to_degrees() - current_rotation.to_degrees())
+        let moved_from_current = (target_rotation.to_degrees() - current_rotation.to_degrees())
             .to_radians()
             .trim();
 
@@ -105,5 +108,40 @@ fn move_weapon(mut weapons: Query<(&mut Transform, &TargetRotation, &Weapon)>) {
         }
 
         // info!("{}", moved_from_current.to_degrees());
+    }
+}
+
+fn move_weapon(mut query: Query<(&mut Transform, &Weapon, &mut Speed)>) {
+    for (mut transform, weapon, mut last_speed) in query.iter_mut() {
+        let mut speed = last_speed.as_ref().clone();
+        let speed_diff = weapon.max_speed().get_raw() - last_speed.get_raw();
+        let acceleration = weapon.acceleration().get_raw();
+
+        if speed_diff > acceleration {
+            speed.add_raw(acceleration);
+        } else if speed_diff < -acceleration {
+            speed.subtract_raw(acceleration);
+        }
+
+        else if speed_diff.abs() > 0.1 {
+            speed.overwrite_with_raw(weapon.max_speed().get_raw());
+        }  // weapons don't have dynamic speeds. therefore it'll always try to go at max speed
+
+        *last_speed = speed;
+
+        // update transform
+
+        let move_by = move_with_rotation(transform.rotation, speed.get_raw());
+        transform.translation += move_by;
+    }
+}
+
+/// we currently don't want a Weapon to go in circles toward the firing target
+fn check_reached(mut query: Query<(&Transform, &mut MousePos), With<Weapon>>) {
+    for (transform, mut mouse_pos) in query.iter_mut() {
+        let Some(pos) = mouse_pos.0 else { continue };
+        if vec2_eq(transform.translation.xy(), pos, DecimalPoint::TwentyPixels) {  // FIXME torpedo goes in circles at certain levels
+            mouse_pos.0 = None;
+        }
     }
 }
