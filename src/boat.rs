@@ -94,7 +94,7 @@ impl PlayerScore {
 
 #[derive(Debug, Clone, Copy, Resource, Default)]
 struct FiringButtonPressed {
-    firing_angle: Option<Vec2>,
+    firing_angle: Option<f32>,
     time_since_key_down: Duration
 }
 
@@ -287,7 +287,8 @@ fn update_ship(
             match firing_button.firing_angle {
                 Some(_) => unreachable!(),
                 None => {
-                    firing_button.firing_angle = Some(cursor_pos);
+                    let firing_angle = get_rotate_radian(cursor_pos, transform.translation.xy());
+                    firing_button.firing_angle = Some(firing_angle);
                 }
             }
         } else if firing_button.time_since_key_down > TIME_TO_LAUNCH_WEAPON {
@@ -303,7 +304,7 @@ fn update_ship(
                     weapon,
                     position: transform.translation.xy(),
                     rotation: transform.rotation,
-                    mouse_pos: firing_angle  // should we just do `cursor_pos`
+                    target_rotation: Quat::from_rotation_z(firing_angle)
                 });
                 return;  //TODO messy state machine with duplication
             }

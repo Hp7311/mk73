@@ -332,7 +332,7 @@ pub(crate) struct CircleHudBundle {
 /// Two = 0.01
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum DecimalPoint {
-    TwentyPixels,
+    OneHundredPixels,
     Zero,
     One,
     Two,
@@ -347,7 +347,7 @@ impl DecimalPoint {
             D::One => 0.1,
             D::Two => 0.01,
             D::Three => 0.001,
-            D::TwentyPixels => 20.0
+            D::OneHundredPixels => 20.0
         }
     }
 }

@@ -1,8 +1,12 @@
+use std::ops::Range;
+
 use bevy::prelude::*;
+use rand::RngExt;
 
-use crate::{DEFAULT_MAX_TURN_DEG, primitives::{Acceleration, DecimalPoint, MousePos, Speed, TrimRadian}, util::{eq, get_rotate_radian, move_with_rotation, vec2_eq}};
+use crate::{DEFAULT_MAX_TURN_DEG, primitives::{Acceleration, DecimalPoint, Speed, TargetRotation, TrimRadian}, util::{eq, move_with_rotation}};
 
-const MAX_TURN_RADIAN: f32 = DEFAULT_MAX_TURN_DEG.to_radians();
+/// faster max turning speed for torpedoes
+const MAX_TURN_RADIAN: Range<f32> = (DEFAULT_MAX_TURN_DEG * 2.0 ).to_radians()..(DEFAULT_MAX_TURN_DEG * 3.0).to_radians();
 
 pub struct WeaponPlugin;
 
@@ -10,7 +14,7 @@ impl Plugin for WeaponPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<SpawnWeaponMessage>()
             .add_systems(Update, spawn_weapon)
-            .add_systems(Update, (rotate_weapon, move_weapon, check_reached).chain());
+            .add_systems(Update, (rotate_weapon, move_weapon).chain());
     }
 }
 
@@ -43,7 +47,7 @@ impl Weapon {
     }
     fn max_speed(&self) -> Speed {
         Speed::from_knots(match self {
-            Weapon::Set65 => 40.0
+            Weapon::Set65 => 50.0
         })
     }
     fn acceleration(&self) -> Acceleration {
@@ -58,12 +62,12 @@ pub(crate) struct SpawnWeaponMessage{
     pub weapon: Weapon,
     pub position: Vec2,
     pub rotation: Quat,
-    pub mouse_pos: Vec2
+    pub target_rotation: Quat
 }
 
 // TODO direct the torpedo toward the mouse pos, not in a direction
 fn spawn_weapon(mut commands: Commands, mut reader: MessageReader<SpawnWeaponMessage>, asset_server: Res<AssetServer>) {
-    for SpawnWeaponMessage { weapon, position, rotation, mouse_pos } in reader.read() {
+    for SpawnWeaponMessage { weapon, position, rotation, target_rotation } in reader.read() {
         commands.spawn((
             Sprite {
                 image: asset_server.load(weapon.file_name()),
@@ -75,33 +79,32 @@ fn spawn_weapon(mut commands: Commands, mut reader: MessageReader<SpawnWeaponMes
                 rotation: *rotation,
                 ..default()
             },
-            MousePos(Some(*mouse_pos)),
+            TargetRotation(Some(target_rotation.to_euler(EulerRot::XYZ).2)),  // cannot be None
             Speed::from_knots(0.0),
             Weapon::Set65
         ));
-        println!("Spawned one")
     }
 }
 
-fn rotate_weapon(mut query: Query<(&mut Transform, &MousePos), With<Weapon>>) {
-    for (mut transform, mouse_pos) in query.iter_mut() {
-        let Some(mouse_pos) = mouse_pos.0 else { continue; };  // TODO don't continue if guided
-        let target_rotation = get_rotate_radian(mouse_pos, transform.translation.xy());
+fn rotate_weapon(mut query: Query<(&mut Transform, &TargetRotation), With<Weapon>>) {
+    for (mut transform, target_rotation) in query.iter_mut() {
+        let max_turn_radian = rand::rng().random_range(MAX_TURN_RADIAN);
         let current_rotation = transform.rotation.to_euler(EulerRot::XYZ).2;
 
-        let moved_from_current = (target_rotation.to_degrees() - current_rotation.to_degrees())
+        let moved_from_current = (target_rotation.unwrap().to_degrees() - current_rotation.to_degrees())
             .to_radians()
             .trim();
 
         if eq(moved_from_current, 0.0, DecimalPoint::Three) {
+            // dbg!(moved_from_current);
             continue;
         }
 
-        if moved_from_current.abs() > MAX_TURN_RADIAN {
+        if moved_from_current.abs() > max_turn_radian {
             if moved_from_current < 0.0 {
-                transform.rotate_local_z(-MAX_TURN_RADIAN);
+                transform.rotate_local_z(-max_turn_radian);
             } else {
-                transform.rotate_local_z(MAX_TURN_RADIAN);
+                transform.rotate_local_z(max_turn_radian);
             }
         } else {
             transform.rotate_local_z(moved_from_current);
@@ -110,6 +113,8 @@ fn rotate_weapon(mut query: Query<(&mut Transform, &MousePos), With<Weapon>>) {
         // info!("{}", moved_from_current.to_degrees());
     }
 }
+
+// currently calculating a rotation once and passed here to spawn a weapon.
 
 fn move_weapon(mut query: Query<(&mut Transform, &Weapon, &mut Speed)>) {
     for (mut transform, weapon, mut last_speed) in query.iter_mut() {
@@ -133,15 +138,5 @@ fn move_weapon(mut query: Query<(&mut Transform, &Weapon, &mut Speed)>) {
 
         let move_by = move_with_rotation(transform.rotation, speed.get_raw());
         transform.translation += move_by;
-    }
-}
-
-/// we currently don't want a Weapon to go in circles toward the firing target
-fn check_reached(mut query: Query<(&Transform, &mut MousePos), With<Weapon>>) {
-    for (transform, mut mouse_pos) in query.iter_mut() {
-        let Some(pos) = mouse_pos.0 else { continue };
-        if vec2_eq(transform.translation.xy(), pos, DecimalPoint::TwentyPixels) {  // FIXME torpedo goes in circles at certain levels
-            mouse_pos.0 = None;
-        }
     }
 }
