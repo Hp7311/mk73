@@ -12,14 +12,30 @@ impl Plugin for ShadersPlugin {
     }
 }
 
-#[derive(Asset, TypePath, AsBindGroup, Clone, Debug)]
+#[derive(Asset, TypePath, AsBindGroup, Clone, Debug, Default)]
 pub(crate) struct DivingOverlay {
     #[uniform(0)]
     pub radius: f32,
+    #[uniform(0)]
+    pub _r_padding1: f32,
+    #[uniform(0)]
+    pub _r_padding2: f32,
+    #[uniform(0)]
+    pub _r_padding3: f32,
     #[uniform(1)]
     pub player_pos: Vec2,
+
+    #[uniform(1)]
+    pub _p_padding: Vec2,
+
     #[uniform(2)]
     pub darkness: f32,
+    #[uniform(2)]
+    pub _d_padding1: f32,
+    #[uniform(2)]
+    pub _d_padding2: f32,
+    #[uniform(2)]
+    pub _d_padding3: f32,
 }
 
 impl Material2d for DivingOverlay {

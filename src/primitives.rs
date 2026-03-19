@@ -5,7 +5,7 @@ use std::{
 
 use bevy::prelude::*;
 
-use crate::{DEFAULT_MAX_TURN_DEG, WATER_SURFACE};
+use crate::{DEFAULT_MAX_TURN_DEG, WATER_SURFACE, boat::WeaponCounter};
 
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub(crate) struct CustomTransform {
@@ -243,83 +243,6 @@ pub(crate) struct DivingSpeed(pub f32);
 
 #[derive(Debug, Component, Clone, Copy)]
 pub(crate) struct OutOfBound(pub bool);
-
-#[derive(Bundle, Debug, Clone)]
-pub(crate) struct BoatBundle {
-    /// maximum angle in radians that you can turn per frame, consider deriving from `max_speed`
-    /// ### Warning
-    /// keep the value small
-    max_turn: Radian,
-    /// max speed that the Boat can have
-    max_speed: MaxSpeed,
-    reverse_speed: ReverseSpeed,
-    diving_speed: DivingSpeed,
-    /// tranform to update in seperate system
-    transform: Transform,
-    /// ship's sprite
-    sprite: Sprite,
-    /// whether reversed, speed etc
-    custom_transform: CustomTransform,
-    /// if reversed, whether LMB has been released since reversing
-    button_released: LmbReleased,
-    /// raw image radius
-    radius: Radius,
-    /// where the user's mouse was facing
-    mouse_target: TargetRotation,
-    /// the target speed of the Boat
-    target_speed: TargetSpeed,
-    /// maximum speed acceleration per frame
-    acceleration: Acceleration,
-    out_of_bound: OutOfBound
-}
-
-
-impl BoatBundle {
-    /// all Speeds are in knots
-    ///
-    /// radius derived
-    /// 
-    /// ship rotated 90 degrees counter-clockwise
-    pub(crate) fn new(
-        max_speed: f32,
-        rev_speed: f32,
-        diving_speed: f32,
-        acceleration: f32,
-        position: Vec2,
-        sprite: Sprite
-    ) -> Self {
-        const SPRITE_ROTATION: f32 = 90.0;
-        assert!(sprite.custom_size.is_some());
-
-        let transform = Transform {
-            translation: position.extend(WATER_SURFACE),
-            rotation: Quat::from_rotation_z(SPRITE_ROTATION.to_radians()),
-            ..default()
-        };
-
-        println!("Radius: {}", sprite.custom_size.unwrap().x / 2.0);
-        BoatBundle {
-            max_turn: Radian::from_deg(DEFAULT_MAX_TURN_DEG),
-            max_speed: MaxSpeed(Speed::from_knots(max_speed)),
-            reverse_speed: ReverseSpeed(Speed::from_knots(rev_speed)),
-            diving_speed: DivingSpeed(diving_speed),
-            transform,
-            radius: Radius(sprite.custom_size.unwrap().x / 2.0),
-            sprite,
-            custom_transform: CustomTransform {
-                speed: Speed(0.0),
-                position: Position(position),
-                rotation: Radian::from_deg(SPRITE_ROTATION),
-                reversed: false,
-            },
-            mouse_target: None.into(),
-            target_speed: TargetSpeed(Speed::from_knots(0.0)),
-            button_released: LmbReleased(false),
-            acceleration: Acceleration(Speed::from_knots(acceleration)),
-            out_of_bound: OutOfBound(false)
-        }
-    }
-}
 
 #[derive(Bundle, Debug, Clone)]
 pub(crate) struct CircleHudBundle {

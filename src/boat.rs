@@ -13,6 +13,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use crate::CIRCLE_HUD;
+use crate::DEFAULT_MAX_TURN_DEG;
 use crate::DEFAULT_SPRITE_SHRINK;
 use crate::DIVING_OVERLAY;
 use crate::MainCamera;
@@ -116,7 +117,7 @@ fn startup(
 ) {
     let yasen = BoatData::Yasen;
 
-    let position = vec2(0.0, 0.0);
+    let position = vec3(0.0, 0.0, WATER_SURFACE);
     let radius = add_circle_hud(yasen.sprite_size().x / 2.0);
     let sprite = Sprite {
         image: asset_server.load("yasen.png"),
@@ -124,26 +125,25 @@ fn startup(
         ..default()
     };
     commands
-        .spawn((
-            BoatBundle::new(
-                yasen.max_speed(),
-                yasen.rev_max_speed(),
-                yasen.diving_speed(),
-                yasen.acceleration(),
-                position,
-                sprite,
-            ),
-            WeaponCounter {
+        .spawn(BoatBundle {
+            weapon_counter: WeaponCounter {
                 aval_weapons: yasen.get_armanents(),
                 selected_weapon: yasen.default_weapon()
             },
-            DivingStatus::default(),
-            Boat {
+            boat: Boat {
                 data: BoatData::Yasen,
                 subkind: SubKind::Submarine,
                 owner: BoatOwner::Player
-            }
-        ))
+            },
+            sprite,
+            transform: Transform::from_translation(position),
+            custom_transform: CustomTransform {
+                position: Position(position.xy()),
+                rotation: Radian::from_deg(90.0),
+                ..default()
+            },
+            ..Default::default()
+        })
         .with_children(|parent: &mut bevy::ecs::relationship::RelatedSpawnerCommands<'_, ChildOf>| {
             parent.spawn((
                 CircleHudBundle {
@@ -153,10 +153,12 @@ fn startup(
                 Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
                 CircleHud {
                     radius,
-                    center: position,
-                },
+                    center: position.xy(),
+                }
             ));
         });
+
+    info!("passed setup")
 }
 
 fn spawn_diving_overlay(
@@ -173,6 +175,7 @@ fn spawn_diving_overlay(
                     radius: DIVING_OVERLAY_MAX_RADIUS,
                     player_pos: vec2(0.0, 0.0), // assume
                     darkness: 0.0,
+                    ..default()
                 })),
                 Mesh2d(meshes.add(DIVING_OVERLAY_SIZE)),
                 DivingOverlayIdentifier,
@@ -238,34 +241,27 @@ fn update_ship(
             (
                 &Transform,
                 &mut CustomTransform,
-                &Radian,
                 &mut TargetRotation,
                 &LmbReleased,
-            ),
-            With<Boat>,
+                &Boat
+            )
         >,
         Query<
             (
                 &Transform,
                 &mut CustomTransform,
-                &Radian,
                 &TargetRotation,
                 &TargetSpeed,
-                &Acceleration,
-            ),
-            With<Boat>,
+                &Boat
+            )
         >,
         Query<
             (
                 &Transform,
                 &mut CustomTransform,
-                &Radius,
-                &MaxSpeed,
-                &ReverseSpeed,
-                &Acceleration,
                 &mut TargetSpeed,
-            ),
-            With<Boat>,
+                &Boat
+            )
         >,
         Query<&mut LmbReleased, With<Boat>>,
         Query<(&Transform, &Boat)>
@@ -345,15 +341,14 @@ fn rotate_ship(
         (
             &Transform,
             &mut CustomTransform,
-            &Radian,
             &mut TargetRotation,
             &LmbReleased,
-        ),
-        With<Boat>,
+            &Boat
+        )
     >,
     cursor_pos: Vec2,
 ) {
-    for (transform, mut custom_transform, max_turn, mut target_rotation, released) in
+    for (transform, mut custom_transform, mut target_rotation, released, boat) in
         transforms.iter_mut()
     {
         let raw_moved = get_rotate_radian(cursor_pos, transform.translation.xy()); // diff from radian 0
@@ -385,8 +380,8 @@ fn rotate_ship(
         };
 
         // turning degree bigger than maximum
-        if moved.abs() > max_turn.0 {
-            let ship_max_turn = max_turn.0;
+        if moved.abs() > boat.data.max_turn().to_radians() {
+            let ship_max_turn = boat.data.max_turn().to_radians();
             if moved > 0.0 {
                 custom_transform.rotate_local_z(ship_max_turn.to_radian_unchecked());
             } else if moved < 0.0 {
@@ -407,53 +402,48 @@ fn move_ship(
         (
             &Transform,
             &mut CustomTransform,
-            &Radius,
-            &MaxSpeed,
-            &ReverseSpeed,
-            &Acceleration,
             &mut TargetSpeed,
-        ),
-        With<Boat>,
+            &Boat
+        )
     >,
     cursor_pos: Vec2,
 ) {
     for (
         transform,
         mut custom_transform,
-        radius,
-        max_speed,
-        reverse_speed,
-        acceleration,
         mut target_speed,
+        boat
     ) in datas.iter_mut()
     {
         let cursor_distance = cursor_pos.distance(transform.translation.xy());
         let max_speed = if custom_transform.reversed {
-            -reverse_speed.0.get_raw()
+            -boat.data.rev_max_speed().get_raw()
         } else {
-            max_speed.0.get_raw()
+            boat.data.max_speed().get_raw()
         };
 
         let speed = calculate_from_proportion(
             cursor_distance,
-            add_circle_hud(radius.0),
+            add_circle_hud(boat.data.sprite_size().x / 2.0),
             max_speed,
-            radius.0,
+            boat.data.sprite_size().x / 2.0
         );
 
         target_speed.0 = Speed::from_raw(speed);
 
         // adjust for acceleration
         let speed_diff = speed - custom_transform.speed.get_raw();
+        let acceleration = boat.data.acceleration();
 
-        if speed_diff > acceleration.0.get_raw() {
+        if speed_diff > acceleration.get_raw() {
             // accelerating too much forwards
-            custom_transform.speed.add_raw(acceleration.0.get_raw());
-        } else if speed_diff < -acceleration.0.get_raw() {
+            custom_transform.speed.add_raw(acceleration.get_raw());
+        } else if speed_diff < -acceleration.get_raw() {
+            info!("accelerating too much backwards");
             // accelerating too much backwards
             custom_transform
                 .speed
-                .subtract_raw(acceleration.0.get_raw());
+                .subtract_raw(acceleration.get_raw());
         }
         // not exceeding acceleration
         else if speed_diff.abs() > 0.1 {
@@ -471,15 +461,13 @@ fn ship_to_target(
         (
             &Transform,
             &mut CustomTransform,
-            &Radian,
             &TargetRotation,
             &TargetSpeed,
-            &Acceleration,
-        ),
-        With<Boat>,
+            &Boat
+        )
     >,
 ) {
-    for (transform, mut custom_transform, max_turn, target_rotation, target_speed, acceleration) in
+    for (transform, mut custom_transform, target_rotation, target_speed, boat) in
         ships
     {
         // ------ rotation
@@ -493,8 +481,8 @@ fn ship_to_target(
             .to_radians()
             .trim();
 
-        if moved.abs() > max_turn.0 {
-            let ship_max_turn = max_turn.0;
+        let ship_max_turn = boat.data.max_turn().to_radians();
+        if moved.abs() > ship_max_turn {
             if moved > 0.0 {
                 custom_transform.rotate_local_z(ship_max_turn.to_radian_unchecked());
             } else if moved < 0.0 {
@@ -505,8 +493,9 @@ fn ship_to_target(
         }
         // ------ speed
         let speed_diff = target_speed.get_raw() - custom_transform.speed.get_raw();
+        let acceleration = boat.data.acceleration();
         if speed_diff > acceleration.get_raw() {
-            custom_transform.speed.add_raw(acceleration.0.get_raw());
+            custom_transform.speed.add_raw(acceleration.get_raw());
         } else if speed_diff < -acceleration.get_raw() {
             custom_transform
                 .speed
@@ -579,10 +568,10 @@ fn update_transform(
 }
 
 fn diving(
-    mut ships: Query<(&mut Transform, &mut DivingStatus, &DivingSpeed, &Boat)>,
+    mut ships: Query<(&mut Transform, &mut DivingStatus, &Boat)>,
     buttons: Res<ButtonInput<Key>>
 ) {
-    let (mut transform, mut diving_status, diving_speed, boat) = ships
+    let (mut transform, mut diving_status, boat) = ships
         .iter_mut()
         .find(|(.., boat)| matches!(boat.owner, BoatOwner::Player))
         .expect("Player died?");
@@ -612,8 +601,8 @@ fn diving(
     }
 
     match *diving_status {
-        DivingStatus::Diving => transform.decrease_with_limit(diving_speed.0, OCEAN_FLOOR),
-        DivingStatus::Surfacing => transform.increase_with_limit(diving_speed.0, OCEAN_FLOOR),
+        DivingStatus::Diving => transform.decrease_with_limit(boat.data.diving_speed().get_raw(), OCEAN_FLOOR),
+        DivingStatus::Surfacing => transform.increase_with_limit(boat.data.diving_speed().get_raw(), OCEAN_FLOOR),
         DivingStatus::None => {}
     }
     
@@ -666,31 +655,35 @@ impl BoatData {
             Self::Yasen => Some(Weapon::Set65)
         }
     }
-    fn max_speed(&self) -> f32 {
-        match self {
+    fn max_speed(&self) -> Speed {
+        Speed::from_knots(match self {
             Self::Yasen => 35.0
-        }
+        })
     }
-    fn rev_max_speed(&self) -> f32 {
-        match self {
+    fn rev_max_speed(&self) -> Speed {
+        Speed::from_knots(match self {
             Self::Yasen => 21.0
-        }
+        })
     }
-    fn diving_speed(&self) -> f32 {
-        match self {
+    fn diving_speed(&self) -> Speed {
+        Speed::from_raw(match self {
             Self::Yasen => 0.004
-        }
+        })
     }
-    fn acceleration(&self) -> f32 {
-        match self {
-            Self::Yasen => 0.3
-        }
+    fn acceleration(&self) -> Speed {
+        Speed::from_knots(match self {
+            Self::Yasen => 2.0
+        })
     }
     /// raw file size * [`DEFAULT_SPRITE_SHRINK`]
     fn sprite_size(&self) -> Vec2 {
         ( match self {    
             Self::Yasen => vec2(1024.0, 156.0)
         } ) * DEFAULT_SPRITE_SHRINK
+    }
+    /// max turn in degrees
+    fn max_turn(&self) -> f32 {
+        DEFAULT_MAX_TURN_DEG
     }
 }
 
@@ -700,5 +693,61 @@ impl FiringButtonPressed {
     }
     fn reset(&mut self) {
         *self = Self::default();
+    }
+}
+
+
+#[derive(Bundle, Debug, Clone)]
+pub(crate) struct BoatBundle {
+    /// maximum angle in radians that you can turn per frame
+    max_turn: Radian,
+    /// tranform to update in seperate system
+    transform: Transform,
+    /// ship's sprite
+    sprite: Sprite,
+    /// whether reversed, speed etc
+    custom_transform: CustomTransform,
+    /// if reversed, whether LMB has been released since reversing
+    button_released: LmbReleased,
+    /// where the user's mouse was facing
+    mouse_target: TargetRotation,
+    /// the target speed of the Boat
+    target_speed: TargetSpeed,
+    out_of_bound: OutOfBound,
+
+    weapon_counter: WeaponCounter,
+    diving_status: DivingStatus,
+    boat: Boat
+}
+
+impl Default for BoatBundle {
+    /// Should be overwritten:
+    /// - `boat`
+    /// - `weapon_counter`
+    /// - `max_turn`
+    /// - `sprite`
+    /// - `transform`
+    /// - `custom_transform`
+    fn default() -> Self {
+        BoatBundle {
+            max_turn: Radian::default(),
+            transform: Transform::default(),
+            sprite: Sprite::default(),
+            custom_transform: CustomTransform::default(),
+            button_released: LmbReleased(false),
+            out_of_bound: OutOfBound(false),
+            mouse_target: TargetRotation::default(),
+            target_speed: TargetSpeed::default(),
+            weapon_counter: WeaponCounter {
+                aval_weapons: vec![],
+                selected_weapon: None
+            },
+            diving_status: DivingStatus::default(),
+            boat: Boat {
+                data: BoatData::Yasen,
+                subkind: SubKind::SurfaceShip,
+                owner: BoatOwner::Player
+            }
+        }
     }
 }
