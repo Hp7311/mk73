@@ -6,7 +6,6 @@ edition = "2024"
 
 [dependencies]
 bevy = {version = "0.18.0", features = ["debug", "pan_camera"]}
-enum_dispatch = "0.3.13"
 getrandom = {version = "0.4.2", features = ["wasm_js"]}
 rand = "0.10.0"
 

@@ -2,8 +2,6 @@
 //!
 //! be mindful of [`Boat::transform`] and [`Transform`] of the [`Boat`] needs to be kept in sync
 
-// doc outdated
-
 use std::f32::consts::PI;
 use std::time::Duration;
 
@@ -22,27 +20,38 @@ use crate::WATER_SURFACE;
 use crate::collision::out_of_bounds;
 use crate::primitives::*;
 use crate::shaders::DivingOverlay;
-use crate::util::calculate_diving_overlay;
-use crate::util::eq;
 use crate::util::{
     add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
-    move_with_rotation,
+    move_with_rotation, eq, calculate_diving_overlay
 };
 use crate::weapons::SpawnWeaponMessage;
 use crate::weapons::Weapon;
 use crate::world::WorldSize;
 
+// TODO create resource for cursor position, helper function to seperate the Owner of query of boats
 pub struct BoatPlugin;
 
 impl Plugin for BoatPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, startup)
-            .add_systems(Startup, spawn_diving_overlay.after(crate::setup))
+        app.init_state::<BoatState>()
+            .init_state::<DivingStatus>()
+            .add_message::<FireWeapon>()
             .init_resource::<PlayerScore>()
-            .init_resource::<FiringButtonPressed>()
-            .add_systems(Update, (update_ship, update_transform).chain())
-            .add_systems(Update, diving)
-            .add_systems(Update, update_diving_overlay)
+            .add_systems(Startup, startup)
+            .add_systems(Startup, spawn_diving_overlay.after(crate::setup))
+            .add_systems(Update, (
+                update_state,
+                update_diving_status,
+                (
+                    rotate_ship,
+                    move_ship
+                ).run_if(in_state(BoatState::LockedDir)),
+                ship_to_target.run_if(in_state(BoatState::NotLocked)),
+                update_transform,
+                dive,
+                update_diving_overlay
+            ).chain())
+            .add_systems(Update, fire_weapon)
             .add_systems(PostUpdate, move_camera.after(TransformSystems::Propagate));
     }
 }
@@ -51,12 +60,12 @@ impl Plugin for BoatPlugin {
 struct Boat {
     data: BoatData,
     subkind: SubKind,
-    owner: BoatOwner
+    owner: BoatOwner,
 }
 
 #[derive(Component, Debug, Copy, Clone)]
 enum BoatData {
-    Yasen
+    Yasen,
 }
 
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
@@ -93,22 +102,37 @@ impl PlayerScore {
     }
 }
 
-#[derive(Debug, Clone, Copy, Resource, Default)]
-struct FiringButtonPressed {
-    firing_angle: Option<f32>,
-    time_since_key_down: Duration
-}
 
-#[derive(Debug, Component, Clone, Copy, Default)]
+/// so a system can manipulate [`Transform`] without state concerns
+#[derive(Debug, States, Clone, Copy, Hash, PartialEq, Eq, Default)]
 enum DivingStatus {
     Diving,
     Surfacing,
     /// when the submarine shouldn't be moving in altitude
     #[default]
-    None
+    None,
 }
 
-// TODO modify all things that take Speed related to take Yasen seeing as it's a method on it
+#[derive(Debug, States, Clone, Copy, Hash, PartialEq, Eq, Default)]
+enum BoatState {
+    /// start state
+    #[default]
+    Stopped,
+    /// potentially fire a weapon
+    FiringWeapon(Duration),
+    /// locked in a direction (LMB pressed)
+    LockedDir,
+    /// free to change direction (LMB not pressed)
+    NotLocked,
+}
+
+
+/// when player releases LMB in the allocated time period, sent by [`BoatState`]
+/// 
+/// local message
+#[derive(Debug, Message, Clone, Copy, Hash, PartialEq, Eq, Default)]
+struct FireWeapon;
+
 fn startup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -128,12 +152,12 @@ fn startup(
         .spawn(BoatBundle {
             weapon_counter: WeaponCounter {
                 aval_weapons: yasen.get_armanents(),
-                selected_weapon: yasen.default_weapon()
+                selected_weapon: yasen.default_weapon(),
             },
             boat: Boat {
                 data: BoatData::Yasen,
                 subkind: SubKind::Submarine,
-                owner: BoatOwner::Player
+                owner: BoatOwner::Player,
             },
             sprite,
             transform: Transform::from_translation(position),
@@ -144,21 +168,21 @@ fn startup(
             },
             ..Default::default()
         })
-        .with_children(|parent: &mut bevy::ecs::relationship::RelatedSpawnerCommands<'_, ChildOf>| {
-            parent.spawn((
-                CircleHudBundle {
-                    mesh: Mesh2d(meshes.add(Circle::new(radius).to_ring(3.0))),
-                    materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
-                },
-                Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
-                CircleHud {
-                    radius,
-                    center: position.xy(),
-                }
-            ));
-        });
-
-    info!("passed setup")
+        .with_children(
+            |parent: &mut bevy::ecs::relationship::RelatedSpawnerCommands<'_, ChildOf>| {
+                parent.spawn((
+                    CircleHudBundle {
+                        mesh: Mesh2d(meshes.add(Circle::new(radius).to_ring(3.0))),
+                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
+                    },
+                    Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
+                    CircleHud {
+                        radius,
+                        center: position.xy(),
+                    },
+                ));
+            },
+        );
 }
 
 fn spawn_diving_overlay(
@@ -173,7 +197,7 @@ fn spawn_diving_overlay(
                 Transform::from_xyz(0.0, 0.0, DIVING_OVERLAY),
                 MeshMaterial2d(diving_overlay_material.add(DivingOverlay {
                     radius: DIVING_OVERLAY_MAX_RADIUS,
-                    player_pos: vec2(0.0, 0.0), // assume
+                    player_pos: vec2(0.0, 0.0), // TODO
                     darkness: 0.0,
                     ..default()
                 })),
@@ -184,7 +208,7 @@ fn spawn_diving_overlay(
     }
 }
 
-/// helper struct for accessing the [`Boat`](crate::ship::Boat)'s circle HUD
+/// helper struct for accessing the [`Boat`]'s circle HUD
 #[derive(Debug, Component, Copy, Clone)]
 pub(crate) struct CircleHud {
     pub radius: f32,
@@ -212,8 +236,8 @@ struct DivingOverlayIdentifier;
 
 #[derive(Debug, Component, Clone)]
 pub(crate) struct WeaponCounter {
-    aval_weapons: Vec<Weapon>,  // FIXME and maybe HashMap<Weapon, u16>
-    selected_weapon: Option<Weapon>  // potential terry fox
+    aval_weapons: Vec<Weapon>,       // FIXME and maybe HashMap<Weapon, u16>
+    selected_weapon: Option<Weapon>, // potential terry fox
 }
 
 fn move_camera(
@@ -230,125 +254,73 @@ fn move_camera(
     }
 }
 
-/// modifys [`Transform`] of [`Boat`]
-fn update_ship(
+fn update_state(
+    current_state: Res<State<BoatState>>,
     buttons: Res<ButtonInput<MouseButton>>,
-    mut firing_button: ResMut<FiringButtonPressed>,
-    window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
-    mut queries: ParamSet<(
-        Query<
-            (
-                &Transform,
-                &mut CustomTransform,
-                &mut TargetRotation,
-                &LmbReleased,
-                &Boat
-            )
-        >,
-        Query<
-            (
-                &Transform,
-                &mut CustomTransform,
-                &TargetRotation,
-                &TargetSpeed,
-                &Boat
-            )
-        >,
-        Query<
-            (
-                &Transform,
-                &mut CustomTransform,
-                &mut TargetSpeed,
-                &Boat
-            )
-        >,
-        Query<&mut LmbReleased, With<Boat>>,
-        Query<(&Transform, &Boat)>
-    )>,
-    mut spawn_weapon_writer: MessageWriter<SpawnWeaponMessage>,
+    mut setter: ResMut<NextState<BoatState>>,
+    mut fire_weapon: MessageWriter<FireWeapon>,
     time: Res<Time>
 ) {
-    // assume single ship
-    let datas = queries.p4();
-    let (transform, boat) = datas.single().unwrap();
-    
-    if let Some(cursor_pos) = get_cursor_pos(&window, &camera) {
-
-        // fire a weapon if pressed down time smaller than const specified
-        if firing_button.pressed() {
-            firing_button.time_since_key_down += time.delta();
-        }
-        if buttons.just_pressed(MouseButton::Left) {
-            match firing_button.firing_angle {
-                Some(_) => unreachable!(),
-                None => {
-                    let firing_angle = get_rotate_radian(cursor_pos, transform.translation.xy());
-                    firing_button.firing_angle = Some(firing_angle);
-                }
-            }
-        } else if firing_button.time_since_key_down > TIME_TO_LAUNCH_WEAPON {
-            if firing_button.pressed() {
-                firing_button.reset();
+    match current_state.get() {
+        BoatState::Stopped => {
+            if buttons.just_pressed(MouseButton::Left) {  // may not be correct
+                setter.set(BoatState::LockedDir);
             }
         }
-        
-        if buttons.just_released(MouseButton::Left) && let Some(firing_angle) = firing_button.firing_angle {
-            // --- fires a weapon
-            if let Some(weapon) = boat.data.default_weapon() {
-                spawn_weapon_writer.write(SpawnWeaponMessage {
-                    weapon,
-                    position: transform.translation.xy(),
-                    rotation: transform.rotation,
-                    target_rotation: Quat::from_rotation_z(firing_angle)
-                });
-                return;  //TODO messy state machine with duplication
+        BoatState::LockedDir => {
+            if buttons.just_released(MouseButton::Left) {
+                setter.set(BoatState::NotLocked);
             }
+        }
+        BoatState::NotLocked => {
+            if buttons.just_pressed(MouseButton::Left) {
+                setter.set(BoatState::FiringWeapon(Duration::ZERO));
+            }
+        }
+        BoatState::FiringWeapon(elapsed) => {
+            let duration = *elapsed + time.delta();
             
-        } else if buttons.just_released(MouseButton::Left) {
-            firing_button.reset();
-        }
-        
-        if firing_button.time_since_key_down < TIME_TO_LAUNCH_WEAPON && firing_button.pressed() {
-            // don't move when unclear
-            return;
+            if duration > TIME_TO_LAUNCH_WEAPON {
+                setter.set(BoatState::LockedDir);  // FIXME
+            } else if buttons.just_released(MouseButton::Left) {
+                fire_weapon.write(FireWeapon);
+                setter.set(BoatState::NotLocked);
+            } else {
+                setter.set(BoatState::FiringWeapon(duration));
+            }
         }
     }
 
-    if let Some(cursor_pos) = get_cursor_pos(&window, &camera)
-        && buttons.pressed(MouseButton::Left)
-    {
-        rotate_ship(&mut queries.p0(), cursor_pos);
-        move_ship(&mut queries.p2(), cursor_pos);
-    } else {
-        ship_to_target(&mut queries.p1());
-    }
-
-    if get_cursor_pos(&window, &camera).is_some() && buttons.just_released(MouseButton::Left) {
-        for mut released in queries.p3() {
-            released.0 = true;
-        }
-    } else if buttons.pressed(MouseButton::Left) {
-        for mut released in queries.p3() {
-            released.0 = false;
-        }
-    }
+    println!("Current state: {:?}", current_state.get())
 }
+
+//     if buttons.just_released(MouseButton::Left) {
+//         for mut released in queries.p3() {
+//             released.0 = true;
+//         }
+//     } else if buttons.pressed(MouseButton::Left) {
+//         for mut released in queries.p3() {
+//             released.0 = false;
+//         }
+//     }
+// }
 
 /// handle rotation
 fn rotate_ship(
-    transforms: &mut Query<
-        (
-            &Transform,
-            &mut CustomTransform,
-            &mut TargetRotation,
-            &LmbReleased,
-            &Boat
-        )
-    >,
-    cursor_pos: Vec2,
+    mut transforms: Query<(
+        &Transform,
+        &mut CustomTransform,
+        &mut TargetRotation,
+        &Boat,
+    )>,
+    state: Res<State<BoatState>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>
 ) {
-    for (transform, mut custom_transform, mut target_rotation, released, boat) in
+    let Some(cursor_pos) = get_cursor_pos(&window, &camera) else { return };
+    let state = *state.get();
+
+    for (transform, mut custom_transform, mut target_rotation, boat) in
         transforms.iter_mut()
     {
         let raw_moved = get_rotate_radian(cursor_pos, transform.translation.xy()); // diff from radian 0
@@ -362,13 +334,13 @@ fn rotate_ship(
                 .trim();
 
             // -- adjust for reversed ---
-            if moved_from_current.abs() > MINIMUM_REVERSE && released.0 {
-                // mouse in area and LMB released
+            if moved_from_current.abs() > MINIMUM_REVERSE && state == BoatState::NotLocked {
+                // mouse in reversing area
                 custom_transform.reversed = true;
                 moved_from_current = moved_from_current.flip();
                 target_move = target_move.flip()
-            } else if custom_transform.reversed && released.0 {
-                // already reversing but LMB released
+            } else if custom_transform.reversed && state == BoatState::NotLocked {
+                // already reversing, mouse out of reverse area
                 custom_transform.reversed = false;
             } else if custom_transform.reversed {
                 // unable to go forward, haven't released key yet
@@ -392,29 +364,19 @@ fn rotate_ship(
             custom_transform.rotate_local_z(moved.to_radian_unchecked());
         }
 
-        *target_rotation = Some(target_move).into();
+        target_rotation.0 = Some(target_move);
     }
 }
 
 /// handle moving
 fn move_ship(
-    datas: &mut Query<
-        (
-            &Transform,
-            &mut CustomTransform,
-            &mut TargetSpeed,
-            &Boat
-        )
-    >,
-    cursor_pos: Vec2,
+    mut datas: Query<(&Transform, &mut CustomTransform, &mut TargetSpeed, &Boat)>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>
 ) {
-    for (
-        transform,
-        mut custom_transform,
-        mut target_speed,
-        boat
-    ) in datas.iter_mut()
-    {
+    let Some(cursor_pos) = get_cursor_pos(&window, &camera) else { return };
+
+    for (transform, mut custom_transform, mut target_speed, boat) in datas.iter_mut() {
         let cursor_distance = cursor_pos.distance(transform.translation.xy());
         let max_speed = if custom_transform.reversed {
             -boat.data.rev_max_speed().get_raw()
@@ -426,7 +388,7 @@ fn move_ship(
             cursor_distance,
             add_circle_hud(boat.data.sprite_size().x / 2.0),
             max_speed,
-            boat.data.sprite_size().x / 2.0
+            boat.data.sprite_size().x / 2.0,
         );
 
         target_speed.0 = Speed::from_raw(speed);
@@ -439,11 +401,8 @@ fn move_ship(
             // accelerating too much forwards
             custom_transform.speed.add_raw(acceleration.get_raw());
         } else if speed_diff < -acceleration.get_raw() {
-            info!("accelerating too much backwards");
             // accelerating too much backwards
-            custom_transform
-                .speed
-                .subtract_raw(acceleration.get_raw());
+            custom_transform.speed.subtract_raw(acceleration.get_raw());
         }
         // not exceeding acceleration
         else if speed_diff.abs() > 0.1 {
@@ -453,23 +412,18 @@ fn move_ship(
 }
 
 // note that we're accepting Query instead of Single for ship everywhere
-// and not descriminating Bot/Player
 
 /// remember the last move angle and rotate toward it when button not pressed
 fn ship_to_target(
-    ships: &mut Query<
-        (
-            &Transform,
-            &mut CustomTransform,
-            &TargetRotation,
-            &TargetSpeed,
-            &Boat
-        )
-    >,
+    mut ships: Query<(
+        &Transform,
+        &mut CustomTransform,
+        &TargetRotation,
+        &TargetSpeed,
+        &Boat,
+    )>,
 ) {
-    for (transform, mut custom_transform, target_rotation, target_speed, boat) in
-        ships
-    {
+    for (transform, mut custom_transform, target_rotation, target_speed, boat) in ships.iter_mut() {
         // ------ rotation
         let Some(target_rotation) = target_rotation.0 else {
             continue;
@@ -497,11 +451,11 @@ fn ship_to_target(
         if speed_diff > acceleration.get_raw() {
             custom_transform.speed.add_raw(acceleration.get_raw());
         } else if speed_diff < -acceleration.get_raw() {
+            custom_transform.speed.subtract_raw(acceleration.get_raw());
+        } else {
             custom_transform
                 .speed
-                .subtract_raw(acceleration.get_raw());
-        } else {
-            custom_transform.speed.overwrite_with_raw(target_speed.get_raw());
+                .overwrite_with_raw(target_speed.get_raw());
         }
     }
 }
@@ -567,11 +521,11 @@ fn update_transform(
     }
 }
 
-fn diving(
-    mut ships: Query<(&mut Transform, &mut DivingStatus, &Boat)>,
-    buttons: Res<ButtonInput<Key>>
+fn dive(
+    mut ships: Query<(&mut Transform, &Boat)>,
+    diving_status: Res<State<DivingStatus>>
 ) {
-    let (mut transform, mut diving_status, boat) = ships
+    let (mut transform, boat) = ships
         .iter_mut()
         .find(|(.., boat)| matches!(boat.owner, BoatOwner::Player))
         .expect("Player died?");
@@ -580,41 +534,60 @@ fn diving(
         return;
     }
 
-    if buttons.just_pressed(Key::Character("r".into()))
-        || buttons.just_pressed(Key::Character("R".into()))
-    {
-        match *diving_status {
-            DivingStatus::None => {
-                if eq(transform.translation.z, 0.0, DecimalPoint::Three) {
-                    *diving_status = DivingStatus::Diving;
-                } else {
-                    *diving_status = DivingStatus::Surfacing;
-                }
-            },
-            DivingStatus::Surfacing => {
-                *diving_status = DivingStatus::Diving;
-            },
-            DivingStatus::Diving => {
-                *diving_status = DivingStatus::Surfacing;
-            },
+    match diving_status.get() {
+        DivingStatus::Diving => {
+            transform.decrease_with_limit(boat.data.diving_speed().get_raw(), OCEAN_FLOOR)
+        }
+        DivingStatus::Surfacing => {
+            transform.increase_with_limit(boat.data.diving_speed().get_raw(), OCEAN_FLOOR)
+        }
+        DivingStatus::None => {}
+    }
+}
+
+fn update_diving_status(
+    mut setter: ResMut<NextState<DivingStatus>>,
+    getter: Res<State<DivingStatus>>,
+    buttons: Res<ButtonInput<Key>>,
+    transforms: Query<(&Transform, &Boat)>
+) {
+    let (transform, _) = transforms.iter()
+        .filter(|(_, boat)| boat.owner == BoatOwner::Player)
+        .last()
+        .unwrap();
+    let mut target = getter.get().clone();
+
+    match target {
+        DivingStatus::None => (),
+        DivingStatus::Surfacing => {
+            if transform.reached(WATER_SURFACE, DecimalPoint::Three) {
+                target = DivingStatus::None;
+            }
+        }
+        DivingStatus::Diving => {
+            if transform.reached(OCEAN_FLOOR, DecimalPoint::Three) {
+                target = DivingStatus::None;
+            }
         }
     }
 
-    match *diving_status {
-        DivingStatus::Diving => transform.decrease_with_limit(boat.data.diving_speed().get_raw(), OCEAN_FLOOR),
-        DivingStatus::Surfacing => transform.increase_with_limit(boat.data.diving_speed().get_raw(), OCEAN_FLOOR),
-        DivingStatus::None => {}
+    if buttons.just_pressed(Key::Character("r".into()))
+        || buttons.just_pressed(Key::Character("R".into()))
+    {
+        match target {
+            DivingStatus::None => {
+                if eq(transform.translation.z, 0.0, DecimalPoint::Three) {
+                    target = DivingStatus::Diving
+                } else {
+                   target = DivingStatus::Surfacing;
+                }
+            }
+            DivingStatus::Surfacing => target = DivingStatus::Diving,
+            DivingStatus::Diving => target = DivingStatus::Surfacing
+        }
     }
-    
-    match *diving_status {
-        DivingStatus::Diving => if transform.reached(OCEAN_FLOOR, DecimalPoint::Three) {
-            *diving_status = DivingStatus::None;
-        },
-        DivingStatus::Surfacing => if transform.reached(WATER_SURFACE, DecimalPoint::Three) {
-            *diving_status = DivingStatus::None;
-        },
-        DivingStatus::None => {}
-    }
+
+    setter.set(target);
 }
 
 fn update_diving_overlay(
@@ -638,48 +611,73 @@ fn update_diving_overlay(
             OCEAN_FLOOR,
             DIVING_OVERLAY_MIN_RADIUS,
             DIVING_OVERLAY_MAX_RADIUS,
-            DIVING_OVERLAY_MAX_DARKNESS
+            DIVING_OVERLAY_MAX_DARKNESS,
         )
     }
 }
 
 
+fn fire_weapon(
+    mut receiver: MessageReader<FireWeapon>,
+    boats: Query<(&Transform, &Boat)>,
+    mut writer: MessageWriter<SpawnWeaponMessage>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>
+) {
+    let (transform, boat) = boats.iter()
+        .filter(|(_, boat)| boat.owner == BoatOwner::Player)
+        .last()
+        .unwrap();
+    let Some(cursor_pos) = get_cursor_pos(&window, &camera) else {return};
+
+    for _ in receiver.read() {
+        let fire_angle = get_rotate_radian(transform.translation.xy(), cursor_pos);
+        if let Some(weapon) = boat.data.default_weapon() {
+            writer.write(SpawnWeaponMessage {
+                weapon,
+                position: transform.translation.xy(),
+                rotation: transform.rotation,
+                target_rotation: Quat::from_rotation_z(fire_angle),
+            });
+        }
+    }
+}
 impl BoatData {
     fn get_armanents(&self) -> Vec<Weapon> {
         match self {
-            Self::Yasen => vec![Weapon::Set65]
+            Self::Yasen => vec![Weapon::Set65],
         }
     }
     fn default_weapon(&self) -> Option<Weapon> {
         match self {
-            Self::Yasen => Some(Weapon::Set65)
+            Self::Yasen => Some(Weapon::Set65),
         }
     }
     fn max_speed(&self) -> Speed {
         Speed::from_knots(match self {
-            Self::Yasen => 35.0
+            Self::Yasen => 35.0,
         })
     }
     fn rev_max_speed(&self) -> Speed {
         Speed::from_knots(match self {
-            Self::Yasen => 21.0
+            Self::Yasen => 21.0,
         })
     }
     fn diving_speed(&self) -> Speed {
         Speed::from_raw(match self {
-            Self::Yasen => 0.004
+            Self::Yasen => 0.004,
         })
     }
     fn acceleration(&self) -> Speed {
         Speed::from_knots(match self {
-            Self::Yasen => 2.0
+            Self::Yasen => 2.0,
         })
     }
     /// raw file size * [`DEFAULT_SPRITE_SHRINK`]
     fn sprite_size(&self) -> Vec2 {
-        ( match self {    
-            Self::Yasen => vec2(1024.0, 156.0)
-        } ) * DEFAULT_SPRITE_SHRINK
+        (match self {
+            Self::Yasen => vec2(1024.0, 156.0),
+        }) * DEFAULT_SPRITE_SHRINK
     }
     /// max turn in degrees
     fn max_turn(&self) -> f32 {
@@ -687,20 +685,9 @@ impl BoatData {
     }
 }
 
-impl FiringButtonPressed {
-    fn pressed(&self) -> bool {
-        self.firing_angle.is_some()
-    }
-    fn reset(&mut self) {
-        *self = Self::default();
-    }
-}
-
 
 #[derive(Bundle, Debug, Clone)]
 pub(crate) struct BoatBundle {
-    /// maximum angle in radians that you can turn per frame
-    max_turn: Radian,
     /// tranform to update in seperate system
     transform: Transform,
     /// ship's sprite
@@ -716,8 +703,7 @@ pub(crate) struct BoatBundle {
     out_of_bound: OutOfBound,
 
     weapon_counter: WeaponCounter,
-    diving_status: DivingStatus,
-    boat: Boat
+    boat: Boat,
 }
 
 impl Default for BoatBundle {
@@ -730,7 +716,6 @@ impl Default for BoatBundle {
     /// - `custom_transform`
     fn default() -> Self {
         BoatBundle {
-            max_turn: Radian::default(),
             transform: Transform::default(),
             sprite: Sprite::default(),
             custom_transform: CustomTransform::default(),
@@ -740,14 +725,13 @@ impl Default for BoatBundle {
             target_speed: TargetSpeed::default(),
             weapon_counter: WeaponCounter {
                 aval_weapons: vec![],
-                selected_weapon: None
+                selected_weapon: None,
             },
-            diving_status: DivingStatus::default(),
             boat: Boat {
                 data: BoatData::Yasen,
                 subkind: SubKind::SurfaceShip,
-                owner: BoatOwner::Player
-            }
+                owner: BoatOwner::Player,
+            },
         }
     }
 }

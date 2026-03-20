@@ -5,8 +5,6 @@ use std::{
 
 use bevy::prelude::*;
 
-use crate::{DEFAULT_MAX_TURN_DEG, WATER_SURFACE, boat::WeaponCounter};
-
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub(crate) struct CustomTransform {
     /// along the `rotation`
@@ -25,6 +23,7 @@ impl CustomTransform {
         self.rotation = (rotation * self.rotation.to_quat()).to_radian_unchecked();
     }
     /// from a not-moving entity
+    #[allow(dead_code)]
     pub(crate) fn from_static(position: Vec2) -> Self {
         CustomTransform {
             position: Position(position),
@@ -39,6 +38,7 @@ pub(crate) struct MkRect {
     pub dimensions: WidthHeight,
 }
 
+#[allow(dead_code)]
 impl MkRect {
     pub(crate) fn get_corners(&self) -> [Vec2; 4] {
         [
@@ -87,8 +87,6 @@ impl MkRect {
         Rect::from_center_size(self.center, self.dimensions.to_vec2())
     }
 }
-#[derive(Component, Debug, Copy, Clone, Deref)]
-pub(crate) struct Radius(pub f32);
 
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub(crate) struct Speed(f32);
@@ -117,40 +115,26 @@ impl Speed {
     }
 }
 
-#[derive(Component, Debug, Copy, Clone, Default, Deref)]
-pub(crate) struct MaxSpeed(pub Speed);
-#[derive(Component, Debug, Copy, Clone, Default, Deref)]
-pub(crate) struct ReverseSpeed(pub Speed);
 
-/// currently interpretated as maximum pixels of speed per frame
-#[derive(Component, Debug, Clone, Copy, Default, Deref)]
-pub(crate) struct Acceleration(pub Speed);
-
+/// the direction by which the ship should aim to turn towards
 #[derive(Component, Debug, Clone, Copy, Default, Deref)]
 pub(crate) struct TargetRotation(pub Option<f32>);
 
-impl From<Option<f32>> for TargetRotation {
-    fn from(value: Option<f32>) -> Self {
-        match value {
-            Some(v) => TargetRotation(Some(v)),
-            None => TargetRotation(None),
-        }
-    }
-}
-
+/// the target speed by which the ships should aim to accelerate towards
 #[derive(Component, Debug, Copy, Clone, Default, Deref)]
 pub(crate) struct TargetSpeed(pub Speed);
 
+/// Used by [`CustomTransform`] for rotation
 #[derive(Component, Debug, Copy, Clone, Default, Deref)]
 pub(crate) struct Radian(pub f32);
 
 impl Radian {
-    /// Replacement for [`f32::sin_cos`] (returns `vec2(cos, sin)`). Uses cross-platform
-    /// deterministic sin/cos.
+    /// Vec2 to be added to Origin to rotate
     pub(crate) fn to_vec(self) -> Vec2 {
         vec2(self.0.cos(), self.0.sin())
     }
 }
+
 impl Neg for Radian {
     type Output = Radian;
     fn neg(self) -> Self::Output {
@@ -162,12 +146,13 @@ pub(crate) trait ToRadian {
 }
 
 impl ToRadian for f32 {
-    /// assumes already radian
+    /// assumes already radian, wraps [`f32`] by Radian()
     fn to_radian_unchecked(&self) -> Radian {
         Radian(*self)
     }
 }
 impl ToRadian for Quat {
+    /// takes the Z-rotation and wraps it in [`f32`]
     fn to_radian_unchecked(&self) -> Radian {
         let (.., z) = self.to_euler(EulerRot::XYZ);
         Radian(z)
@@ -196,14 +181,11 @@ impl Position {
     }
 }
 
-#[derive(Component, Debug, PartialEq, Copy, Clone, Default, Deref)]
-pub(crate) struct MousePos(pub Option<Vec2>);
-
-/// the altitude of an entity, with 0 being the surface and going up with increasing
+/// the altitude of an entity
 pub(crate) trait Altitude {
     fn decrease_with_limit(&mut self, meter: f32, limit: f32);
     fn increase_with_limit(&mut self, meter: f32, limit: f32);
-    fn reached(&mut self, target: f32, precision: DecimalPoint) -> bool;
+    fn reached(&self, target: f32, precision: DecimalPoint) -> bool;
 }
 
 impl Altitude for Transform {
@@ -216,30 +198,13 @@ impl Altitude for Transform {
         self.translation.z = (self.translation.z + meter).max(limit);
     }
 
-    fn reached(&mut self, target: f32, precision: DecimalPoint) -> bool {
-
+    fn reached(&self, target: f32, precision: DecimalPoint) -> bool {
         let diff = (target - self.translation.z).abs();
 
         diff <= precision.to_f32()
     }
 }
 
-#[test]
-fn test_dcs_limit() {
-    let mut transform = Transform {
-        translation: Vec3 {
-            z: 0.0,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    transform.decrease_with_limit(3.0, -2.0);
-
-    assert!(transform.translation.z == -2.0);
-}
-
-#[derive(Debug, Component, Clone, Copy)]
-pub(crate) struct DivingSpeed(pub f32);
 
 #[derive(Debug, Component, Clone, Copy)]
 pub(crate) struct OutOfBound(pub bool);
@@ -250,12 +215,14 @@ pub(crate) struct CircleHudBundle {
     pub(crate) materials: MeshMaterial2d<ColorMaterial>,
 }
 
+/// used for non-precise `==` comparisons
+/// 
 /// # Example
 /// Zero = 1.0,
 /// Two = 0.01
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub(crate) enum DecimalPoint {
-    OneHundredPixels,
     Zero,
     One,
     Two,
@@ -269,15 +236,14 @@ impl DecimalPoint {
             D::Zero => 1.0,
             D::One => 0.1,
             D::Two => 0.01,
-            D::Three => 0.001,
-            D::OneHundredPixels => 20.0
+            D::Three => 0.001
         }
     }
 }
 
 /// the user MUST release the LMB to switch betweeen reversed and forwards.
 #[derive(Component, Debug, Clone, Copy, Deref)]
-pub(crate) struct LmbReleased(pub bool);
+pub(crate) struct LmbReleased(pub bool);  // TODO resource
 
 /// flips a radian 180 degrees
 pub(crate) trait FlipRadian {
@@ -290,7 +256,7 @@ impl FlipRadian for f32 {
     }
 }
 
-/// eliminates offset when turning over the <--- axis
+/// eliminates offset when turning over the negative x-axis
 pub(crate) trait TrimRadian {
     fn trim(self) -> Self;
 }
@@ -307,8 +273,8 @@ impl TrimRadian for f32 {
 
 #[derive(Component, Debug, Copy, Clone)]
 pub(crate) struct WidthHeight {
-    pub(crate) width: f32,
-    pub(crate) height: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 impl WidthHeight {
@@ -345,11 +311,6 @@ impl From<Vec2> for WidthHeight {
         }
     }
 }
-
-/// used to indicate that an entity (usually a `Sprite`) is validated to prevent reduntancy
-#[derive(Debug, Component, Clone, Copy, Deref)]
-pub(crate) struct Validated(pub bool);
-
 
 #[cfg(test)]
 mod tests {

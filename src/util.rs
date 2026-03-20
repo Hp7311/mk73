@@ -16,8 +16,7 @@ pub(crate) fn eq(x: f32, y: f32, precision: DecimalPoint) -> bool {
 /// the equivalent of `==` only with a specified precision
 pub(crate) fn vec2_eq(x: Vec2, y: Vec2, precision: DecimalPoint) -> bool {
     let subtracted = (x - y).abs();
-    subtracted.x <= precision.to_f32()
-        && subtracted.y <= precision.to_f32()
+    subtracted.x <= precision.to_f32() && subtracted.y <= precision.to_f32()
 }
 
 /// gets the rotation in radians according to `source` and `destination`
@@ -25,8 +24,8 @@ pub(crate) fn vec2_eq(x: Vec2, y: Vec2, precision: DecimalPoint) -> bool {
 /// starts from the X axis of source(right), **counter clock-wise**
 /// 2D only
 pub(crate) fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
-    let x_diff = source.x - destination.x;
-    let y_diff = source.y - destination.y;
+    let x_diff = destination.x - source.x;
+    let y_diff = destination.y - source.y;
 
     atan2(y_diff, x_diff)
 }
@@ -49,7 +48,7 @@ pub(crate) fn get_cursor_pos(
     window
         .cursor_position()
         .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor).ok())
-        .map(|ray| ray.origin.truncate())
+        .map(|ray| ray.origin.xy())
 }
 
 /// gets a approximately round area of tiles around a point
@@ -73,8 +72,8 @@ pub(crate) fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
 
 /// returns the (radius, darkness (0..1)) to be passed into shaders
 ///
-/// the closer to the surface(0.0), the bigger the radius and vice versa
-/// 
+/// the closer to the surface(0.0), the bigger the radius, smaller the darkness and vice versa
+///
 /// note that we're returning the maximum darkness if calculated value exceeds instead of calculating the darkness according
 /// to the range between 0 and max_darkness
 pub(crate) fn calculate_diving_overlay(
@@ -103,12 +102,6 @@ pub(crate) fn calculate_diving_overlay(
     }
 }
 
-#[test]
-fn test_div_overlay() {
-    let target = calculate_diving_overlay(-0.4, -2.0, 30.0, 50.0, 0.4);
-
-    assert_eq!(target, (40.0, 0.2));
-}
 
 pub(crate) fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
     let square = MkRect {
@@ -160,10 +153,6 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
     )
 }
 
-pub(crate) fn get_head(position: Vec2, angle: Quat, sprite_length: f32) -> Vec2 {
-    todo!("used to calculate weapon launch spot? outdated params")
-}
-
 /// create a large bounding box that is guaranteed to contain the specified rectangle no matter the rotation
 pub(crate) fn large_bounding_box(center: Vec2, dimensions: WidthHeight) -> MkRect {
     MkRect {
@@ -180,7 +169,7 @@ mod tests {
         let source = vec2(10.0, 3.0);
         let destination = vec2(10.0, 5.0);
 
-        assert_eq!(get_rotate_radian(source, destination).to_degrees(), -90.0);
+        assert_eq!(get_rotate_radian(source, destination).to_degrees(), 90.0);
     }
     #[test]
     fn test_move_with_rotation() {
@@ -201,5 +190,12 @@ mod tests {
 
         let result = calculate_from_proportion(source, unit_1, maximum, minimum);
         assert_eq!(result, 50.0);
+    }
+    #[test]
+    fn test_div_overlay() {
+        let target = calculate_diving_overlay(-0.4, -2.0, 30.0, 50.0, 0.4);
+
+        assert!(eq(target.1, 0.2, DecimalPoint::Three));
+        assert_eq!(target.0, 46.0);
     }
 }

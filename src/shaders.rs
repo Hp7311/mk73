@@ -16,26 +16,21 @@ impl Plugin for ShadersPlugin {
 pub(crate) struct DivingOverlay {
     #[uniform(0)]
     pub radius: f32,
+    #[cfg(target_arch = "wasm32")]
     #[uniform(0)]
-    pub _r_padding1: f32,
-    #[uniform(0)]
-    pub _r_padding2: f32,
-    #[uniform(0)]
-    pub _r_padding3: f32,
+    pub _r_padding: Vec3,
+    
     #[uniform(1)]
     pub player_pos: Vec2,
-
+    #[cfg(target_arch = "wasm32")]
     #[uniform(1)]
     pub _p_padding: Vec2,
 
     #[uniform(2)]
     pub darkness: f32,
+    #[cfg(target_arch = "wasm32")]
     #[uniform(2)]
-    pub _d_padding1: f32,
-    #[uniform(2)]
-    pub _d_padding2: f32,
-    #[uniform(2)]
-    pub _d_padding3: f32,
+    pub _d_padding: Vec3
 }
 
 impl Material2d for DivingOverlay {

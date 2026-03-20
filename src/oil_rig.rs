@@ -3,14 +3,13 @@
 use std::{f32::consts::PI, ops::Range};
 
 use bevy::prelude::*;
-use enum_dispatch::enum_dispatch;
 use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
 use crate::{
     DEFAULT_SPRITE_SHRINK, WATER_SURFACE,
     boat::{CircleHud, PlayerScore},
     collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects},
-    primitives::{DecimalPoint, MkRect, Validated, WidthHeight},
+    primitives::{DecimalPoint, MkRect, WidthHeight},
     util::{eq, point_in_square, tiles_around_point},
     world::WorldSize,
 };
@@ -38,9 +37,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     let mut spawned_rigs = vec![];
     for _ in 0..10 {
-        // temporary
+        // temporary 10 rigs
         spawned_rigs.push(spawn_random_rig(
-            commands.reborrow(),
+            &mut commands,
             &mut rng,
             &world_size,
             oil_rig_image.clone(),
@@ -50,7 +49,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     }
 }
 
-#[enum_dispatch]
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// an entity that provide an amount of points
 enum Point {
@@ -59,57 +57,23 @@ enum Point {
     Scrap,
 }
 
-#[enum_dispatch(Point)]
-trait PointData {
-    fn worth(&self) -> u16;
-    fn get_parent_rig(&self) -> Option<Entity>;
-    fn fill_spawned_by(&mut self, spawned_by: Entity);
-}
+#[derive(Component, Debug, Clone)]
+struct ParentRig(Entity);
 
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-struct Barrel {
-    spawned_by: Option<Entity>,
-}
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-struct Coin {
-    spawned_by: Option<Entity>,
-}
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-struct Scrap {
-    spawned_by: Option<Entity>,
-}
-
-impl PointData for Coin {
+impl Point {
     fn worth(&self) -> u16 {
-        3
+        match self {
+            Self::Barrel => 2,
+            Self::Coin => 3,
+            Self::Scrap => 1
+        }
     }
-    fn get_parent_rig(&self) -> Option<Entity> {
-        self.spawned_by
-    }
-    fn fill_spawned_by(&mut self, spawned_by: Entity) {
-        self.spawned_by = Some(spawned_by);
-    }
-}
-impl PointData for Barrel {
-    fn worth(&self) -> u16 {
-        2
-    }
-    fn get_parent_rig(&self) -> Option<Entity> {
-        self.spawned_by
-    }
-    fn fill_spawned_by(&mut self, spawned_by: Entity) {
-        self.spawned_by = Some(spawned_by);
-    }
-}
-impl PointData for Scrap {
-    fn worth(&self) -> u16 {
-        1
-    }
-    fn get_parent_rig(&self) -> Option<Entity> {
-        self.spawned_by
-    }
-    fn fill_spawned_by(&mut self, spawned_by: Entity) {
-        self.spawned_by = Some(spawned_by);
+    fn file_name(&self) -> &'static str {
+        match self {
+            Self::Barrel => "barrel.png",
+            Self::Coin => "coin.png",
+            Self::Scrap => "scrap.png"
+        }
     }
 }
 
@@ -149,8 +113,6 @@ const SPAWN_POINT_AMOUNT_MAX: Range<u16> = 30..40;
 /// spawns a point around a rig every x-y seconds
 #[cfg(debug_assertions)]
 const SPAWN_POINT_SPRITE_P: Range<usize> = 0..2;
-#[cfg(not(debug_assertions))]
-const SPAWN_POINT_SPRITE_P: Range<usize> = 15 * 60..30 * 60;
 
 /// the maximum radius around a rig which a point can spawn
 const SPAWN_POINT_RADIUS_MAX: f32 = 100.0;
@@ -164,11 +126,12 @@ fn rig_spawn_points(
     mut transforms: Query<(&mut PointAmount, &Transform, &Sprite, Entity), With<OilRig>>,
     world_size: Single<&WorldSize>,
 ) {
+    use Point as P;
     let point_sprites: [(Point, Handle<Image>); 3] = [
-        (Coin::default().into(), asset_server.load("coin.png")),
-        (Barrel::default().into(), asset_server.load("barrel.png")),
-        (Scrap::default().into(), asset_server.load("scrap.png")),
-    ];
+        (P::Coin, asset_server.load(P::Coin.file_name())),
+        (P::Barrel, asset_server.load(P::Barrel.file_name())),
+        (P::Scrap, asset_server.load(P::Scrap.file_name())),
+    ];  // load sprites early for performance
 
     for (mut point_amount, transform, sprite, id) in transforms.iter_mut() {
         let Some(sprite_size) = sprite.custom_size else {
@@ -202,8 +165,7 @@ fn rig_spawn_points(
         spawn_p.push(true);
 
         if *spawn_p.choose(&mut rng).unwrap() {
-            let (mut chosen_type, chosen_sprite) = point_sprites.choose(&mut rng).unwrap().clone();
-            chosen_type.fill_spawned_by(id);
+            let (chosen_type, chosen_sprite) = point_sprites.choose(&mut rng).unwrap().clone();
             let chosen_tile = avaliable_tiles.choose(&mut rng).unwrap();
 
             commands.spawn((
@@ -214,6 +176,7 @@ fn rig_spawn_points(
                     ..default()
                 },
                 chosen_type,
+                ParentRig(id)
             ));
 
             point_amount.add(chosen_type.worth());
@@ -266,24 +229,25 @@ fn move_points(
     }
 }
 
+/// increment player's score and despawning the Point if absorbed
 fn points_obsorbed_despawn(
     mut commands: Commands,
-    points_transform: Query<(&Transform, &Point, Entity)>,
+    points_transform: Query<(&Transform, &Point, &ParentRig, Entity)>,
     circle_huds: Query<&CircleHud>,
     mut oil_rigs: Query<&mut PointAmount, With<OilRig>>,
     mut player_score: ResMut<PlayerScore>,
 ) {
-    for (point_transform, point, id) in points_transform.iter() {
+    for (point_transform, point, parent_rig, id) in points_transform.iter() {
         if circle_huds
             .iter()
             .any(|hud| hud.at_center(point_transform.translation.xy(), DecimalPoint::Zero))
         {
             commands.get_entity(id).unwrap().despawn();
-            let mut point_amount = oil_rigs.get_mut(point.get_parent_rig().unwrap()).unwrap();
+            let mut point_amount = oil_rigs.get_mut(parent_rig.0).unwrap();
 
             point_amount.remove(point.worth());
 
-            player_score.add_to_score(point.worth().into());
+            player_score.add_to_score(point.worth() as u32);
         }
     }
 }
@@ -292,8 +256,7 @@ fn points_obsorbed_despawn(
 struct OilRigBundle {
     sprite: Sprite,
     point_amount: PointAmount,
-    oil_rig: OilRig,
-    validated: Validated,
+    oil_rig: OilRig
 }
 
 impl OilRigBundle {
@@ -301,8 +264,7 @@ impl OilRigBundle {
         OilRigBundle {
             sprite,
             point_amount: PointAmount::new(rng),
-            oil_rig: OilRig,
-            validated: Validated(false),
+            oil_rig: OilRig
         }
     }
 }
@@ -312,13 +274,13 @@ struct RigInfo {
     width: f32,
 }
 
-/// spawns a must-valid rig, returns the dimensions and Transform of the spawned rig
+/// spawns a must-valid rig at [`WATER_SURFACE`], returns the dimensions and Transform of the spawned rig
 /// ### Panics
 /// assumes that the rig is a square
 /// ### Hangs
 /// if there aren't space
 fn spawn_random_rig(
-    mut commands: Commands,
+    commands: &mut Commands,
     rng: &mut ThreadRng,
     world_size: &WorldSize,
     image: Handle<Image>,

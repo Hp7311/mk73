@@ -5,8 +5,8 @@ mod oil_rig;
 mod primitives;
 mod shaders;
 mod util;
-mod world;
 mod weapons;
+mod world;
 
 use bevy::camera_controller::pan_camera::PanCamera;
 use bevy::prelude::*;
@@ -27,8 +27,8 @@ const DIVING_OVERLAY: f32 = 35.0;
 pub use boat::BoatPlugin;
 pub use oil_rig::OilRigPlugin;
 pub use shaders::ShadersPlugin;
-pub use world::WorldPlugin;
 pub use weapons::WeaponPlugin;
+pub use world::WorldPlugin;
 
 #[derive(Component)]
 struct MainCamera;

@@ -3,10 +3,15 @@ use std::ops::Range;
 use bevy::prelude::*;
 use rand::RngExt;
 
-use crate::{DEFAULT_MAX_TURN_DEG, primitives::{Acceleration, DecimalPoint, Speed, TargetRotation, TrimRadian}, util::{eq, move_with_rotation}};
+use crate::{
+    DEFAULT_MAX_TURN_DEG,
+    primitives::{DecimalPoint, Speed, TargetRotation, TrimRadian},
+    util::{eq, move_with_rotation},
+};
 
 /// faster max turning speed for torpedoes
-const MAX_TURN_RADIAN: Range<f32> = (DEFAULT_MAX_TURN_DEG * 2.0 ).to_radians()..(DEFAULT_MAX_TURN_DEG * 3.0).to_radians();
+const MAX_TURN_RADIAN: Range<f32> =
+    (DEFAULT_MAX_TURN_DEG * 2.0).to_radians()..(DEFAULT_MAX_TURN_DEG * 3.0).to_radians();
 
 pub struct WeaponPlugin;
 
@@ -20,54 +25,63 @@ impl Plugin for WeaponPlugin {
 
 #[derive(Debug, Component, Clone, Copy)]
 pub(crate) enum Weapon {
-    Set65
+    Set65,
 }
 
 #[derive(Debug, Copy, Clone)]
 enum WeaponType {
-    Torpedo
+    Torpedo,
 }
 
 impl Weapon {
     fn file_name(&self) -> &'static str {
         match self {
-            Weapon::Set65 => "Set65.png"
+            Weapon::Set65 => "Set65.png",
         }
     }
     fn custom_size(&self) -> Vec2 {
         match self {
-            Weapon::Set65 => vec2(25.6, 2.0)
+            Weapon::Set65 => vec2(25.6, 2.0),
         }
     }
-    // TODO macro for these matching enums
     fn weapon_type(&self) -> WeaponType {
         match self {
-            Weapon::Set65 => WeaponType::Torpedo
+            Weapon::Set65 => WeaponType::Torpedo,
         }
     }
     fn max_speed(&self) -> Speed {
         Speed::from_knots(match self {
-            Weapon::Set65 => 50.0
+            Weapon::Set65 => 50.0,
         })
     }
-    fn acceleration(&self) -> Acceleration {
-        Acceleration(Speed::from_knots(match self {
-            Weapon::Set65 => 10.0
-        }))
+    fn acceleration(&self) -> Speed {
+        Speed::from_knots(match self {
+            Weapon::Set65 => 10.0,
+        })
     }
 }
 
+/// inter-mod message to spawn a Weapon
 #[derive(Debug, Message)]
-pub(crate) struct SpawnWeaponMessage{
+pub(crate) struct SpawnWeaponMessage {
     pub weapon: Weapon,
     pub position: Vec2,
     pub rotation: Quat,
-    pub target_rotation: Quat
+    pub target_rotation: Quat,
 }
 
-// TODO direct the torpedo toward the mouse pos, not in a direction
-fn spawn_weapon(mut commands: Commands, mut reader: MessageReader<SpawnWeaponMessage>, asset_server: Res<AssetServer>) {
-    for SpawnWeaponMessage { weapon, position, rotation, target_rotation } in reader.read() {
+fn spawn_weapon(
+    mut commands: Commands,
+    mut reader: MessageReader<SpawnWeaponMessage>,
+    asset_server: Res<AssetServer>,
+) {
+    for SpawnWeaponMessage {
+        weapon,
+        position,
+        rotation,
+        target_rotation,
+    } in reader.read()
+    {
         commands.spawn((
             Sprite {
                 image: asset_server.load(weapon.file_name()),
@@ -79,9 +93,9 @@ fn spawn_weapon(mut commands: Commands, mut reader: MessageReader<SpawnWeaponMes
                 rotation: *rotation,
                 ..default()
             },
-            TargetRotation(Some(target_rotation.to_euler(EulerRot::XYZ).2)),  // cannot be None
+            TargetRotation(Some(target_rotation.to_euler(EulerRot::XYZ).2)), // cannot be None
             Speed::from_knots(0.0),
-            Weapon::Set65
+            Weapon::Set65,
         ));
     }
 }
@@ -91,9 +105,10 @@ fn rotate_weapon(mut query: Query<(&mut Transform, &TargetRotation), With<Weapon
         let max_turn_radian = rand::rng().random_range(MAX_TURN_RADIAN);
         let current_rotation = transform.rotation.to_euler(EulerRot::XYZ).2;
 
-        let moved_from_current = (target_rotation.unwrap().to_degrees() - current_rotation.to_degrees())
-            .to_radians()
-            .trim();
+        let moved_from_current = (target_rotation.unwrap().to_degrees()
+            - current_rotation.to_degrees())
+        .to_radians()
+        .trim();
 
         if eq(moved_from_current, 0.0, DecimalPoint::Three) {
             // dbg!(moved_from_current);
@@ -126,11 +141,9 @@ fn move_weapon(mut query: Query<(&mut Transform, &Weapon, &mut Speed)>) {
             speed.add_raw(acceleration);
         } else if speed_diff < -acceleration {
             speed.subtract_raw(acceleration);
-        }
-
-        else if speed_diff.abs() > 0.1 {
+        } else if speed_diff.abs() > 0.1 {
             speed.overwrite_with_raw(weapon.max_speed().get_raw());
-        }  // weapons don't have dynamic speeds. therefore it'll always try to go at max speed
+        } // weapons don't have dynamic speeds. therefore it'll always try to go at max speed
 
         *last_speed = speed;
 

@@ -4,9 +4,7 @@
 struct Data {
     value: f32,
 #ifdef SIXTEEN_BYTE_ALIGNMENT
-    _d_padding1: f32,
-    _d_padding2: f32,
-    _d_padding3: f32,
+    _d_padding: vec3<f32>
 #endif
 }
 
