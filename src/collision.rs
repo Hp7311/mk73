@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 
 use crate::{
-    primitives::{CustomTransform, MkRect, WidthHeight},
+    primitives::{CustomTransform, MkRect},
     util::rotate_vec2,
     world::WorldSize,
 };
@@ -19,7 +19,13 @@ use crate::{
 /// slow if close to the border
 pub(crate) fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool {
     // if not near the border, return without redundant operations
-    if !near_bound_coarse(sprite, bound) {
+    if !out_of_bound_point(
+        bound,
+        MkRect {
+            center: sprite.center,
+            dimensions: sprite.dimensions.large_bounding_box(),
+        },
+    ) {
         return false;
     }
 
@@ -35,31 +41,14 @@ pub(crate) fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -
         })
 }
 
-/// determine whether perform slow trignometry to calculate out_of_bound
-///
-/// `corners` are relative to `pos`
-/// ### Implementation
-/// given a rectangle, a square of side length longer_side ^ 2 will always cover the entirety of the rectangle
-fn near_bound_coarse(sprite: MkRect, bound: &WorldSize) -> bool {
-    let longer_side = sprite.dimensions.max_side() * 2.0;
-
-    out_of_bound_no_rotation(
-        bound,
-        MkRect {
-            center: sprite.center,
-            dimensions: WidthHeight::splat(longer_side),
-        },
-    )
-}
-
-/// faster version of out_of_bounds with a point, no rotation
-pub(crate) fn out_of_bound_no_rotation(bound: &WorldSize, sprite: MkRect) -> bool {
+/// faster version of out_of_bounds with a rect, no rotation
+pub(crate) fn out_of_bound_point(bound: &WorldSize, rect: MkRect) -> bool {
     let world_bound: MkRect = MkRect {
         center: Vec2::ZERO,
         dimensions: bound.0,
     };
 
-    sprite
+    rect
         .get_corners()
         .iter()
         .any(|corner| !world_bound.contains(*corner))
@@ -209,6 +198,8 @@ fn sat_collision_half(
 #[cfg(test)]
 mod tests {
     use bevy::math::vec2;
+
+    use crate::primitives::WidthHeight;
 
     use super::*;
     #[test]

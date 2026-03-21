@@ -3,7 +3,7 @@ use std::{
     ops::{AddAssign, Neg},
 };
 
-use bevy::prelude::*;
+use bevy::{prelude::*, sprite_render::Material2d};
 
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub(crate) struct CustomTransform {
@@ -213,9 +213,9 @@ impl Altitude for Transform {
 pub(crate) struct OutOfBound(pub bool);
 
 #[derive(Bundle, Debug, Clone)]
-pub(crate) struct CircleHudBundle {
+pub(crate) struct MeshBundle<M: Material2d> {
     pub(crate) mesh: Mesh2d,
-    pub(crate) materials: MeshMaterial2d<ColorMaterial>,
+    pub(crate) materials: MeshMaterial2d<M>,
 }
 
 /// used for non-precise `==` comparisons
@@ -244,10 +244,6 @@ impl DecimalPoint {
     }
 }
 
-/// the user MUST release the LMB to switch betweeen reversed and forwards.
-#[derive(Component, Debug, Clone, Copy, Deref)]
-pub(crate) struct LmbReleased(pub bool);  // TODO resource
-
 /// flips a radian 180 degrees
 pub(crate) trait FlipRadian {
     fn flip(self) -> Self;
@@ -255,16 +251,16 @@ pub(crate) trait FlipRadian {
 
 impl FlipRadian for f32 {
     fn flip(self) -> Self {
-        (self + PI).trim()
+        (self + PI).normalize()
     }
 }
 
 /// eliminates offset when turning over the negative x-axis
-pub(crate) trait TrimRadian {
-    fn trim(self) -> Self;
+pub(crate) trait NormalizeRadian {
+    fn normalize(self) -> Self;
 }
-impl TrimRadian for f32 {
-    fn trim(mut self) -> Self {
+impl NormalizeRadian for f32 {
+    fn normalize(mut self) -> Self {
         if self > PI {
             self -= 2.0 * PI;
         } else if self < -PI {
@@ -281,6 +277,7 @@ pub(crate) struct WidthHeight {
 }
 
 impl WidthHeight {
+    pub(crate) const LARGE_BOX_MULTIPLIER: f32 = 1.3;
     pub(crate) const ZERO: Self = WidthHeight {
         width: 0.0,
         height: 0.0,
@@ -303,6 +300,10 @@ impl WidthHeight {
         } else {
             self.height
         }
+    }
+    /// creates a large bounding box that is guaranteed to contain self no matter the rotation
+    pub(crate) fn large_bounding_box(self) -> Self {
+        Self::splat(self.max_side() * Self::LARGE_BOX_MULTIPLIER)
     }
 }
 

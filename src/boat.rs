@@ -8,7 +8,6 @@ use std::time::Duration;
 use bevy::color::palettes::css::*;
 use bevy::input::keyboard::Key;
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
 
 use crate::CIRCLE_HUD;
 use crate::DEFAULT_MAX_TURN_DEG;
@@ -38,7 +37,6 @@ macro_rules! filter_player {
     }
 }
 
-// TODO create resource for cursor position
 pub struct BoatPlugin;
 
 impl Plugin for BoatPlugin {
@@ -181,7 +179,7 @@ fn startup(
         .with_children(
             |parent: &mut bevy::ecs::relationship::RelatedSpawnerCommands<'_, ChildOf>| {
                 parent.spawn((
-                    CircleHudBundle {
+                    MeshBundle {
                         mesh: Mesh2d(meshes.add(Circle::new(radius).to_ring(3.0))),
                         materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
                     },
@@ -328,9 +326,7 @@ fn rotate_ship(
 
         let moved = {
             // radians to move from current rotation
-            let mut moved_from_current = (raw_moved.to_degrees() - current_rotation.to_degrees())
-                .to_radians()
-                .trim();
+            let mut moved_from_current = (raw_moved - current_rotation).normalize();
 
             // -- adjust for reversed ---
             if moved_from_current.abs() > MINIMUM_REVERSE && state == BoatState::FreeDir {
@@ -429,9 +425,7 @@ fn ship_to_target(
 
         let (.., current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
 
-        let moved = (target_rotation.to_degrees() - current_rotation.to_degrees())
-            .to_radians()
-            .trim();
+        let moved = (target_rotation - current_rotation).normalize();
 
         let ship_max_turn = boat.data.max_turn().to_radians();
         if moved.abs() > ship_max_turn {
@@ -550,7 +544,7 @@ fn update_diving_status(
     transforms: Query<(&Transform, &Boat)>
 ) {
     let (transform, _) = filter_player!(transforms, 1).unwrap();
-    let mut target = getter.get().clone();
+    let mut target = *getter.get();
 
     match target {
         DivingStatus::None => (),
@@ -611,7 +605,6 @@ fn update_diving_overlay(
     }
 }
 
-
 fn fire_weapon(
     mut receiver: MessageReader<FireWeapon>,
     boats: Query<(&Transform, &Boat)>,
@@ -621,7 +614,7 @@ fn fire_weapon(
     let (transform, boat) = filter_player!(boats, 1).unwrap();
 
     for _ in receiver.read() {
-        let fire_angle = get_rotate_radian(transform.translation.xy(), cursor_pos.0);
+        let fire_angle: f32 = get_rotate_radian(transform.translation.xy(), cursor_pos.0);
         if let Some(weapon) = boat.data.default_weapon() {
             writer.write(SpawnWeaponMessage {
                 weapon,
@@ -632,6 +625,7 @@ fn fire_weapon(
         }
     }
 }
+
 impl BoatData {
     fn get_armanents(&self) -> Vec<Weapon> {
         match self {
@@ -675,7 +669,6 @@ impl BoatData {
     }
 }
 
-
 #[derive(Bundle, Debug, Clone)]
 pub(crate) struct BoatBundle {
     /// tranform to update in seperate system
@@ -684,8 +677,6 @@ pub(crate) struct BoatBundle {
     sprite: Sprite,
     /// whether reversed, speed etc
     custom_transform: CustomTransform,
-    /// if reversed, whether LMB has been released since reversing
-    button_released: LmbReleased,
     /// where the user's mouse was facing
     mouse_target: TargetRotation,
     /// the target speed of the Boat
@@ -709,7 +700,6 @@ impl Default for BoatBundle {
             transform: Transform::default(),
             sprite: Sprite::default(),
             custom_transform: CustomTransform::default(),
-            button_released: LmbReleased(false),
             out_of_bound: OutOfBound(false),
             mouse_target: TargetRotation::default(),
             target_speed: TargetSpeed::default(),

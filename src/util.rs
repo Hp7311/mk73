@@ -153,13 +153,6 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
     )
 }
 
-/// create a large bounding box that is guaranteed to contain the specified rectangle no matter the rotation
-pub(crate) fn large_bounding_box(center: Vec2, dimensions: WidthHeight) -> MkRect {
-    MkRect {
-        center,
-        dimensions: WidthHeight::splat(dimensions.max_side() * 1.5),
-    }
-}
 
 #[cfg(test)]
 mod tests {

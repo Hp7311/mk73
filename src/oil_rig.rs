@@ -8,7 +8,7 @@ use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 use crate::{
     DEFAULT_SPRITE_SHRINK, WATER_SURFACE,
     boat::{CircleHud, PlayerScore},
-    collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects},
+    collision::{out_of_bound_point, out_of_bounds, square_does_not_intersects},
     primitives::{DecimalPoint, MkRect, WidthHeight},
     util::{eq, point_in_square, tiles_around_point},
     world::WorldSize,
@@ -150,7 +150,7 @@ fn rig_spawn_points(
             .iter()
             .filter(|&tile| !point_in_square(*tile, sprite_size.x, transform.translation.xy()))
             .filter(|&tile| {
-                !out_of_bound_no_rotation(
+                !out_of_bound_point(  // okay to not use with rotation outofbound because how small a point is
                     &world_size,
                     MkRect {
                         center: *tile,
@@ -165,17 +165,17 @@ fn rig_spawn_points(
         spawn_p.push(true);
 
         if *spawn_p.choose(&mut rng).unwrap() {
-            let (chosen_type, chosen_sprite) = point_sprites.choose(&mut rng).unwrap().clone();
+            let (chosen_type, chosen_sprite) = point_sprites.choose(&mut rng).unwrap();
             let chosen_tile = avaliable_tiles.choose(&mut rng).unwrap();
 
             commands.spawn((
-                Sprite::from_image(chosen_sprite),
+                Sprite::from_image(chosen_sprite.clone()),
                 Transform {
                     translation: chosen_tile.extend(WATER_SURFACE),
                     scale: Vec2::splat(DEFAULT_SPRITE_SHRINK.powi(2)).extend(0.0),
                     ..default()
                 },
-                chosen_type,
+                *chosen_type,
                 ParentRig(id)
             ));
 
