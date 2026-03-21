@@ -21,14 +21,24 @@ use crate::collision::out_of_bounds;
 use crate::primitives::*;
 use crate::shaders::DivingOverlay;
 use crate::util::{
-    add_circle_hud, calculate_from_proportion, get_cursor_pos, get_rotate_radian,
+    add_circle_hud, calculate_from_proportion, get_rotate_radian,
     move_with_rotation, eq, calculate_diving_overlay
 };
 use crate::weapons::SpawnWeaponMessage;
 use crate::weapons::Weapon;
 use crate::world::WorldSize;
 
-// TODO create resource for cursor position, helper function to seperate the Owner of query of boats
+/// filters a [`Query`] that has the last `QueryData` as Boat so that it only contains queries with BoatOwner as Player
+macro_rules! filter_player {
+    ($query:expr) => {
+        $query.iter().filter(|(.., boat)| boat.owner == BoatOwner::Player)
+    };
+    ($query:expr, 1) => {
+        $query.iter().filter(|(.., boat)| boat.owner == BoatOwner::Player).last()
+    }
+}
+
+// TODO create resource for cursor position
 pub struct BoatPlugin;
 
 impl Plugin for BoatPlugin {
@@ -39,18 +49,16 @@ impl Plugin for BoatPlugin {
             .init_resource::<PlayerScore>()
             .add_systems(Startup, startup)
             .add_systems(Startup, spawn_diving_overlay.after(crate::setup))
+            .add_systems(Update, (update_diving_status, update_state))
             .add_systems(Update, (
-                update_state,
-                update_diving_status,
                 (
                     rotate_ship,
                     move_ship
-                ).run_if(in_state(BoatState::LockedDir)),
-                ship_to_target.run_if(in_state(BoatState::NotLocked)),
-                update_transform,
-                dive,
-                update_diving_overlay
+                ).run_if(|state: Res<State<BoatState>>| matches!(state.get(), BoatState::FreeDir | BoatState::LockedDir)),
+                ship_to_target.run_if(in_state(BoatState::Released)),
+                update_transform
             ).chain())
+            .add_systems(Update, (dive, update_diving_overlay))
             .add_systems(Update, fire_weapon)
             .add_systems(PostUpdate, move_camera.after(TransformSystems::Propagate));
     }
@@ -122,8 +130,10 @@ enum BoatState {
     FiringWeapon(Duration),
     /// locked in a direction (LMB pressed)
     LockedDir,
-    /// free to change direction (LMB not pressed)
-    NotLocked,
+    /// middle state between `LockedDir` and `Released`, can change direction
+    FreeDir,
+    /// LMB not pressed
+    Released,
 }
 
 
@@ -254,6 +264,7 @@ fn move_camera(
     }
 }
 
+/// note that states are updated between frames, so the position of this system doesn't matter
 fn update_state(
     current_state: Res<State<BoatState>>,
     buttons: Res<ButtonInput<MouseButton>>,
@@ -264,15 +275,18 @@ fn update_state(
     match current_state.get() {
         BoatState::Stopped => {
             if buttons.just_pressed(MouseButton::Left) {  // may not be correct
-                setter.set(BoatState::LockedDir);
+                setter.set(BoatState::FreeDir);
             }
         }
         BoatState::LockedDir => {
             if buttons.just_released(MouseButton::Left) {
-                setter.set(BoatState::NotLocked);
+                setter.set(BoatState::Released);
             }
         }
-        BoatState::NotLocked => {
+        BoatState::FreeDir => {  // allow 1 frame in freedir
+            setter.set(BoatState::LockedDir);
+        }
+        BoatState::Released => {
             if buttons.just_pressed(MouseButton::Left) {
                 setter.set(BoatState::FiringWeapon(Duration::ZERO));
             }
@@ -281,29 +295,16 @@ fn update_state(
             let duration = *elapsed + time.delta();
             
             if duration > TIME_TO_LAUNCH_WEAPON {
-                setter.set(BoatState::LockedDir);  // FIXME
+                setter.set(BoatState::FreeDir);
             } else if buttons.just_released(MouseButton::Left) {
                 fire_weapon.write(FireWeapon);
-                setter.set(BoatState::NotLocked);
+                setter.set(BoatState::Released);
             } else {
                 setter.set(BoatState::FiringWeapon(duration));
             }
         }
     }
-
-    println!("Current state: {:?}", current_state.get())
 }
-
-//     if buttons.just_released(MouseButton::Left) {
-//         for mut released in queries.p3() {
-//             released.0 = true;
-//         }
-//     } else if buttons.pressed(MouseButton::Left) {
-//         for mut released in queries.p3() {
-//             released.0 = false;
-//         }
-//     }
-// }
 
 /// handle rotation
 fn rotate_ship(
@@ -314,16 +315,14 @@ fn rotate_ship(
         &Boat,
     )>,
     state: Res<State<BoatState>>,
-    window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>
+    cursor_pos: Res<CursorPos>
 ) {
-    let Some(cursor_pos) = get_cursor_pos(&window, &camera) else { return };
     let state = *state.get();
 
     for (transform, mut custom_transform, mut target_rotation, boat) in
         transforms.iter_mut()
     {
-        let raw_moved = get_rotate_radian(cursor_pos, transform.translation.xy()); // diff from radian 0
+        let raw_moved = get_rotate_radian(transform.translation.xy(), cursor_pos.0); // diff from radian 0
         let (.., current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
         let mut target_move = raw_moved;
 
@@ -334,13 +333,13 @@ fn rotate_ship(
                 .trim();
 
             // -- adjust for reversed ---
-            if moved_from_current.abs() > MINIMUM_REVERSE && state == BoatState::NotLocked {
-                // mouse in reversing area
+            if moved_from_current.abs() > MINIMUM_REVERSE && state == BoatState::FreeDir {
+                // reversing
                 custom_transform.reversed = true;
                 moved_from_current = moved_from_current.flip();
                 target_move = target_move.flip()
-            } else if custom_transform.reversed && state == BoatState::NotLocked {
-                // already reversing, mouse out of reverse area
+            } else if moved_from_current.abs() <= MINIMUM_REVERSE && custom_transform.reversed && state == BoatState::FreeDir {
+                // going forwards
                 custom_transform.reversed = false;
             } else if custom_transform.reversed {
                 // unable to go forward, haven't released key yet
@@ -371,18 +370,17 @@ fn rotate_ship(
 /// handle moving
 fn move_ship(
     mut datas: Query<(&Transform, &mut CustomTransform, &mut TargetSpeed, &Boat)>,
-    window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>
+    cursor_pos: Res<CursorPos>
 ) {
-    let Some(cursor_pos) = get_cursor_pos(&window, &camera) else { return };
 
     for (transform, mut custom_transform, mut target_speed, boat) in datas.iter_mut() {
-        let cursor_distance = cursor_pos.distance(transform.translation.xy());
+        let cursor_distance = cursor_pos.0.distance(transform.translation.xy());
         let max_speed = if custom_transform.reversed {
             -boat.data.rev_max_speed().get_raw()
         } else {
             boat.data.max_speed().get_raw()
         };
+
 
         let speed = calculate_from_proportion(
             cursor_distance,
@@ -473,7 +471,7 @@ fn update_transform(
         With<Boat>,
     >,
     mut circle_huds: Query<&mut CircleHud>,
-    world_size: Single<&WorldSize>,
+    world_size: Single<&WorldSize>
 ) {
     for (mut transform, mut custom, children, sprite, mut out_of_bound) in transform_ship.iter_mut()
     {
@@ -551,10 +549,7 @@ fn update_diving_status(
     buttons: Res<ButtonInput<Key>>,
     transforms: Query<(&Transform, &Boat)>
 ) {
-    let (transform, _) = transforms.iter()
-        .filter(|(_, boat)| boat.owner == BoatOwner::Player)
-        .last()
-        .unwrap();
+    let (transform, _) = filter_player!(transforms, 1).unwrap();
     let mut target = getter.get().clone();
 
     match target {
@@ -621,17 +616,12 @@ fn fire_weapon(
     mut receiver: MessageReader<FireWeapon>,
     boats: Query<(&Transform, &Boat)>,
     mut writer: MessageWriter<SpawnWeaponMessage>,
-    window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>
+    cursor_pos: Res<CursorPos>
 ) {
-    let (transform, boat) = boats.iter()
-        .filter(|(_, boat)| boat.owner == BoatOwner::Player)
-        .last()
-        .unwrap();
-    let Some(cursor_pos) = get_cursor_pos(&window, &camera) else {return};
+    let (transform, boat) = filter_player!(boats, 1).unwrap();
 
     for _ in receiver.read() {
-        let fire_angle = get_rotate_radian(transform.translation.xy(), cursor_pos);
+        let fire_angle = get_rotate_radian(transform.translation.xy(), cursor_pos.0);
         if let Some(weapon) = boat.data.default_weapon() {
             writer.write(SpawnWeaponMessage {
                 weapon,

@@ -1,6 +1,6 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, window::PrimaryWindow};
 
-use crate::primitives::WidthHeight;
+use crate::{MainCamera, primitives::{CursorPos, WidthHeight}, util::get_cursor_pos};
 
 const WORLD_MIN: Vec2 = vec2(3000.0, 1500.0);
 const WORLD_EXPAND: f32 = 500.0;
@@ -11,7 +11,9 @@ pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup);
+        app.init_resource::<CursorPos>()
+            .add_systems(Startup, setup)
+            .add_systems(Update, update_cursor_pos);
     }
 }
 
@@ -53,6 +55,17 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 
     commands.spawn(WorldSize(world_size));
+}
+
+// consider running this only if in certain state for performance
+fn update_cursor_pos(
+    mut cursor_pos: ResMut<CursorPos>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>
+) {
+    if let Some(pos) = get_cursor_pos(&window, &camera) {
+        cursor_pos.0 = pos;
+    }
 }
 
 /// gets the size of the World from the `minimum_size` and provided expand by per multiple

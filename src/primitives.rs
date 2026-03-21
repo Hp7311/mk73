@@ -181,6 +181,9 @@ impl Position {
     }
 }
 
+#[derive(Debug, Resource, Clone, Copy, Default)]
+pub(crate) struct CursorPos(pub Vec2);
+
 /// the altitude of an entity
 pub(crate) trait Altitude {
     fn decrease_with_limit(&mut self, meter: f32, limit: f32);
