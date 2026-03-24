@@ -14,6 +14,7 @@ use crate::{
     world::WorldSize,
 };
 
+/// client
 pub struct OilRigPlugin;
 
 impl Plugin for OilRigPlugin {
@@ -65,14 +66,14 @@ impl Point {
         match self {
             Self::Barrel => 2,
             Self::Coin => 3,
-            Self::Scrap => 1
+            Self::Scrap => 1,
         }
     }
     fn file_name(&self) -> &'static str {
         match self {
             Self::Barrel => "barrel.png",
             Self::Coin => "coin.png",
-            Self::Scrap => "scrap.png"
+            Self::Scrap => "scrap.png",
         }
     }
 }
@@ -131,7 +132,7 @@ fn rig_spawn_points(
         (P::Coin, asset_server.load(P::Coin.file_name())),
         (P::Barrel, asset_server.load(P::Barrel.file_name())),
         (P::Scrap, asset_server.load(P::Scrap.file_name())),
-    ];  // load sprites early for performance
+    ]; // load sprites early for performance
 
     for (mut point_amount, transform, sprite, id) in transforms.iter_mut() {
         let Some(sprite_size) = sprite.custom_size else {
@@ -150,7 +151,8 @@ fn rig_spawn_points(
             .iter()
             .filter(|&tile| !point_in_square(*tile, sprite_size.x, transform.translation.xy()))
             .filter(|&tile| {
-                !out_of_bound_point(  // okay to not use with rotation outofbound because how small a point is
+                !out_of_bound_point(
+                    // okay to not use with rotation outofbound because how small a point is
                     &world_size,
                     MkRect {
                         center: *tile,
@@ -176,7 +178,7 @@ fn rig_spawn_points(
                     ..default()
                 },
                 *chosen_type,
-                ParentRig(id)
+                ParentRig(id),
             ));
 
             point_amount.add(chosen_type.worth());
@@ -256,7 +258,7 @@ fn points_obsorbed_despawn(
 struct OilRigBundle {
     sprite: Sprite,
     point_amount: PointAmount,
-    oil_rig: OilRig
+    oil_rig: OilRig,
 }
 
 impl OilRigBundle {
@@ -264,7 +266,7 @@ impl OilRigBundle {
         OilRigBundle {
             sprite,
             point_amount: PointAmount::new(rng),
-            oil_rig: OilRig
+            oil_rig: OilRig,
         }
     }
 }

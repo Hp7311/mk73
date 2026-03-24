@@ -102,7 +102,6 @@ pub(crate) fn calculate_diving_overlay(
     }
 }
 
-
 pub(crate) fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
     let square = MkRect {
         center: square_center,
@@ -152,7 +151,6 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
         source.y * angle.cos() + source.x * angle.sin(),
     )
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,11 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../common" }
+bevy = { workspace = true }
+lightyear = {  workspace = true, features = ["netcode", "webtransport"]}
+rand = "0.10"
+# aeronet_webtransport.workspace = true

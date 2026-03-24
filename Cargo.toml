@@ -1,13 +1,18 @@
-[package]
-name = "mk73"
-description = "game, inspiration from https://mk48.io"
-version = "0.1.0"
-edition = "2024"
+# [package]
+# name = "mk73"
+# description = "game, inspiration from https://mk48.io"
+# version = "0.1.0"
+# edition = "2024"
 
-[dependencies]
-bevy = {version = "0.18.0", features = ["debug", "pan_camera"]}
-getrandom = {version = "0.4.2", features = ["wasm_js"]}
-rand = "0.10.0"
+[workspace]
+resolver = "3"
+members = ["client", "common", "server"]
+
+[workspace.dependencies]
+bevy = {version = "0.18", features = ["debug", "pan_camera"]}
+lightyear = "0.26"
+serde = "1"
+aeronet_webtransport = "0.19.1"
 
 [profile.dev]
 opt-level = 1

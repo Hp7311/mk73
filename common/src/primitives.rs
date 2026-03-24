@@ -115,7 +115,6 @@ impl Speed {
     }
 }
 
-
 /// the direction by which the ship should aim to turn towards
 #[derive(Component, Debug, Clone, Copy, Default, Deref)]
 pub(crate) struct TargetRotation(pub Option<f32>);
@@ -208,7 +207,6 @@ impl Altitude for Transform {
     }
 }
 
-
 #[derive(Debug, Component, Clone, Copy)]
 pub(crate) struct OutOfBound(pub bool);
 
@@ -219,7 +217,7 @@ pub(crate) struct MeshBundle<M: Material2d> {
 }
 
 /// used for non-precise `==` comparisons
-/// 
+///
 /// # Example
 /// Zero = 1.0,
 /// Two = 0.01
@@ -239,7 +237,7 @@ impl DecimalPoint {
             D::Zero => 1.0,
             D::One => 0.1,
             D::Two => 0.01,
-            D::Three => 0.001
+            D::Three => 0.001,
         }
     }
 }

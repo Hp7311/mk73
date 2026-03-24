@@ -4,6 +4,7 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin},
 };
 
+/// client
 pub struct ShadersPlugin;
 
 impl Plugin for ShadersPlugin {
@@ -19,7 +20,7 @@ pub(crate) struct DivingOverlay {
     #[cfg(target_arch = "wasm32")]
     #[uniform(0)]
     pub _r_padding: Vec3,
-    
+
     #[uniform(1)]
     pub player_pos: Vec2,
     #[cfg(target_arch = "wasm32")]
@@ -30,7 +31,7 @@ pub(crate) struct DivingOverlay {
     pub darkness: f32,
     #[cfg(target_arch = "wasm32")]
     #[uniform(2)]
-    pub _d_padding: Vec3
+    pub _d_padding: Vec3,
 }
 
 impl Material2d for DivingOverlay {

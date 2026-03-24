@@ -1,12 +1,17 @@
 use bevy::{prelude::*, window::PrimaryWindow};
 
-use crate::{MainCamera, primitives::{CursorPos, WidthHeight}, util::get_cursor_pos};
+use crate::{
+    MainCamera,
+    primitives::{CursorPos, WidthHeight},
+    util::get_cursor_pos,
+};
 
 const WORLD_MIN: Vec2 = vec2(3000.0, 1500.0);
 const WORLD_EXPAND: f32 = 500.0;
 
 const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
 
+/// client
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
@@ -61,7 +66,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn update_cursor_pos(
     mut cursor_pos: ResMut<CursorPos>,
     window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
 ) {
     if let Some(pos) = get_cursor_pos(&window, &camera) {
         cursor_pos.0 = pos;

@@ -7,9 +7,17 @@ mod shaders;
 mod util;
 mod weapons;
 mod world;
+pub mod protocol;
+
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use bevy::camera_controller::pan_camera::PanCamera;
 use bevy::prelude::*;
+
+pub const LOCALHOSTS: &[&str] = &["localhost", "127.0.0.1", "::1"];
+const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+pub const SERVER_ADDR: SocketAddr = SocketAddr::new(LOCALHOST, 8080);
+pub const CLIENT_ADDR: SocketAddr = SocketAddr::new(LOCALHOST, 0);
 
 /// # Warning
 /// Code will break silently if we use something else

@@ -1,0 +1,12 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { workspace = true }
+lightyear = { workspace = true, features = ["webtransport"]}
+rand = "0.10"
+getrandom = { version = "0.4", features = ["wasm_js"] }
+serde = { workspace = true }
+wtransport = "0.6.1" # outdated to keep in sync with bevy's. Bevy didn't expose types

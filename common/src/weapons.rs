@@ -1,23 +1,25 @@
-use std::{f32::consts::{FRAC_PI_2, PI}, ops::Range};
+use std::{f32::consts::PI, ops::Range};
 
-use bevy::{color::palettes::css::{GREEN, LIME, RED}, mesh::Triangle2dMeshBuilder, prelude::*};
+use bevy::{color::palettes::css::LIME, prelude::*};
 use rand::RngExt;
 
 use crate::{
-    CIRCLE_HUD, DEFAULT_MAX_TURN_DEG, primitives::{DecimalPoint, MeshBundle, NormalizeRadian, Speed, TargetRotation}, util::{eq, move_with_rotation}
+    CIRCLE_HUD, DEFAULT_MAX_TURN_DEG,
+    primitives::{DecimalPoint, MeshBundle, NormalizeRadian, Speed, TargetRotation},
+    util::{eq, move_with_rotation},
 };
 
-/// faster max turning speed for torpedoes
-const MAX_TURN_RADIAN: Range<f32> =
-    (DEFAULT_MAX_TURN_DEG * 2.0).to_radians()..(DEFAULT_MAX_TURN_DEG * 3.0).to_radians();
-
+/// client
 pub struct WeaponPlugin;
 
 impl Plugin for WeaponPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<SpawnWeaponMessage>()
             .add_systems(Update, spawn_weapon)
-            .add_systems(Update, (rotate_weapon, move_weapon, sync_weapon_marker).chain());
+            .add_systems(
+                Update,
+                (rotate_weapon, move_weapon, sync_weapon_marker).chain(),
+            );
     }
 }
 
@@ -61,6 +63,12 @@ impl Weapon {
             Weapon::Set65 => 10.0,
         })
     }
+    fn max_turn_radian(&self) -> f32 {
+        match self {
+            Weapon::Set65 => DEFAULT_MAX_TURN_DEG * 3.0,
+        }
+        .to_radians()
+    }
 }
 
 /// inter-mod message to spawn a Weapon
@@ -86,44 +94,46 @@ fn spawn_weapon(
         target_rotation,
     } in reader.read()
     {
-        let weapon_id = commands.spawn((
-            Sprite {
-                image: asset_server.load(weapon.file_name()),
-                custom_size: Some(weapon.custom_size()),
-                ..default()
-            },
-            Transform {
-                translation: position.extend(0.0),
-                rotation: *rotation,
-                ..default()
-            },
-            TargetRotation(Some(target_rotation.to_euler(EulerRot::XYZ).2)), // cannot be None
-            Speed::from_knots(0.0),
-            Weapon::Set65,
-        )).id();
+        let weapon_id = commands
+            .spawn((
+                Sprite {
+                    image: asset_server.load(weapon.file_name()),
+                    custom_size: Some(weapon.custom_size()),
+                    ..default()
+                },
+                Transform {
+                    translation: position.extend(0.0),
+                    rotation: *rotation,
+                    ..default()
+                },
+                TargetRotation(Some(target_rotation.to_euler(EulerRot::XYZ).2)), // cannot be None
+                Speed::from_knots(0.0),
+                Weapon::Set65,
+            ))
+            .id();
 
         commands.spawn((
             MeshBundle {
                 mesh: Mesh2d(meshes.add(Triangle2d::new(
                     vec2(-10.0, 0.0),
                     vec2(0.0, 15.0),
-                    vec2(10.0, 0.0)
+                    vec2(10.0, 0.0),
                 ))),
-                materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(LIME)))
+                materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(LIME))),
             },
             Transform {
-                translation: position.extend(CIRCLE_HUD),  // higher Z-ordering
+                translation: position.extend(CIRCLE_HUD), // higher Z-ordering
                 rotation: Quat::from_rotation_z(WeaponMarker::TRIANGLE_ROTATION),
                 ..default()
             },
-            WeaponMarker(weapon_id)
+            WeaponMarker(weapon_id),
         ));
     }
 }
 
-fn rotate_weapon(mut query: Query<(&mut Transform, &TargetRotation), With<Weapon>>) {
-    for (mut transform, target_rotation) in query.iter_mut() {
-        let max_turn_radian = rand::rng().random_range(MAX_TURN_RADIAN);
+fn rotate_weapon(mut query: Query<(&mut Transform, &TargetRotation, &Weapon)>) {
+    for (mut transform, target_rotation, weapon) in query.iter_mut() {
+        let max_turn_radian = weapon.max_turn_radian();
         let current_rotation = transform.rotation.to_euler(EulerRot::XYZ).2;
 
         let moved_from_current = (target_rotation.unwrap() - current_rotation).normalize();
@@ -170,7 +180,7 @@ fn move_weapon(mut query: Query<(&mut Transform, &Weapon, &mut Speed)>) {
 
 fn sync_weapon_marker(
     weapons: Query<&Transform, With<Weapon>>,
-    mut markers: Query<(&mut Transform, &WeaponMarker), Without<Weapon>>
+    mut markers: Query<(&mut Transform, &WeaponMarker), Without<Weapon>>,
 ) {
     for (mut transform, marker) in markers.iter_mut() {
         if let Ok(parent_transform) = weapons.get(marker.0) {

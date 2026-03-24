@@ -48,8 +48,7 @@ pub(crate) fn out_of_bound_point(bound: &WorldSize, rect: MkRect) -> bool {
         dimensions: bound.0,
     };
 
-    rect
-        .get_corners()
+    rect.get_corners()
         .iter()
         .any(|corner| !world_bound.contains(*corner))
 }
