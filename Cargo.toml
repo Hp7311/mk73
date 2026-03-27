@@ -5,14 +5,13 @@
 # edition = "2024"
 
 [workspace]
-resolver = "3"
+resolver = "2"
 members = ["client", "common", "server"]
 
 [workspace.dependencies]
 bevy = {version = "0.18", features = ["debug", "pan_camera"]}
-lightyear = "0.26"
+lightyear = {version = "0.26", features = ["netcode", "websocket"]}
 serde = "1"
-aeronet_webtransport = "0.19.1"
 
 [profile.dev]
 opt-level = 1

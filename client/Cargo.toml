@@ -6,6 +6,6 @@ edition = "2024"
 [dependencies]
 common = { path = "../common" }
 bevy = { workspace = true }
-lightyear = {  workspace = true, features = ["netcode", "webtransport"]}
+lightyear = { workspace = true }
 rand = "0.10"
-# aeronet_webtransport.workspace = true
+getrandom = {version = "0.4.2", features = ["wasm_js"]}  # align with rand

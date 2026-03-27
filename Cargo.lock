@@ -2260,6 +2260,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "common",
+ "getrandom 0.4.2",
  "lightyear",
  "rand 0.10.0",
 ]
@@ -2299,11 +2300,10 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "getrandom 0.4.2",
+ "getrandom 0.2.17",
  "lightyear",
  "rand 0.10.0",
  "serde",
- "wtransport",
 ]
 
 [[package]]
@@ -6354,10 +6354,10 @@ dependencies = [
 name = "server"
 version = "0.1.0"
 dependencies = [
- "aeronet_webtransport",
  "bevy",
  "common",
  "lightyear",
+ "tokio",
 ]
 
 [[package]]

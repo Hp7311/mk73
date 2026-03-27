@@ -3,21 +3,23 @@ mod boat;
 mod collision;
 mod oil_rig;
 mod primitives;
+pub mod protocol;
 mod shaders;
 mod util;
 mod weapons;
 mod world;
-pub mod protocol;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use bevy::camera_controller::pan_camera::PanCamera;
 use bevy::prelude::*;
 
-pub const LOCALHOSTS: &[&str] = &["localhost", "127.0.0.1", "::1"];
-const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-pub const SERVER_ADDR: SocketAddr = SocketAddr::new(LOCALHOST, 8080);
-pub const CLIENT_ADDR: SocketAddr = SocketAddr::new(LOCALHOST, 0);
+pub const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8000);
+/// in server
+// pub const LOCAL_SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 8000);
+pub const LOCAL_SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 8000);
+pub const CLIENT_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8001);
+pub const PROTOCOL_ID: u64 = 0;
 
 /// # Warning
 /// Code will break silently if we use something else

@@ -1,27 +1,31 @@
 //! defines structures to be sent between client and server
 
 use bevy::prelude::*;
-use lightyear::prelude::{*};
+use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
-use wtransport::tls::{Certificate, CertificateChain, PrivateKey};
 
-#[derive(Debug, Deserialize, Serialize, Clone, Component, PartialEq)]
-pub struct SpawnYasen;
+/// server asks client to spawn a sprite at a specific location
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+pub struct SpawnSprite {
+    pub position: Vec2,
+    pub sprite_name: String
+}
+
+pub struct SendToClient;
 
 pub struct ProtocolPlugin;
 
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
-        app.register_component::<SpawnYasen>();
-    }
-}
+        app
+            .register_message::<SpawnSprite>()
+            .add_direction(NetworkDirection::ServerToClient);
 
-pub fn self_signed() -> Identity {
-    let cert = CertificateChain::new(vec![Certificate::from_der(
-        std::fs::read("../cert.der").unwrap()
-    ).unwrap()]);
-    let key = PrivateKey::from_der_pkcs8(
-        std::fs::read("../key.der").unwrap()
-    );
-    Identity::new(cert, key)
+        app
+            .add_channel::<SendToClient>(ChannelSettings {
+                mode: ChannelMode::OrderedReliable(ReliableSettings::default()),
+                ..default()
+            })
+            .add_direction(NetworkDirection::ServerToClient);
+    }
 }
