@@ -20,64 +20,57 @@ fn main() {
         .insert_resource(ClearColor(TEAL.into()))
         .add_plugins(ServerPlugins::default())
         .add_plugins(ProtocolPlugin)
-        .add_systems(Startup, (setup, start).chain())
+
+        .add_systems(Startup, setup)
 
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client)
-        .add_systems(Update, verify_clients)
         .run();
-}
-
-fn verify_clients(clients: Query<Entity, With<Client>>) {
-    if clients.iter().len() != 0 {
-        info!("Client number: {}", clients.iter().len());
-    }
 }
 
 /// starts the server
 fn setup(mut commands: Commands) {
 
-    commands.spawn((
+    let server = commands.spawn((
         NetcodeServer::new(NetcodeConfig::default().with_protocol_id(PROTOCOL_ID)),
         LocalAddr(LOCAL_SERVER_ADDR),
         WebSocketServerIo {
             #[cfg(debug_assertions)]
             config: ServerConfig::builder()
                 .with_bind_address(LOCAL_SERVER_ADDR)
-                .with_no_encryption()  // cfg
-        }
-    ));
-}
+                .with_no_encryption()  // cfg, clients can only connect via WebSocketScheme::Plain
+        },
+        // MessageSender::<SpawnSprite>::default()
+    )).id();
 
-fn start(mut commands: Commands, server: Single<Entity, With<Server>>) {
-    info!("Server started");
-
-    commands.trigger(Start { entity: *server });
+    commands.trigger(Start { entity: server });
 }
 
 /// connecting client
 fn handle_new_client(connecting_client: On<Add, LinkOf>, mut commands: Commands) {
     commands.entity(connecting_client.entity).insert((
         ReplicationSender::new(Duration::from_secs(1), SendUpdatesMode::SinceLastAck, false),
-        
-        // MessageReceiver::<SpawnSprite>::default()
     ));
 }
 
 /// connected client. setup sprites etc
 fn handle_connected_client(
     connected_client: On<Add, Connected>,
-    query: Query<&RemoteId, With<ClientOf>>
+    query: Query<&RemoteId, With<ClientOf>>,
+    server: Single<&Server>,
+    mut sender: ServerMultiMessageSender
 ) {
     let Ok(RemoteId(client_id)) = query.get(connected_client.entity) else {
+        info!("Didn't find the connected client in Query<&RemoteId, With<ClientOf>");
         return;
     };
     
-    MessageSender::default()
-        .send::<SendToClient>(SpawnSprite {
+    sender
+        .send::<_, SendToClient>(&SpawnSprite {
             position: vec2(30.0, 30.0),
             sprite_name: "yasen.png".to_owned()
-        });
+        }, *server, &NetworkTarget::Only(vec![*client_id]))
+        .expect("Failed to send msg");
 
-    info!("Sent create yasen for client {client_id}");
+    info!("Sent create yasen to clients via `SendToClient");
 }
