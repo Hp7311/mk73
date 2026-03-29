@@ -83,9 +83,10 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
+    let client_id = rand::random_range(0..100);
     let auth = Authentication::Manual {
         server_addr: SERVER_ADDR,
-        client_id: rand::random_range(0..100),
+        client_id,
         private_key: Key::default(),
         protocol_id: PROTOCOL_ID,
     };
@@ -105,6 +106,8 @@ fn setup(mut commands: Commands) {
     )).id();
 
     commands.trigger(Connect { entity: client });
+
+    info!("Client {client_id} is requesting");
 
     commands.spawn((
         Camera2d,
@@ -182,7 +185,7 @@ fn update_state(
 
 /// handle rotation
 fn rotate_ship(
-    query: Single<(&Transform, &mut CustomTransform, &mut TargetRotation, &Boat)>,
+    query: Single<(&Transform, &mut CustomTransform, &mut TargetRotation, &Boat), With<Owns>>,
     state: Res<State<BoatState>>,
     cursor_pos: Res<CursorPos>,
 ) {
@@ -236,7 +239,7 @@ fn rotate_ship(
 
 /// handle moving
 fn move_ship(
-    query: Single<(&Transform, &mut CustomTransform, &mut TargetSpeed, &Boat)>,
+    query: Single<(&Transform, &mut CustomTransform, &mut TargetSpeed, &Boat), With<Owns>>,
     cursor_pos: Res<CursorPos>,
 ) {
     let (transform, mut custom_transform, mut target_speed, boat) = query.into_inner();
@@ -282,10 +285,10 @@ fn update_transform(
             &Sprite,
             &mut OutOfBound,
         ),
-        With<Boat>,
+        (With<Boat>, With<Owns>)
     >,
-    mut circle_huds: Query<&mut CircleHud>,
-    world_size: Single<&WorldSize>,
+    mut circle_huds: Single<(Entity, &mut CircleHud)>,
+    world_size: Single<&WorldSize>
 ) {
     let (mut transform, mut custom, children, sprite, mut out_of_bound) = query.into_inner();
 
@@ -322,9 +325,9 @@ fn update_transform(
     // sync position
     custom.position = translation.xy().into();
 
-    for child in children {
-        if let Ok(mut hud) = circle_huds.get_mut(*child) {
-            hud.center = translation.xy();
+    for &child in children {
+        if child == circle_huds.0 {
+            circle_huds.1.center = translation.xy();
             break;
         }
     }
@@ -335,19 +338,14 @@ fn update_transform(
 
 fn move_camera(
     mut camera: Single<&mut Transform, With<MainCamera>>,
-    ship_pos: Query<&CustomTransform, With<Boat>>,
+    ship: Single<&CustomTransform, (With<Boat>, With<Owns>)>,
 ) {
-    // currently ignores possibility of multiple ships
-    let Some(ship) = ship_pos.iter().last() else {
-        return;
-    };
-
     if ship.position.0 != camera.translation.xy() {
         camera.translation = ship.position.0.extend(WATER_SURFACE);
     }
 }
 
-/// spawns boat bundle which is seperated from [`Client`] entity when received command from server
+/// spawns boats which is seperated from [`Client`] entity when received command from server
 fn spawn_boat(
     mut recevier: Single<&mut MessageReceiver<SpawnShip>>,
     asset_server: Res<AssetServer>,
@@ -356,12 +354,31 @@ fn spawn_boat(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>
 ) {
-    for msg in recevier.receive() {
-        assert_eq!(boat_sprite.iter().len(), 0); // shouldn't spawn two `Boat`s of the same client
-        let boat = msg.boat;
-        let circle_hud_radius = add_circle_hud(boat.data.sprite_size().x / 2.0);
-        let position = msg.position;
+    let mut boat_in_world = boat_sprite.iter().len();
 
+    for msg in recevier.receive() {
+        
+        let boat = msg.boat;
+        let position = msg.position;
+        
+        if boat_in_world > 0 {
+            // spawns only sprite + transform
+            // TODO whether to spawn Boat
+            commands.spawn((
+                Transform::from_translation(msg.position.extend(0.0)),
+                Sprite {
+                    image: asset_server.load(boat.data.file_name()),
+                    custom_size: Some(boat.data.sprite_size()),
+                    ..default()
+                },
+                msg.boat
+            ));
+            info!("Spawned boat (other's): {:?}", msg.boat);
+            boat_in_world += 1;
+            continue;
+        }
+
+        let circle_hud_radius = add_circle_hud(boat.data.sprite_size().x / 2.0);
         commands
             .spawn(BoatBundle {
                 boat: msg.boat,
@@ -395,7 +412,8 @@ fn spawn_boat(
                     },
                 ));
             });
-        info!("Spawned boat: {:?}", msg.boat)
+        info!("Spawned boat (owned): {:?}", msg.boat);
+        boat_in_world += 1;
     }
 }
 
@@ -423,6 +441,7 @@ pub(crate) struct BoatBundle {
     out_of_bound: OutOfBound,
     weapon_counter: WeaponCounter,
     boat: Boat,
+    owns: Owns
 }
 
 impl Default for BoatBundle {
@@ -447,10 +466,15 @@ impl Default for BoatBundle {
             boat: Boat {
                 data: BoatData::Yasen,
                 subkind: SubKind::SurfaceShip
-            }
+            },
+            owns: Owns
         }
     }
 }
+
+/// seperate client owned entities from others
+#[derive(Debug, Component, Clone, Copy)]
+pub struct Owns;
 
 /// helper struct for accessing the [`Boat`]'s circle HUD
 #[derive(Debug, Component, Copy, Clone)]
@@ -482,15 +506,6 @@ pub(crate) struct WeaponCounter {
 }
 
 /// adds the specified systems to the [`Update`] schedule in the app
-/// ### Example
-/// ```rust,norun
-/// fn example_debug_system() {
-///     println!("This is a system that runs on Update!")
-/// }
-/// app.add_systems(Update, example_debug_system);
-/// // is equivalent to
-/// add_debug_systems(&mut app, example_debug_system);
-/// ```
 #[macro_export]
 macro_rules! add_debug_systems {
     ( $app:expr, $( $system:expr ),+ ) => {

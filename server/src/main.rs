@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bevy::{color::palettes::css::TEAL, log::LogPlugin, prelude::*};
 use common::{
-    LOCAL_SERVER_ADDR, PROTOCOL_ID, boat, protocol::{ProtocolPlugin, SendToClient, SpawnShip}
+    LOCAL_SERVER_ADDR, PROTOCOL_ID, boat, protocol::{MultipleSpawnShip, PlayerAction, ProtocolPlugin, SendToClient, SpawnShip}
 };
 #[cfg(debug_assertions)]
 use lightyear::websocket::server::Identity;
@@ -26,6 +26,7 @@ fn main() {
 
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client)
+
         .run();
 }
 
@@ -35,14 +36,16 @@ fn setup(mut commands: Commands) {
         NetcodeServer::new(NetcodeConfig::default().with_protocol_id(PROTOCOL_ID)),
         LocalAddr(LOCAL_SERVER_ADDR),
         WebSocketServerIo {
-            #[cfg(debug_assertions)]
             config: ServerConfig::builder()
                 .with_bind_address(LOCAL_SERVER_ADDR)
                 .with_identity(from_pem_file("../cert/cert_127.pem", "../cert/key_127.pem"))  // _127 include 127.0.0.1 instead of only localhost
-        }
+        },
     )).id();
 
     commands.trigger(Start { entity: server });
+
+    commands.spawn(MultipleSpawnShip::default());
+    commands.spawn(MessageReceiver::<PlayerAction>::default());  // FIXME use replication instead of manual message syncing
 }
 
 /// connecting client
@@ -58,28 +61,43 @@ fn handle_connected_client(
     connected_client: On<Add, Connected>,
     query: Query<&RemoteId, With<ClientOf>>,
     server: Single<&Server>,
-    mut sender: ServerMultiMessageSender
+    mut sender: ServerMultiMessageSender,
+    mut message_buffer: Single<&mut MultipleSpawnShip>
 ) {
     let Ok(RemoteId(client_id)) = query.get(connected_client.entity) else {
-        info!("Didn't find the connected client in Query<&RemoteId, With<ClientOf>");
+        warn!("Didn't find the connected client in Query<&RemoteId, With<ClientOf>");
         return;
     };
     
+    let message = SpawnShip {
+        position: vec2(30.0, 30.0),
+        boat: boat::Boat {
+            data: boat::BoatData::Yasen,
+            subkind: boat::SubKind::Submarine
+        }
+    };
+
+    // send the current boat to all clients
     sender
         .send::<_, SendToClient>(
-            &SpawnShip {
-                position: vec2(30.0, 30.0),
-                boat: boat::Boat {
-                    data: boat::BoatData::Yasen,
-                    subkind: boat::SubKind::Submarine
-                }
-            },
+            &message,
             *server,
-            &NetworkTarget::Only(vec![*client_id])
+            &NetworkTarget::All
         )
         .expect("Failed to send spawn ship");
 
-    info!("Sent create yasen to clients via `SendToClient");
+    // send all boats in the world to this connected client
+    // TODO need to spawn ship in server's world?
+    for &other_boat in message_buffer.0.iter() {
+        sender.send::<_, SendToClient>(
+            &other_boat,
+            *server,
+            &NetworkTarget::Only(vec![*client_id])
+        ).expect("Failed to send spawn ship");
+    }
+
+    // finally push the message into the buffer to ensure no double-spawn on connected client
+    message_buffer.0.push(message);
 }
 
 use std::path::Path;
