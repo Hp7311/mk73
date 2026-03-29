@@ -7,4 +7,4 @@ edition = "2024"
 bevy = { workspace = true }
 lightyear = { workspace = true}
 common = { path = "../common" }
-tokio = "1.50.0"
+rustls-pemfile = "2"

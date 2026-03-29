@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use bevy::{color::palettes::css::TEAL, log::LogPlugin, prelude::*};
 use common::{
-    LOCAL_SERVER_ADDR, PROTOCOL_ID,
-    protocol::{ProtocolPlugin, SendToClient, SpawnSprite},
+    LOCAL_SERVER_ADDR, PROTOCOL_ID, boat, protocol::{ProtocolPlugin, SendToClient, SpawnShip}
 };
+#[cfg(debug_assertions)]
+use lightyear::websocket::server::Identity;
 use lightyear::{
     netcode::NetcodeServer,
     prelude::{
@@ -30,7 +31,6 @@ fn main() {
 
 /// starts the server
 fn setup(mut commands: Commands) {
-
     let server = commands.spawn((
         NetcodeServer::new(NetcodeConfig::default().with_protocol_id(PROTOCOL_ID)),
         LocalAddr(LOCAL_SERVER_ADDR),
@@ -38,9 +38,8 @@ fn setup(mut commands: Commands) {
             #[cfg(debug_assertions)]
             config: ServerConfig::builder()
                 .with_bind_address(LOCAL_SERVER_ADDR)
-                .with_no_encryption()  // cfg, clients can only connect via WebSocketScheme::Plain
-        },
-        // MessageSender::<SpawnSprite>::default()
+                .with_identity(from_pem_file("../cert/cert_127.pem", "../cert/key_127.pem"))  // _127 include 127.0.0.1 instead of only localhost
+        }
     )).id();
 
     commands.trigger(Start { entity: server });
@@ -50,6 +49,7 @@ fn setup(mut commands: Commands) {
 fn handle_new_client(connecting_client: On<Add, LinkOf>, mut commands: Commands) {
     commands.entity(connecting_client.entity).insert((
         ReplicationSender::new(Duration::from_secs(1), SendUpdatesMode::SinceLastAck, false),
+        MessageReceiver::<SpawnShip>::default(),  // enables receiving message
     ));
 }
 
@@ -66,11 +66,40 @@ fn handle_connected_client(
     };
     
     sender
-        .send::<_, SendToClient>(&SpawnSprite {
-            position: vec2(30.0, 30.0),
-            sprite_name: "yasen.png".to_owned()
-        }, *server, &NetworkTarget::Only(vec![*client_id]))
-        .expect("Failed to send msg");
+        .send::<_, SendToClient>(
+            &SpawnShip {
+                position: vec2(30.0, 30.0),
+                boat: boat::Boat {
+                    data: boat::BoatData::Yasen,
+                    subkind: boat::SubKind::Submarine
+                }
+            },
+            *server,
+            &NetworkTarget::Only(vec![*client_id])
+        )
+        .expect("Failed to send spawn ship");
 
     info!("Sent create yasen to clients via `SendToClient");
+}
+
+use std::path::Path;
+use std::fs;
+
+fn from_pem_file(
+    cert_path: impl AsRef<Path>, 
+    key_path: impl AsRef<Path>
+) -> Identity {
+    let cert_chain_bytes = fs::read(cert_path).unwrap();
+    let key_bytes = fs::read(key_path).unwrap();
+
+    let mut cert_reader = std::io::Cursor::new(cert_chain_bytes);
+    let certs = rustls_pemfile::certs(&mut cert_reader)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    let mut key_reader = std::io::Cursor::new(key_bytes);
+    let key = rustls_pemfile::private_key(&mut key_reader).unwrap().unwrap();
+
+    // 4. Construct the Lightyear Identity
+    Identity::new(certs, key)
 }

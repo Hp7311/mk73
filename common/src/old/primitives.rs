@@ -6,24 +6,25 @@ use std::{
 use bevy::{prelude::*, sprite_render::Material2d};
 
 #[derive(Component, Debug, Copy, Clone, Default)]
-pub struct CustomTransform {
+pub(crate) struct CustomTransform {
     /// along the `rotation`
-    pub speed: Speed,
-    pub position: Position,
+    pub(crate) speed: Speed,
+    pub(crate) position: Position,
     /// stores the radian to move, with -> of Sprite as 0
     ///
     /// ignores any reverse, calculates them like normal
-    pub rotation: Radian,
-    pub reversed: bool,
+    pub(crate) rotation: Radian,
+    pub(crate) reversed: bool,
 }
 
 impl CustomTransform {
-    pub fn rotate_local_z(&mut self, angle: Radian) {
+    pub(crate) fn rotate_local_z(&mut self, angle: Radian) {
         let rotation = angle.to_quat();
         self.rotation = (rotation * self.rotation.to_quat()).to_radian_unchecked();
     }
     /// from a not-moving entity
-    pub fn from_static(position: Vec2) -> Self {
+    #[allow(dead_code)]
+    pub(crate) fn from_static(position: Vec2) -> Self {
         CustomTransform {
             position: Position(position),
             ..default()
@@ -32,7 +33,7 @@ impl CustomTransform {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MkRect {
+pub(crate) struct MkRect {
     pub center: Vec2,
     pub dimensions: WidthHeight,
 }
@@ -88,43 +89,43 @@ impl MkRect {
 }
 
 #[derive(Component, Debug, Copy, Clone, Default)]
-pub struct Speed(f32);
+pub(crate) struct Speed(f32);
 
 impl Speed {
-    pub fn from_knots(knots: f32) -> Self {
+    pub(crate) fn from_knots(knots: f32) -> Self {
         Speed(knots / 23.0)
     }
-    pub fn from_raw(raw: f32) -> Self {
+    pub(crate) fn from_raw(raw: f32) -> Self {
         Speed(raw)
     }
-    pub fn add_raw(&mut self, raw: f32) {
+    pub(crate) fn add_raw(&mut self, raw: f32) {
         self.0 += raw;
     }
-    pub fn subtract_raw(&mut self, raw: f32) {
+    pub(crate) fn subtract_raw(&mut self, raw: f32) {
         self.0 -= raw;
     }
-    pub fn get_knots(&self) -> f32 {
+    pub(crate) fn get_knots(&self) -> f32 {
         self.0 * 23.0
     }
-    pub fn get_raw(&self) -> f32 {
+    pub(crate) fn get_raw(&self) -> f32 {
         self.0
     }
-    pub fn overwrite_with_raw(&mut self, raw: f32) {
+    pub(crate) fn overwrite_with_raw(&mut self, raw: f32) {
         self.0 = raw
     }
 }
 
 /// the direction by which the ship should aim to turn towards
 #[derive(Component, Debug, Clone, Copy, Default, Deref)]
-pub struct TargetRotation(pub Option<f32>);
+pub(crate) struct TargetRotation(pub Option<f32>);
 
 /// the target speed by which the ships should aim to accelerate towards
 #[derive(Component, Debug, Copy, Clone, Default, Deref)]
-pub struct TargetSpeed(pub Speed);
+pub(crate) struct TargetSpeed(pub Speed);
 
 /// Used by [`CustomTransform`] for rotation
 #[derive(Component, Debug, Copy, Clone, Default, Deref)]
-pub struct Radian(pub f32);
+pub(crate) struct Radian(pub f32);
 
 impl Radian {
     /// Vec2 to be added to Origin to rotate
@@ -139,7 +140,7 @@ impl Neg for Radian {
         Radian(-self.0)
     }
 }
-pub trait ToRadian {
+pub(crate) trait ToRadian {
     fn to_radian_unchecked(&self) -> Radian;
 }
 
@@ -157,16 +158,16 @@ impl ToRadian for Quat {
     }
 }
 impl Radian {
-    pub fn from_deg(deg: f32) -> Self {
+    pub(crate) fn from_deg(deg: f32) -> Self {
         Radian(deg.to_radians())
     }
-    pub fn to_quat(self) -> Quat {
+    pub(crate) fn to_quat(self) -> Quat {
         Quat::from_rotation_z(self.0)
     }
 }
 
 #[derive(Component, Debug, PartialEq, Copy, Clone, Default, Deref)]
-pub struct Position(pub Vec2);
+pub(crate) struct Position(pub Vec2);
 
 impl AddAssign for Position {
     fn add_assign(&mut self, rhs: Self) {
@@ -174,21 +175,16 @@ impl AddAssign for Position {
     }
 }
 impl Position {
-    pub fn to_vec3(self, z_index: f32) -> Vec3 {
+    pub(crate) fn to_vec3(self, z_index: f32) -> Vec3 {
         self.0.extend(z_index)
-    }
-}
-impl From<Vec2> for Position {
-    fn from(value: Vec2) -> Self {
-        Self(value)
     }
 }
 
 #[derive(Debug, Resource, Clone, Copy, Default)]
-pub struct CursorPos(pub Vec2);
+pub(crate) struct CursorPos(pub Vec2);
 
 /// the altitude of an entity
-pub trait Altitude {
+pub(crate) trait Altitude {
     fn decrease_with_limit(&mut self, meter: f32, limit: f32);
     fn increase_with_limit(&mut self, meter: f32, limit: f32);
     fn reached(&self, target: f32, precision: DecimalPoint) -> bool;
@@ -212,23 +208,12 @@ impl Altitude for Transform {
 }
 
 #[derive(Debug, Component, Clone, Copy)]
-pub struct OutOfBound(pub bool);
+pub(crate) struct OutOfBound(pub bool);
 
-/// ### Example
-/// ```rs,norun
-/// // params
-/// mut meshes: ResMut<Assets<Mesh>>,
-/// mut materials: ResMut<Assets<ColorMaterial>>
-/// 
-/// commands.spawn(MeshBundle {
-///     mesh: Mesh2d(meshes.add(Circle::new(3.0))),
-///     materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
-/// });
-/// ```
 #[derive(Bundle, Debug, Clone)]
-pub struct MeshBundle<M: Material2d> {
-    pub mesh: Mesh2d,
-    pub materials: MeshMaterial2d<M>,
+pub(crate) struct MeshBundle<M: Material2d> {
+    pub(crate) mesh: Mesh2d,
+    pub(crate) materials: MeshMaterial2d<M>,
 }
 
 /// used for non-precise `==` comparisons
@@ -238,7 +223,7 @@ pub struct MeshBundle<M: Material2d> {
 /// Two = 0.01
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
-pub enum DecimalPoint {
+pub(crate) enum DecimalPoint {
     Zero,
     One,
     Two,
@@ -246,7 +231,7 @@ pub enum DecimalPoint {
 }
 
 impl DecimalPoint {
-    pub fn to_f32(&self) -> f32 {
+    pub(crate) fn to_f32(&self) -> f32 {
         use DecimalPoint as D;
         match self {
             D::Zero => 1.0,
@@ -258,7 +243,7 @@ impl DecimalPoint {
 }
 
 /// flips a radian 180 degrees
-pub trait FlipRadian {
+pub(crate) trait FlipRadian {
     fn flip(self) -> Self;
 }
 
@@ -269,7 +254,7 @@ impl FlipRadian for f32 {
 }
 
 /// eliminates offset when turning over the negative x-axis
-pub trait NormalizeRadian {
+pub(crate) trait NormalizeRadian {
     fn normalize(self) -> Self;
 }
 impl NormalizeRadian for f32 {
@@ -284,7 +269,7 @@ impl NormalizeRadian for f32 {
 }
 
 #[derive(Component, Debug, Copy, Clone)]
-pub struct WidthHeight {
+pub(crate) struct WidthHeight {
     pub width: f32,
     pub height: f32,
 }
@@ -329,43 +314,43 @@ impl From<Vec2> for WidthHeight {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{boat::CircleHud, util::eq};
+#[cfg(test)]
+mod tests {
+    use crate::{boat::CircleHud, util::eq};
 
-//     use super::*;
-//     #[test]
-//     fn test_flip() {
-//         let src = 80.0f32.to_radians();
-//         let expected = -100.0f32.to_radians();
+    use super::*;
+    #[test]
+    fn test_flip() {
+        let src = 80.0f32.to_radians();
+        let expected = -100.0f32.to_radians();
 
-//         assert!(eq(src.flip(), expected, DecimalPoint::Three));
-//     }
-//     #[test]
-//     fn test_circle_hud() {
-//         let circle_hud = CircleHud {
-//             radius: 3.0,
-//             center: vec2(0., 0.),
-//         };
+        assert!(eq(src.flip(), expected, DecimalPoint::Three));
+    }
+    #[test]
+    fn test_circle_hud() {
+        let circle_hud = CircleHud {
+            radius: 3.0,
+            center: vec2(0., 0.),
+        };
 
-//         let target = vec2(2.8, 0.0);
+        let target = vec2(2.8, 0.0);
 
-//         assert!(circle_hud.contains(target))
-//     }
-//     #[test]
-//     fn test_mkrect() {
-//         let rect = MkRect {
-//             center: vec2(0.0, 0.0),
-//             dimensions: WidthHeight::splat(10.0),
-//         };
+        assert!(circle_hud.contains(target))
+    }
+    #[test]
+    fn test_mkrect() {
+        let rect = MkRect {
+            center: vec2(0.0, 0.0),
+            dimensions: WidthHeight::splat(10.0),
+        };
 
-//         let expected = [
-//             vec2(-5.0, 5.0),
-//             vec2(5.0, 5.0),
-//             vec2(5.0, -5.0),
-//             vec2(-5.0, -5.0),
-//         ];
+        let expected = [
+            vec2(-5.0, 5.0),
+            vec2(5.0, 5.0),
+            vec2(5.0, -5.0),
+            vec2(-5.0, -5.0),
+        ];
 
-//         assert_eq!(rect.get_corners(), expected);
-//     }
-// }
+        assert_eq!(rect.get_corners(), expected);
+    }
+}

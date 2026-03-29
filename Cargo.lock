@@ -6357,7 +6357,7 @@ dependencies = [
  "bevy",
  "common",
  "lightyear",
- "tokio",
+ "rustls-pemfile",
 ]
 
 [[package]]

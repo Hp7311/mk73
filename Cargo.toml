@@ -1,16 +1,10 @@
-# [package]
-# name = "mk73"
-# description = "game, inspiration from https://mk48.io"
-# version = "0.1.0"
-# edition = "2024"
-
 [workspace]
 resolver = "2"
 members = ["client", "common", "server"]
 
 [workspace.dependencies]
 bevy = {version = "0.18", features = ["debug", "pan_camera"]}
-lightyear = {version = "0.26", features = ["netcode", "websocket"]}
+lightyear = {version = "0.26", features = ["netcode", "websocket", "input_native"]}
 serde = "1"
 
 [profile.dev]

@@ -17,7 +17,7 @@ use crate::{
 /// `pos` has center point at the center.
 /// ### Performance
 /// slow if close to the border
-pub fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool {
+pub(crate) fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool {
     // if not near the border, return without redundant operations
     if !out_of_bound_point(
         bound,

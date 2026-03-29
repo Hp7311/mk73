@@ -23,7 +23,7 @@ impl Plugin for WorldPlugin {
 }
 
 #[derive(Component, Debug, Copy, Clone)]
-pub struct WorldSize(pub(crate) WidthHeight);
+pub(crate) struct WorldSize(pub(crate) WidthHeight);
 
 impl Default for WorldSize {
     fn default() -> Self {

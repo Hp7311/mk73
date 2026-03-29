@@ -23,7 +23,7 @@ pub(crate) fn vec2_eq(x: Vec2, y: Vec2, precision: DecimalPoint) -> bool {
 ///
 /// starts from the X axis of source(right), **counter clock-wise**
 /// 2D only
-pub fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
+pub(crate) fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
     let x_diff = destination.x - source.x;
     let y_diff = destination.y - source.y;
 
@@ -33,7 +33,7 @@ pub fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
 /// calculates Vec3 to add to `Transform.translation` from the rotation and speed
 /// ### Note
 /// assumes 2D
-pub fn move_with_rotation(rotation: Quat, speed: f32) -> Vec3 {
+pub(crate) fn move_with_rotation(rotation: Quat, speed: f32) -> Vec3 {
     let (.., move_angle) = rotation.to_euler(EulerRot::XYZ);
 
     (vec2(move_angle.cos(), move_angle.sin()) * speed).extend(0.0)
@@ -118,7 +118,7 @@ pub(crate) fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2)
 /// if `current` is smaller than provided `minimum_source`, 0 will be returned.
 /// ### Panics
 /// if provided `minimum_source` is bigger than `unit_1`
-pub fn calculate_from_proportion(
+pub(crate) fn calculate_from_proportion(
     current: f32,
     unit_1: f32,
     maximum_value: f32,
@@ -138,7 +138,7 @@ pub fn calculate_from_proportion(
 }
 
 /// calculates the circle HUD by adding 7/10 of `length` to `length`
-pub fn add_circle_hud(length: f32) -> f32 {
+pub(crate) fn add_circle_hud(length: f32) -> f32 {
     length * 0.7 + length
 }
 
@@ -151,33 +151,6 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
         source.y * angle.cos() + source.x * angle.sin(),
     )
 }
-
-/// Asynchronously loads a Lightyear Identity from PEM files
-// pub async fn load_identity_async(
-//     cert_path: impl AsRef<Path>,
-//     key_path: impl AsRef<Path>,
-// ) -> Identity {
-//     let cert_bytes = fs::read(cert_path).await.unwrap();
-//     let key_bytes = fs::read(key_path).await.unwrap();
-
-//     // We wrap the bytes in a standard Cursor since the parsing itself is CPU-bound and fast
-//     let mut cert_reader = std::io::Cursor::new(cert_bytes);
-//     let certs = rustls_pemfile::certs(&mut cert_reader)
-//         .collect::<Result<Vec<_>, _>>()
-//         .context("Failed to parse certificates")?;
-
-//     let mut key_reader = std::io::Cursor::new(key_bytes);
-//     let key = rustls_pemfile::private_key(&mut key_reader)
-//         .context("Failed to parse private key")?
-//         .context("No private key found in file")?;
-
-//     let server_config = config_from_pem_file(cert, key).await?;
-//     let inner = Arc::new(ArcSwap::from_pointee(server_config));
-
-//     Ok(Self { inner })
-//     // 3. Return the loaded Identity
-//     Identity::new(certs, key)
-// }
 
 #[cfg(test)]
 mod tests {
