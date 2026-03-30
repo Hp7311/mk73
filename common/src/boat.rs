@@ -3,15 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK, primitives::Speed, weapon::Weapon};
 
-/// pub to send data between client and server
-#[derive(Component, Debug, Copy, Clone, Serialize, Deserialize)]
-pub struct Boat {
-    pub data: BoatData,
-    pub subkind: SubKind, // should be only one `Boat` in client so no owner
-}
-
-#[derive(Component, Debug, Copy, Clone, Serialize, Deserialize)]
-pub enum BoatData {
+#[derive(Component, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Boat {
     Yasen,
 }
 
@@ -21,10 +14,15 @@ pub enum SubKind {
     SurfaceShip,
 }
 
-impl BoatData {
+impl Boat {
+    pub fn sub_kind(&self) -> SubKind {
+        match self {
+            Self::Yasen => SubKind::Submarine,
+        }
+    }
     pub fn file_name(&self) -> &'static str {
         match self {
-            Self::Yasen => "yasen.png"
+            Self::Yasen => "yasen.png",
         }
     }
     pub fn get_armanents(&self) -> Vec<Weapon> {

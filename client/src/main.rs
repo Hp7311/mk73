@@ -1,18 +1,26 @@
 use std::f32::consts::PI;
 use std::time::Duration;
 
+use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
 use bevy::color::palettes::css::{GRAY, TEAL};
 use bevy::prelude::*;
-use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
 
-use common::boat::{Boat, BoatData, SubKind};
+use common::boat::Boat;
 use common::collision::out_of_bounds;
-use common::primitives::{CursorPos, CustomTransform, DecimalPoint, FlipRadian, MeshBundle, MkRect, NormalizeRadian, OutOfBound, Radian, Speed, TargetRotation, TargetSpeed, ToRadian};
-use common::protocol::{ProtocolPlugin, SendToServer,  SpawnShip};
-use common::util::{add_circle_hud, calculate_from_proportion, get_rotate_radian, move_with_rotation};
+use common::primitives::{
+    CircleHud, CursorPos, CustomTransform, DecimalPoint, FlipRadian, MeshBundle, MkRect,
+    NormalizeRadian, OutOfBound, Radian, Speed, TargetRotation, TargetSpeed, ToRadian,
+    WeaponCounter,
+};
+use common::protocol::{MinimalBoat, ProtocolPlugin, SendToServer};
+use common::util::{
+    add_circle_hud, calculate_from_proportion, get_rotate_radian, move_with_rotation,
+};
 use common::weapon::Weapon;
-use common::world::{WorldPlugin, WorldSize};
-use common::{CIRCLE_HUD, CLIENT_ADDR, MainCamera, PROTOCOL_ID, SERVER_ADDR, WATER_SURFACE};
+use common::world::{Background, WorldPlugin, WorldSize};
+use common::{
+    CIRCLE_HUD, CLIENT_ADDR, MainCamera, PROTOCOL_ID, SERVER_ADDR, WATER_SURFACE, add_debug_systems,
+};
 
 use lightyear::link::LinkConditioner;
 use lightyear::netcode::auth::Authentication;
@@ -34,50 +42,47 @@ const MINIMUM_REVERSE: f32 = PI * (2. / 3.);
 
 fn main() {
     let mut app = App::new();
-    
+
     app.add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        canvas: Some("#bevy_canvas".to_owned()),
-                        fit_canvas_to_parent: true,
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(AssetPlugin {
-                    meta_check: bevy::asset::AssetMetaCheck::Never,
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    canvas: Some("#bevy_canvas".to_owned()),
+                    fit_canvas_to_parent: true,
                     ..default()
                 }),
+                ..default()
+            })
+            .set(AssetPlugin {
+                meta_check: bevy::asset::AssetMetaCheck::Never,
+                ..default()
+            }),
+    )
+    .add_plugins(ClientPlugins::default())
+    .add_plugins(ProtocolPlugin)
+    .add_plugins(PanCameraPlugin)
+    .insert_resource(ClearColor(TEAL.into()))
+    .init_state::<BoatState>()
+    // init
+    .add_plugins(WorldPlugin)
+    .add_systems(Startup, setup)
+    .add_observer(spawn_boat)
+    .add_systems(Update, update_state)
+    // move
+    .add_systems(Update, move_camera)
+    .add_systems(
+        Update,
+        (
+            (rotate_ship, move_ship).run_if(|state: Res<State<BoatState>>| {
+                matches!(state.get(), BoatState::FreeDir | BoatState::LockedDir)
+            }),
+            // TODO ship_to_target.run_if(in_state(BoatState::Released)),
+            // update_transform,
         )
-        .add_plugins(ClientPlugins::default())
-        .add_plugins(ProtocolPlugin)
-        .add_plugins(PanCameraPlugin)
-        .insert_resource(ClearColor(TEAL.into()))
-        .init_state::<BoatState>()
-        .init_resource::<CursorPos>()
-        .add_plugins(WorldPlugin)
+            .chain(),
+    );
 
-        // init
-        .add_systems(Startup, setup)
-        .add_systems(Update, spawn_boat)
-
-        // move
-        .add_systems(Update, update_state)
-        .add_systems(Update, move_camera)
-        .add_systems(
-            Update,
-            (
-                (rotate_ship, move_ship).run_if(|state: Res<State<BoatState>>| {
-                    matches!(state.get(), BoatState::FreeDir | BoatState::LockedDir)
-                }),
-                // TODO ship_to_target.run_if(in_state(BoatState::Released)),
-                update_transform,
-            )
-                .chain(),
-        );
-
-    add_debug_systems!(&mut app, dbg_client_disconnected);
+    add_debug_systems!(&mut app, (dbg_client_disconnected));
 
     app.run();
 }
@@ -91,19 +96,23 @@ fn setup(mut commands: Commands) {
         protocol_id: PROTOCOL_ID,
     };
 
-    let client = commands.spawn((
-        Client::default(),
-        LocalAddr(CLIENT_ADDR),
-        PeerAddr(SERVER_ADDR),
-        Link::new(Some(LinkConditioner::new(LinkConditionerConfig::average_condition()))),
-        ReplicationReceiver::default(),
-        NetcodeClient::new(auth, NetcodeConfig::default()).unwrap(),
-        WebSocketClientIo {
-            // https://github.com/cBournhonesque/lightyear/blob/main/examples/common/src/client.rs#L102
-            config: ClientConfig::default(),
-            target: WebSocketTarget::Addr(WebSocketScheme::Secure)
-        }
-    )).id();
+    let client = commands
+        .spawn((
+            Client::default(),
+            LocalAddr(CLIENT_ADDR),
+            PeerAddr(SERVER_ADDR),
+            Link::new(Some(LinkConditioner::new(
+                LinkConditionerConfig::average_condition(),
+            ))),
+            ReplicationReceiver::default(),
+            NetcodeClient::new(auth, NetcodeConfig::default()).unwrap(),
+            WebSocketClientIo {
+                // https://github.com/cBournhonesque/lightyear/blob/main/examples/common/src/client.rs#L102
+                config: ClientConfig::default(),
+                target: WebSocketTarget::Addr(WebSocketScheme::Secure),
+            },
+        ))
+        .id();
 
     commands.trigger(Connect { entity: client });
 
@@ -145,7 +154,7 @@ fn update_state(
     current_state: Res<State<BoatState>>,
     mut setter: ResMut<NextState<BoatState>>,
     mouse_button: Res<ButtonInput<MouseButton>>,
-    time: Res<Time>
+    time: Res<Time>,
 ) {
     match current_state.get() {
         BoatState::Stopped => {
@@ -222,8 +231,8 @@ fn rotate_ship(
     };
 
     // turning degree bigger than maximum
-    if moved.abs() > boat.data.max_turn().to_radians() {
-        let ship_max_turn = boat.data.max_turn().to_radians();
+    if moved.abs() > boat.max_turn().to_radians() {
+        let ship_max_turn = boat.max_turn().to_radians();
         if moved > 0.0 {
             custom_transform.rotate_local_z(ship_max_turn.to_radian_unchecked());
         } else if moved < 0.0 {
@@ -245,23 +254,23 @@ fn move_ship(
     let (transform, mut custom_transform, mut target_speed, boat) = query.into_inner();
     let cursor_distance = cursor_pos.0.distance(transform.translation.xy());
     let max_speed = if custom_transform.reversed {
-        -boat.data.rev_max_speed().get_raw()
+        -boat.rev_max_speed().get_raw()
     } else {
-        boat.data.max_speed().get_raw()
+        boat.max_speed().get_raw()
     };
 
     let speed = calculate_from_proportion(
         cursor_distance,
-        add_circle_hud(boat.data.sprite_size().x / 2.0),
+        add_circle_hud(boat.sprite_size().x / 2.0),
         max_speed,
-        boat.data.sprite_size().x / 2.0,
+        boat.sprite_size().x / 2.0,
     );
 
     target_speed.0 = Speed::from_raw(speed);
 
     // adjust for acceleration
     let speed_diff = speed - custom_transform.speed.get_raw();
-    let acceleration = boat.data.acceleration();
+    let acceleration = boat.acceleration();
 
     if speed_diff > acceleration.get_raw() {
         // accelerating too much forwards
@@ -276,65 +285,64 @@ fn move_ship(
     }
 }
 
-fn update_transform(
-    query: Single<
-        (
-            &mut Transform,
-            &mut CustomTransform,
-            &Children,
-            &Sprite,
-            &mut OutOfBound,
-        ),
-        (With<Boat>, With<Owns>)
-    >,
-    mut circle_huds: Single<(Entity, &mut CircleHud)>,
-    world_size: Single<&WorldSize>
-) {
-    let (mut transform, mut custom, children, sprite, mut out_of_bound) = query.into_inner();
+// fn update_transform(
+//     query: Single<
+//         (
+//             &mut Transform,
+//             &mut CustomTransform,
+//             &Children,
+//             &Sprite,
+//             &mut OutOfBound,
+//         ),
+//         (With<Boat>, With<Owns>)
+//     >,
+//     mut circle_huds: Single<(Entity, &mut CircleHud)>,
+//     world_size: Single<&WorldSize>
+// ) {
+//     let (mut transform, mut custom, children, sprite, mut out_of_bound) = query.into_inner();
 
-    let Some(custom_size) = sprite.custom_size else {
-        return;
-    };
+//     let Some(custom_size) = sprite.custom_size else {
+//         return;
+//     };
 
-    let mut translation = custom.position.to_vec3(transform.translation.z);
+//     let mut translation = custom.position.to_vec3(transform.translation.z);
 
-    translation += move_with_rotation(transform.rotation, custom.speed.get_raw()); // ignores frame lagging temporary
+//     translation += move_with_rotation(transform.rotation, custom.speed.get_raw()); // ignores frame lagging temporary
 
-    if out_of_bounds(
-        &world_size,
-        MkRect {
-            center: translation.xy(),
-            dimensions: custom_size.into(),
-        },
-        custom.rotation.to_quat(),
-    ) {
-        custom.position.0 = transform.translation.truncate();
-        out_of_bound.0 = true;
-        return;
-    } else if out_of_bound.0 {
-        out_of_bound.0 = false;
-    }
+//     if out_of_bounds(
+//         &world_size,
+//         MkRect {
+//             center: translation.xy(),
+//             dimensions: custom_size.into(),
+//         },
+//         custom.rotation.to_quat(),
+//     ) {
+//         custom.position.0 = transform.translation.truncate();
+//         out_of_bound.0 = true;
+//         return;
+//     } else if out_of_bound.0 {
+//         out_of_bound.0 = false;
+//     }
 
-    let target = Transform {
-        translation,
-        rotation: custom.rotation.to_quat(),
-        scale: Vec3::ONE,
-    };
-    *transform = target;
+//     let target = Transform {
+//         translation,
+//         rotation: custom.rotation.to_quat(),
+//         scale: Vec3::ONE,
+//     };
+//     *transform = target;
 
-    // sync position
-    custom.position = translation.xy().into();
+//     // sync position
+//     custom.position = translation.xy().into();
 
-    for &child in children {
-        if child == circle_huds.0 {
-            circle_huds.1.center = translation.xy();
-            break;
-        }
-    }
+//     for &child in children {
+//         if child == circle_huds.0 {
+//             circle_huds.1.center = translation.xy();
+//             break;
+//         }
+//     }
 
-    // println!("Speed: {} knots", custom.speed.get_knots());
-}
-
+//     // println!("Speed: {} knots", custom.speed.get_knots());
+// }
 
 fn move_camera(
     mut camera: Single<&mut Transform, With<MainCamera>>,
@@ -345,89 +353,71 @@ fn move_camera(
     }
 }
 
-/// spawns boats which is seperated from [`Client`] entity when received command from server
+/// toggle circle hud to visible
 fn spawn_boat(
-    mut recevier: Single<&mut MessageReceiver<SpawnShip>>,
-    asset_server: Res<AssetServer>,
+    trigger: On<Add, MinimalBoat>,
+    templates: Query<&MinimalBoat>,
+    controlled: Query<(), (With<MinimalBoat>, With<Controlled>)>,
+
     mut commands: Commands,
-    boat_sprite: Query<&Sprite, With<Boat>>,
+    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let mut boat_in_world = boat_sprite.iter().len();
+    let template = templates.get(trigger.entity).unwrap();
+    let boat = template.boat;
+    let circle_hud_radius = add_circle_hud(boat.sprite_size().x / 2.0);
+    let controls = controlled.get(trigger.entity).is_ok();
 
-    for msg in recevier.receive() {
-        
-        let boat = msg.boat;
-        let position = msg.position;
-        
-        if boat_in_world > 0 {
-            // spawns only sprite + transform
-            // TODO whether to spawn Boat
-            commands.spawn((
-                Transform::from_translation(msg.position.extend(0.0)),
-                Sprite {
-                    image: asset_server.load(boat.data.file_name()),
-                    custom_size: Some(boat.data.sprite_size()),
-                    ..default()
+    commands
+        .get_entity(trigger.entity)
+        .unwrap()
+        .insert(BoatBundle {
+            boat,
+            weapon_counter: WeaponCounter {
+                aval_weapons: boat.get_armanents(),
+                selected_weapon: boat.default_weapon(),
+            },
+            sprite: Sprite {
+                image: asset_server.load(boat.file_name()), // TODO preload assets
+                custom_size: Some(boat.sprite_size()),
+                ..default()
+            },
+            transform: Transform {
+                translation: template.position.extend(WATER_SURFACE),
+                rotation: Quat::from_rotation_z(template.rotation),
+                ..default()
+            },
+            custom_transform: CustomTransform {
+                position: template.position.into(),
+                rotation: template.rotation.to_radian_unchecked(),
+                ..default()
+            },
+            ..BoatBundle::default()
+        })
+        .with_children(|parent| {
+            let mut circle_hud = parent.spawn((
+                MeshBundle {
+                    mesh: Mesh2d(meshes.add(Circle::new(circle_hud_radius).to_ring(3.0))),
+                    materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
                 },
-                msg.boat
+                Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
+                CircleHud {
+                    radius: circle_hud_radius,
+                    center: template.position,
+                },
             ));
-            info!("Spawned boat (other's): {:?}", msg.boat);
-            boat_in_world += 1;
-            continue;
-        }
 
-        let circle_hud_radius = add_circle_hud(boat.data.sprite_size().x / 2.0);
-        commands
-            .spawn(BoatBundle {
-                boat: msg.boat,
-                weapon_counter: WeaponCounter {
-                    aval_weapons: boat.data.get_armanents(),
-                    selected_weapon: boat.data.default_weapon()
-                },
-                sprite: Sprite {
-                    image: asset_server.load(boat.data.file_name()),
-                    custom_size: Some(boat.data.sprite_size()),
-                    ..default()
-                },
-                transform: Transform::from_translation(msg.position.extend(0.0)),
-                custom_transform: CustomTransform {
-                    position: msg.position.into(),
-                    rotation: Radian::from_deg(90.0),
-                    ..default()
-                },
-                ..BoatBundle::default()
-            })
-            .with_children(|parent| {
-                parent.spawn((
-                    MeshBundle {
-                        mesh: Mesh2d(meshes.add(Circle::new(circle_hud_radius).to_ring(3.0))),
-                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
-                    },
-                    Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
-                    CircleHud {
-                        radius: circle_hud_radius,
-                        center: position,
-                    },
-                ));
-            });
-        info!("Spawned boat (owned): {:?}", msg.boat);
-        boat_in_world += 1;
-    }
-}
-
-fn dbg_client_disconnected(dis: Query<&Disconnected>) {
-    for d in dis {
-        info!(
-            "Client disconnected because: {}",
-            d.reason.as_ref().unwrap_or(&"None".to_owned())
-        )
-    }
+            // hide circle hud if not client's ship
+            if !controls {
+                circle_hud.insert(Visibility::Hidden);
+            }
+        });
+    // insert circle hud if controlls
 }
 
 #[derive(Bundle, Debug, Clone)]
-pub(crate) struct BoatBundle {
+pub struct BoatBundle {
     /// tranform to update in seperate system
     transform: Transform,
     /// ship's sprite
@@ -441,7 +431,6 @@ pub(crate) struct BoatBundle {
     out_of_bound: OutOfBound,
     weapon_counter: WeaponCounter,
     boat: Boat,
-    owns: Owns
 }
 
 impl Default for BoatBundle {
@@ -463,54 +452,20 @@ impl Default for BoatBundle {
                 aval_weapons: vec![],
                 selected_weapon: None,
             },
-            boat: Boat {
-                data: BoatData::Yasen,
-                subkind: SubKind::SurfaceShip
-            },
-            owns: Owns
+            boat: Boat::Yasen, // should be G5
         }
+    }
+}
+
+fn dbg_client_disconnected(dis: Query<&Disconnected>) {
+    for d in dis {
+        info!(
+            "Client disconnected because: {}",
+            d.reason.as_ref().unwrap_or(&"None".to_owned())
+        )
     }
 }
 
 /// seperate client owned entities from others
 #[derive(Debug, Component, Clone, Copy)]
 pub struct Owns;
-
-/// helper struct for accessing the [`Boat`]'s circle HUD
-#[derive(Debug, Component, Copy, Clone)]
-pub(crate) struct CircleHud {
-    pub radius: f32,
-    pub center: Vec2,
-}
-
-impl CircleHud {
-    /// whether `point` is in the Circle HUD
-    pub(crate) fn contains(&self, point: Vec2) -> bool {
-        point.distance_squared(self.center) < self.radius.powi(2)
-    }
-    /// whether a point is at HUD's center
-    ///
-    /// adjusted for decimal-point precision
-    pub(crate) fn at_center(&self, point: Vec2, decimal_point: DecimalPoint) -> bool {
-        let x_diff = (point.x - self.center.x).abs();
-        let y_diff = (point.y - self.center.y).abs();
-
-        x_diff < decimal_point.to_f32() && y_diff < decimal_point.to_f32()
-    }
-}
-
-#[derive(Debug, Component, Clone)]
-pub(crate) struct WeaponCounter {
-    aval_weapons: Vec<Weapon>,       // FIXME and maybe HashMap<Weapon, u16>
-    selected_weapon: Option<Weapon>, // potential terry fox
-}
-
-/// adds the specified systems to the [`Update`] schedule in the app
-#[macro_export]
-macro_rules! add_debug_systems {
-    ( $app:expr, $( $system:expr ),+ ) => {
-        $app.add_systems(Update, $(
-            $system
-        )+);
-    };
-}

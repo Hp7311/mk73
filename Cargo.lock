@@ -6357,6 +6357,7 @@ dependencies = [
  "bevy",
  "common",
  "lightyear",
+ "rand 0.10.0",
  "rustls-pemfile",
 ]
 

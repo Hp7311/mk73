@@ -1,4 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     MainCamera,
@@ -11,7 +12,9 @@ const WORLD_EXPAND: f32 = 500.0;
 
 const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
 
-/// client
+/// spawns map and updates the cursor position resource
+///
+/// client side, no interaction with server (currently)
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
@@ -32,11 +35,11 @@ impl Default for WorldSize {
 }
 
 #[derive(Component, Debug, Copy, Clone)]
-struct Background;
+pub struct Background;
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // in Sprites, translation is the center point of the Sprite
     let world_size = WorldSize::default().0;
+
     commands.spawn((
         Transform {
             translation: Vec3 {

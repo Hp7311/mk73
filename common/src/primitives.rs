@@ -5,6 +5,8 @@ use std::{
 
 use bevy::{prelude::*, sprite_render::Material2d};
 
+use crate::{boat::Boat, weapon::Weapon};
+
 #[derive(Component, Debug, Copy, Clone, Default)]
 pub struct CustomTransform {
     /// along the `rotation`
@@ -29,6 +31,34 @@ impl CustomTransform {
             ..default()
         }
     }
+}
+/// helper struct for accessing the [`Boat`]'s circle HUD
+#[derive(Debug, Component, Copy, Clone)]
+pub struct CircleHud {
+    pub radius: f32,
+    pub center: Vec2,
+}
+
+impl CircleHud {
+    /// whether `point` is in the Circle HUD
+    pub(crate) fn contains(&self, point: Vec2) -> bool {
+        point.distance_squared(self.center) < self.radius.powi(2)
+    }
+    /// whether a point is at HUD's center
+    ///
+    /// adjusted for decimal-point precision
+    pub(crate) fn at_center(&self, point: Vec2, decimal_point: DecimalPoint) -> bool {
+        let x_diff = (point.x - self.center.x).abs();
+        let y_diff = (point.y - self.center.y).abs();
+
+        x_diff < decimal_point.to_f32() && y_diff < decimal_point.to_f32()
+    }
+}
+
+#[derive(Debug, Component, Clone)]
+pub struct WeaponCounter {
+    pub aval_weapons: Vec<Weapon>, // FIXME and maybe HashMap<Weapon, u16>
+    pub selected_weapon: Option<Weapon>, // potential terry fox
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -219,7 +249,7 @@ pub struct OutOfBound(pub bool);
 /// // params
 /// mut meshes: ResMut<Assets<Mesh>>,
 /// mut materials: ResMut<Assets<ColorMaterial>>
-/// 
+///
 /// commands.spawn(MeshBundle {
 ///     mesh: Mesh2d(meshes.add(Circle::new(3.0))),
 ///     materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
