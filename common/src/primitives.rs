@@ -4,6 +4,7 @@ use std::{
 };
 
 use bevy::{prelude::*, sprite_render::Material2d};
+use serde::{Deserialize, Serialize};
 
 use crate::{boat::Boat, weapon::Weapon};
 
@@ -153,7 +154,7 @@ pub struct TargetRotation(pub Option<f32>);
 pub struct TargetSpeed(pub Speed);
 
 /// Used by [`CustomTransform`] for rotation
-#[derive(Component, Debug, Copy, Clone, Default, Deref)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Deref, Component, PartialEq)]
 pub struct Radian(pub f32);
 
 impl Radian {

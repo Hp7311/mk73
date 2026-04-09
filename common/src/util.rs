@@ -183,12 +183,26 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
 #[macro_export]
 macro_rules! add_debug_systems {
     ( $app:expr, $( $system:expr ),+ ) => {
+        #[cfg(debug_assertions)]
         $app.add_systems(Update, $(
             $system
         )+);
     };
 }
 
+/// prints number of a entity with specified query filter to console
+#[macro_export]
+macro_rules! print_num {
+    ($app:expr, $filter:ty) => {
+        let system = |query: Query<(), With<$filter>>| {
+            let len = query.iter().len();
+            
+            info!("{} entities of {}", len, stringify!($filter));
+        };
+
+        $app.add_systems(Update, system);
+    };
+}
 #[cfg(test)]
 mod tests {
     use super::*;
