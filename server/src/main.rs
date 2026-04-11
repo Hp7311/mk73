@@ -11,7 +11,7 @@ use common::{
     util::add_circle_hud,
     world::{Background, WorldPlugin},
 };
-use lightyear::{prelude::input::native::ActionState, websocket::server::Identity};
+use lightyear::{input::{native::plugin::InputPlugin, server::{ServerInputConfig, ServerInputPlugin}}, prelude::input::native::ActionState, websocket::server::Identity};
 use lightyear::{
     netcode::NetcodeServer,
     prelude::{
@@ -19,7 +19,6 @@ use lightyear::{
         *,
     },
 };
-use rand::seq::IndexedRandom;
 
 fn main() {
     App::new()
@@ -44,7 +43,7 @@ fn main() {
         // handle client action
         // .add_systems(Update, recv_player_action)
         // .add_systems(Update, dbg_recv_client)
-        .add_systems(FixedUpdate, reverse_player_pos)
+        .add_systems(FixedUpdate, move_by_action)
         .run();
 }
 
@@ -119,13 +118,10 @@ fn handle_new_client(connecting_client: On<Add, LinkOf>, mut commands: Commands)
         );
 }
 
-fn reverse_player_pos(query: Query<&mut PlayerPos>) {
-    for mut player_pos in query {
-        let mut possibility = [false; 10].to_vec();
-        possibility.push(true);
-
-        if *possibility.choose(&mut rand::rng()).unwrap() {
-            player_pos.0 += vec2(1.0, 1.0);
+fn move_by_action(query: Query<(&mut PlayerPos, &ActionState<DbgClientInput>)>) {
+    for (mut player_pos, action) in query {
+        if let DbgClientInput::Move(move_by) = action.0 {
+            player_pos.0 += move_by;
         }
     }
 }

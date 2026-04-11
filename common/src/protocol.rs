@@ -2,7 +2,7 @@
 
 use crate::{boat::Boat, primitives::Radian};
 use bevy::{ecs::entity::MapEntities, prelude::*};
-use lightyear::{input, prelude::{input::native::ActionState, *}};
+use lightyear::{input, prelude::{input::native::{ActionState, InputMarker}, *}};
 use serde::{Deserialize, Serialize};
 
 pub struct SendToClient;
@@ -48,6 +48,7 @@ impl Plugin for ProtocolPlugin {
         // app.register_component::<MinimalBoat>();
         app.register_component::<PlayerPos>()
             .add_prediction();
+            // .add_linear_interpolation();
 
         // server -> client
         app.add_channel::<SendToClient>(ChannelSettings {

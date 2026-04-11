@@ -190,7 +190,7 @@ macro_rules! add_debug_systems {
     };
 }
 
-/// prints number of a entity with specified query filter to console
+/// prints number of a entity with specified query filter passed in With to console
 #[macro_export]
 macro_rules! print_num {
     ($app:expr, $filter:ty) => {

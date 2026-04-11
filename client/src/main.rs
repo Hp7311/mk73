@@ -87,52 +87,106 @@ fn main() {
     //         .chain(),
     // )
     .add_observer(on_disconnect)
-    .add_observer(on_remove_disconnect);
+    .add_observer(on_remove_disconnect)
+    .add_observer(on_added_actionstate)
+    .add_observer(on_addeed_controlled);
+
     // .add_systems(Update, update_boat_transform_from_replicate);
     // .add_systems(Update, dbg_transform_sync);
 
-    // add_debug_systems!(&mut app, demo_log);
-    // print_num!(&mut app, Predicted);
-    // add_debug_systems!(&mut app, count_sprite);
-
+    add_debug_systems!(&mut app, demo_log);
+    
     app.run();
 }
 
-fn count_sprite(sprites: Query<&Sprite>) {
-    info!("{} sprites", sprites.iter().len());
+fn on_addeed_controlled(_trigger: On<Add, Controlled>) {
+    info!("Added countrolld")
 }
+
+/// using hack to achieve achieve system to be only triggered when both
+/// [`ActionState<DbgClientInput>`] and [`Controlled`] added
+/// 
+/// maybe use .run_if() ?
+#[deny(unused)]
+fn on_added_actionstate(
+    trigger: On<Add, ActionState<DbgClientInput>>,
+    controlled_action_states: Query<(), (With<ActionState<DbgClientInput>>, With<Controlled>)>,
+    mut commands: Commands,
+) {
+    assert_eq!(controlled_action_states.iter().len(), 1);
+
+    if controlled_action_states.get(trigger.entity).is_err() {
+        // other client's
+        return;
+    }
+
+    commands.get_entity(trigger.entity).unwrap()
+        .insert(InputMarker::<DbgClientInput>::default());
+    info!("Added InputMarker for this client (only once): {}", trigger.entity);
+}
+
+// FIXME ActionState not syncing to server
+
+/// all safe cuz single-threaded
+static mut COUNTER: u64 = 0;
+
 fn demo_log(q: Query<(&PlayerPos, &Confirmed<PlayerPos>), (With<Sprite>, With<Predicted>)>) {
-    for (pos, confirmed) in q {
-        info!(Predicted = pos.0.to_string(), Confirmed = confirmed.0.0.to_string());
+    unsafe { COUNTER += 1; }
+
+    if unsafe { COUNTER } % 200 == 0 {
+        for (pos, confirmed) in q {
+            if *pos != confirmed.0 {
+                info!(Predicted = pos.0.to_string(), Confirmed = confirmed.0.0.to_string());
+            }
+        }
     }
 }
 
 fn buffer_input(
-    mut query: Query<&mut ActionState<DbgClientInput>>,  // FIXME With<InputMarker<DbgClientInput>>
+    mut query: Query<&mut ActionState<DbgClientInput>, With<InputMarker<DbgClientInput>>>,
     keypresses: Res<ButtonInput<KeyCode>>
 ) {
     let Ok(mut action_state) = query
         .single_mut()
-        .inspect_err(|e| warn!("Single: {:?}", e))
+        // .inspect_err(|e| warn!("Single: {:?}", e))
     else { return; };
 
+    let mut moved = false;
     if keypresses.pressed(KeyCode::KeyW) {
-        action_state.0 = DbgClientInput::Move(vec2(10.0, 0.0));
-    } else {
-        action_state.0 = DbgClientInput::None;
+        action_state.0 = DbgClientInput::Move(vec2(0.0, 10.0));
+        moved |= true;
     }
+    // FIXME simultaneous presses
+    if keypresses.pressed(KeyCode::KeyA) {
+        action_state.0 = DbgClientInput::Move(vec2(-10.0, 0.0));
+        moved |= true;
+    }
+    if keypresses.pressed(KeyCode::KeyS) {
+        action_state.0 = DbgClientInput::Move(vec2(0.0, -10.0));
+        moved |= true;
+    }
+    if keypresses.pressed(KeyCode::KeyD) {
+        action_state.0 = DbgClientInput::Move(vec2(10.0, 0.0));
+        moved |= true;
+    }
+    if !moved {
+        action_state.0 = DbgClientInput::None;
+    } else { info!("Pressed"); }
 }
 
+// TODO shared
 fn local_simulation(
     mut query: Query<(&mut PlayerPos, &ActionState<DbgClientInput>), (With<Predicted>, With<Controlled>)>
 ) {
     let Ok((mut pos, action)) = query.single_mut() else { return };
     
     if let DbgClientInput::Move(move_by) = action.0 {
-        info!("Moving right {}", move_by);
+        info!("Moving {}", move_by);
         pos.0 += move_by;
     }
 }
+
+// TODO no interpolation yet
 
 fn setup(mut commands: Commands) {
     let client_id = rand::random_range(0..100);
@@ -158,7 +212,7 @@ fn setup(mut commands: Commands) {
                 // https://github.com/cBournhonesque/lightyear/blob/main/examples/common/src/client.rs#L102
                 config: ClientConfig::default(),
                 target: WebSocketTarget::Addr(WebSocketScheme::Plain),
-            },
+            }
         ))
         .id();
 
@@ -500,12 +554,12 @@ fn demo_update_transform(
     }
 }
 fn demo_spawn_sprite(
-    trigger: On<Add, (PlayerPos, Predicted)>,
-    player_pos: Query<&PlayerPos, With<Predicted>>,
+    trigger: On<Add, PlayerPos>,
+    player_pos: Query<&PlayerPos>,
     asset_server: Res<AssetServer>,
     mut commands: Commands
 ) {
-    info!("New predicted playerpos");
+    info!("New playerpos");
     let Ok(player_pos) = player_pos.get(trigger.entity) else { return; };  // seems to be triggered twice for the same spawning?
     commands
         .get_entity(trigger.entity).unwrap()
