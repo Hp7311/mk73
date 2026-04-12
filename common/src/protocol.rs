@@ -40,6 +40,15 @@ pub struct MinimalBoat {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Component, Deref, DerefMut)]
 pub struct PlayerPos(pub Vec2);
+
+/// interpolation
+impl Ease for PlayerPos {
+    fn interpolating_curve_unbounded(start: Self, end: Self) -> impl Curve<Self> {
+        FunctionCurve::new(Interval::UNIT, move |t| {
+            PlayerPos(Vec2::lerp(start.0, end.0, t))
+        })
+    }
+}
 pub struct ProtocolPlugin;
 
 impl Plugin for ProtocolPlugin {
@@ -47,8 +56,8 @@ impl Plugin for ProtocolPlugin {
         // replication
         // app.register_component::<MinimalBoat>();
         app.register_component::<PlayerPos>()
-            .add_prediction();
-            // .add_linear_interpolation();
+            .add_prediction()
+            .add_linear_interpolation();
 
         // server -> client
         app.add_channel::<SendToClient>(ChannelSettings {
@@ -67,6 +76,7 @@ impl Plugin for ProtocolPlugin {
         })
         .add_direction(NetworkDirection::ClientToServer);
 
+        // MUST register these two for every input
         app.add_plugins(input::native::plugin::InputPlugin::<DbgClientInput>::default());
         app.register_component::<ActionState<DbgClientInput>>();
     }

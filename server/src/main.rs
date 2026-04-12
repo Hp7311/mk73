@@ -22,8 +22,8 @@ use lightyear::{
 
 fn main() {
     App::new()
-        // headless plugins
         .add_plugins(
+            // headless plugins
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: None,
@@ -153,7 +153,10 @@ fn handle_connected_client(
         PlayerPos(Vec2::default()),
         
         Replicate::to_clients(NetworkTarget::All),
+
         PredictionTarget::to_clients(NetworkTarget::Single(*client_id)),
+        InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(*client_id)),
+
         ActionState::<DbgClientInput>::default(),
 
         ControlledBy {

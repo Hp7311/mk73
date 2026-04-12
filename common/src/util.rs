@@ -181,7 +181,7 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
 
 /// adds the specified systems to the [`Update`] schedule in the app
 #[macro_export]
-macro_rules! add_debug_systems {
+macro_rules! add_dbg_app {
     ( $app:expr, $( $system:expr ),+ ) => {
         #[cfg(debug_assertions)]
         $app.add_systems(Update, $(

@@ -19,7 +19,7 @@ use common::util::{
 use common::weapon::Weapon;
 use common::world::{Background, WorldPlugin, WorldSize};
 use common::{
-    CIRCLE_HUD, CLIENT_ADDR, MainCamera, PROTOCOL_ID, SERVER_ADDR, WATER_SURFACE, add_debug_systems, print_num,
+    CIRCLE_HUD, CLIENT_ADDR, MainCamera, PROTOCOL_ID, SERVER_ADDR, WATER_SURFACE, add_dbg_app, print_num
 };
 
 use lightyear::input::client::InputSystems;
@@ -71,7 +71,9 @@ fn main() {
     // .add_observer(spawn_boat)
     .add_observer(demo_spawn_sprite)
     .add_systems(Update, demo_update_transform)
-    .add_systems(FixedUpdate, (local_simulation, buffer_input.in_set(InputSystems::WriteClientInputs)))
+    // MUST BE FixedPreUpdate and in set WriteClientInputs to avoid jerky movement
+    .add_systems(FixedPreUpdate, buffer_input.in_set(InputSystems::WriteClientInputs))
+    .add_systems(FixedUpdate, local_simulation)
     // .add_systems(Update, update_state)
     // move
     // .add_systems(Update, move_camera)
@@ -88,19 +90,23 @@ fn main() {
     // )
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect)
-    .add_observer(on_added_actionstate)
-    .add_observer(on_addeed_controlled);
+    .add_observer(on_added_actionstate);
 
     // .add_systems(Update, update_boat_transform_from_replicate);
     // .add_systems(Update, dbg_transform_sync);
 
-    add_debug_systems!(&mut app, demo_log);
+    add_dbg_app!(&mut app, demo_log);
     
     app.run();
 }
 
-fn on_addeed_controlled(_trigger: On<Add, Controlled>) {
-    info!("Added countrolld")
+fn demo_log(query: Query<(&PlayerPos, &Confirmed<PlayerPos>), Changed<PlayerPos>>) {
+    for (local, confirmed) in query {
+        let local = local.0;
+        let confirmed = confirmed.0.0;
+
+        info!(?local, ?confirmed);
+    }
 }
 
 /// using hack to achieve achieve system to be only triggered when both
@@ -113,7 +119,6 @@ fn on_added_actionstate(
     controlled_action_states: Query<(), (With<ActionState<DbgClientInput>>, With<Controlled>)>,
     mut commands: Commands,
 ) {
-    assert_eq!(controlled_action_states.iter().len(), 1);
 
     if controlled_action_states.get(trigger.entity).is_err() {
         // other client's
@@ -125,22 +130,6 @@ fn on_added_actionstate(
     info!("Added InputMarker for this client (only once): {}", trigger.entity);
 }
 
-// FIXME ActionState not syncing to server
-
-/// all safe cuz single-threaded
-static mut COUNTER: u64 = 0;
-
-fn demo_log(q: Query<(&PlayerPos, &Confirmed<PlayerPos>), (With<Sprite>, With<Predicted>)>) {
-    unsafe { COUNTER += 1; }
-
-    if unsafe { COUNTER } % 200 == 0 {
-        for (pos, confirmed) in q {
-            if *pos != confirmed.0 {
-                info!(Predicted = pos.0.to_string(), Confirmed = confirmed.0.0.to_string());
-            }
-        }
-    }
-}
 
 fn buffer_input(
     mut query: Query<&mut ActionState<DbgClientInput>, With<InputMarker<DbgClientInput>>>,
@@ -152,7 +141,7 @@ fn buffer_input(
     else { return; };
 
     let mut moved = false;
-    if keypresses.pressed(KeyCode::KeyW) {
+    if keypresses.just_pressed(KeyCode::KeyW) {
         action_state.0 = DbgClientInput::Move(vec2(0.0, 10.0));
         moved |= true;
     }
@@ -171,7 +160,7 @@ fn buffer_input(
     }
     if !moved {
         action_state.0 = DbgClientInput::None;
-    } else { info!("Pressed"); }
+    }
 }
 
 // TODO shared
