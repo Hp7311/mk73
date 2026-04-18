@@ -1,8 +1,14 @@
 //! defines structures to be sent between client and server
 
-use crate::{boat::Boat, primitives::{CustomTransform, Radian, Speed}};
+use crate::{
+    boat::Boat,
+    primitives::{CustomTransform, Radian, Speed},
+};
 use bevy::{ecs::entity::MapEntities, prelude::*};
-use lightyear::{input::{self, native::plugin::InputPlugin}, prelude::{input::native::ActionState, *}};
+use lightyear::{
+    input::{self, native::plugin::InputPlugin},
+    prelude::{input::native::ActionState, *},
+};
 use serde::{Deserialize, Serialize};
 
 pub struct SendToClient;
@@ -14,7 +20,9 @@ pub struct SendToServer;
 pub struct Rotate(pub Option<Radian>);
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
 pub struct Move(pub Option<Speed>);
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq, Deref, DerefMut)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq, Deref, DerefMut,
+)]
 pub struct Reversed(pub bool);
 impl Reversed {
     pub fn to_bool(&self) -> bool {
@@ -31,7 +39,6 @@ impl MapEntities for Move {
 impl MapEntities for Reversed {
     fn map_entities<E: EntityMapper>(&mut self, _entity_mapper: &mut E) {}
 }
-
 
 // NOTE message rx/sx are automatically spawned on specified direction
 
@@ -56,8 +63,7 @@ impl Plugin for ProtocolPlugin {
         //     .add_prediction()
         //     .add_linear_interpolation();
         app.register_component::<Boat>();
-        app.register_component::<CustomTransform>()
-            .add_prediction();
+        app.register_component::<CustomTransform>().add_prediction();
 
         app.add_channel::<SendToClient>(ChannelSettings {
             mode: ChannelMode::OrderedReliable(ReliableSettings::default()),

@@ -1,7 +1,9 @@
 use std::{collections::HashMap, time::Duration};
 
 use bevy::{
-    color::palettes::css::{GRAY, TEAL}, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, prelude::*
+    color::palettes::css::{GRAY, TEAL},
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    prelude::*,
 };
 use common::{
     CIRCLE_HUD, LOCAL_SERVER_ADDR, PROTOCOL_ID,
@@ -11,7 +13,14 @@ use common::{
     util::add_circle_hud,
     world::{Background, WorldPlugin},
 };
-use lightyear::{input::{native::plugin::InputPlugin, server::{ServerInputConfig, ServerInputPlugin}}, prelude::input::native::ActionState, websocket::server::Identity};
+use lightyear::{
+    input::{
+        native::plugin::InputPlugin,
+        server::{ServerInputConfig, ServerInputPlugin},
+    },
+    prelude::input::native::ActionState,
+    websocket::server::Identity,
+};
 use lightyear::{
     netcode::NetcodeServer,
     prelude::{
@@ -24,35 +33,36 @@ fn main() {
     App::new()
         .add_plugins(
             // headless plugins
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: None,
-                    exit_condition: bevy::window::ExitCondition::DontExit,
-                    ..default()
-                })
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: None,
+                exit_condition: bevy::window::ExitCondition::DontExit,
+                ..default()
+            }),
         )
         .insert_resource(ClearColor(TEAL.into()))
         .add_plugins(ServerPlugins::default())
         .add_plugins(ProtocolPlugin)
-
         .add_systems(Startup, setup)
         // handle client req
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client)
-
         // handle client action
         // .add_systems(Update, dbg_recv_client)
         .add_systems(FixedUpdate, handle_input)
         .run();
 }
 
-
-
-fn handle_input(rotate: Query<(&mut CustomTransform, &ActionState<Rotate>, &ActionState<Move>)>) {
+fn handle_input(
+    rotate: Query<(
+        &mut CustomTransform,
+        &ActionState<Rotate>,
+        &ActionState<Move>,
+    )>,
+) {
     // for (mut custom, action) in query {
-        // if let ClientInput::Move(move_by) = action.0 {
-        //     custom.position.0 += move_by;
-        // }
+    // if let ClientInput::Move(move_by) = action.0 {
+    //     custom.position.0 += move_by;
+    // }
     // }
 }
 
@@ -66,7 +76,7 @@ fn setup(mut commands: Commands) {
                 #[cfg(debug_assertions)]
                 config: ServerConfig::builder()
                     .with_bind_address(LOCAL_SERVER_ADDR)
-                    .with_no_encryption()
+                    .with_no_encryption(),
             },
         ))
         .id();
@@ -78,13 +88,11 @@ fn setup(mut commands: Commands) {
 fn handle_new_client(connecting_client: On<Add, LinkOf>, mut commands: Commands) {
     commands
         .entity(connecting_client.entity)
-        .insert(
-            ReplicationSender::new(
-                Duration::from_millis(100),
-                SendUpdatesMode::SinceLastAck,
-                false,
-            )
-        );
+        .insert(ReplicationSender::new(
+            Duration::from_millis(100),
+            SendUpdatesMode::SinceLastAck,
+            false,
+        ));
 }
 
 // TODO seperate CUstomTransform?
@@ -93,9 +101,9 @@ fn handle_new_client(connecting_client: On<Add, LinkOf>, mut commands: Commands)
 fn handle_connected_client(
     connected_client: On<Add, Connected>,
     clients: Query<&RemoteId, With<ClientOf>>,
-    mut commands: Commands
+    mut commands: Commands,
 ) {
-    let entity = connected_client.entity;  // NOT equal to client id or Client entity in client's world
+    let entity = connected_client.entity; // NOT equal to client id or Client entity in client's world
     let Ok(RemoteId(client_id)) = clients.get(entity) else {
         warn!("Didn't find the connected client in Query<&RemoteId, With<ClientOf>");
         return;
@@ -105,7 +113,7 @@ fn handle_connected_client(
     let position = vec2(
         rand::random_range(-200.0..200.0),
         rand::random_range(-200.0..200.0),
-    );  // TODO
+    ); // TODO
 
     commands.spawn((
         CustomTransform {
@@ -113,25 +121,24 @@ fn handle_connected_client(
             ..CustomTransform::default()
         },
         boat,
-        
         Replicate::to_clients(NetworkTarget::All),
-
         PredictionTarget::to_clients(NetworkTarget::Single(*client_id)),
         InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(*client_id)),
-
         ActionState::<Rotate>::default(),
         ActionState::<Move>::default(),
         ActionState::<Reversed>::default(),
-
         ControlledBy {
             owner: entity,
             lifetime: Lifetime::SessionBased,
-        }
+        },
     ));
 }
 
 /// webtransport certificate
-fn from_pem_file(cert_path: impl AsRef<std::path::Path>, key_path: impl AsRef<std::path::Path>) -> Identity {
+fn from_pem_file(
+    cert_path: impl AsRef<std::path::Path>,
+    key_path: impl AsRef<std::path::Path>,
+) -> Identity {
     use std::fs;
 
     let cert_chain_bytes = fs::read(cert_path).unwrap();

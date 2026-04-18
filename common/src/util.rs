@@ -7,6 +7,7 @@ use crate::{
     MainCamera,
     primitives::{DecimalPoint, MkRect, WidthHeight},
 };
+use crate::primitives::Radian;
 
 /// the equivalent of `==` only with a specified precision
 pub(crate) fn eq(x: f32, y: f32, precision: DecimalPoint) -> bool {
@@ -31,12 +32,8 @@ pub fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
 }
 
 /// calculates Vec3 to add to `Transform.translation` from the rotation and speed
-/// ### Note
-/// assumes 2D
-pub fn move_with_rotation(rotation: Quat, speed: f32) -> Vec3 {
-    let (.., move_angle) = rotation.to_euler(EulerRot::XYZ);
-
-    (vec2(move_angle.cos(), move_angle.sin()) * speed).extend(0.0)
+pub fn move_with_rotation(rotation: Radian, speed: f32, z_index: f32) -> Vec3 {
+    (rotation.to_vec() * speed).extend(z_index)
 }
 
 /// centre point at middle of window
@@ -166,7 +163,7 @@ macro_rules! add_dbg_app {
 /// prints number of a entity with specified query filter passed in to console
 /// filter defaults to [`With`]
 /// ## Example
-/// 
+///
 /// ```ignore
 /// print_num!(&mut app, ActionState<Move>, InputMarker<Move>);
 /// // expands to:
@@ -183,7 +180,7 @@ macro_rules! print_num {
             With<$filter>
         ),* ) >| {
             let len = query.iter().len();
-            
+
             let mut filter_str = String::new();
             filter_str.push('(');
             $(
@@ -198,23 +195,48 @@ macro_rules! print_num {
     };
 }
 
+// movements
+
+/// extract or return
+#[macro_export]
+macro_rules! extract {
+    ($in:expr, Option) => {
+        match $in {
+            Some(x) => x,
+            None => return,
+        }
+    };
+    ($in:expr, Result) => {
+        match $in {
+            Ok(x) => x,
+            Err(e) => {
+                error!("Unwrapping on Err({:?})", e);
+                return;
+            }
+        }
+    };
+}
+
 /// allows a generic [`into`](Into::into), has a blanket implementation
-/// 
+///
 /// ```
 ///# use common::util::InputExt;
 /// let x: u8 = 3;
 /// let y = x.to::<u16>().to::<i32>().to::<i64>();
 /// ```
-pub trait InputExt 
-    where Self: Sized
+pub trait InputExt
+where
+    Self: Sized,
 {
-    fn to<T>(self) -> T 
-        where T: From<Self>;
+    fn to<T>(self) -> T
+    where
+        T: From<Self>;
 }
 
-impl <T> InputExt for T {
-    fn to<U>(self) -> U 
-        where U: From<Self>
+impl<T> InputExt for T {
+    fn to<U>(self) -> U
+    where
+        U: From<Self>,
     {
         From::from(self)
     }
@@ -232,8 +254,8 @@ mod tests {
     }
     #[test]
     fn test_move_with_rotation() {
-        let rotation = Quat::from_rotation_z(90.0_f32.to_radians());
-        assert_eq!(move_with_rotation(rotation, 2.0).y, 2.0);
+        let rotation = Radian::from_deg(90.0);
+        assert_eq!(move_with_rotation(rotation, 2.0, 0.0).y, 2.0);
     }
     #[test]
     fn test_add_circle_hud() {

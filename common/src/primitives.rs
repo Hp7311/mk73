@@ -2,7 +2,7 @@ use std::{
     f32::consts::PI,
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
 };
-
+use std::ops::Mul;
 use bevy::{prelude::*, sprite_render::Material2d};
 use serde::{Deserialize, Serialize};
 
@@ -120,9 +120,11 @@ impl MkRect {
 }
 
 /// helper struct containing a raw speed
-/// 
+///
 /// all ops default to raw repensentation
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Deref, Component, PartialEq, Reflect)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Copy, Default, Deref, Component, PartialEq, Reflect,
+)]
 pub struct Speed(f32);
 
 impl Speed {
@@ -195,11 +197,11 @@ pub struct TargetRotation(pub Option<f32>);
 pub struct TargetSpeed(pub Speed);
 
 /// Used by [`CustomTransform`] for rotation
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default,  Component, PartialEq, Reflect)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Component, PartialEq, Reflect, PartialOrd)]
 pub struct Radian(pub f32);
 
 impl Radian {
-    /// multiply return type by the length to find the coordinates of a point 
+    /// multiply return type by the length to find the coordinates of a point
     /// ### Example
     /// ```ignore
     /// # use common::primitives::Radian;
@@ -210,11 +212,16 @@ impl Radian {
     pub fn to_vec(self) -> Vec2 {
         vec2(self.0.cos(), self.0.sin())
     }
+    /// normalizing and rotating
     pub fn rotate_local_z(&mut self, angle: Radian) {
-        let rotation = angle.to_quat();
-        *self = (rotation * self.to_quat()).wrap_radian();
+        *self = Radian(self.0 + angle.0).normalize();
     }
-    pub fn from_deg(deg: f32) -> Self {
+    // TODO test
+    /// normalizing and rotating
+    pub fn rotate_local_z_ret(&self, angle: Radian) -> Self {
+        Radian(self.0 + angle.0).normalize()
+    }
+    pub const fn from_deg(deg: f32) -> Self {
         Radian(deg.to_radians())
     }
     pub fn to_quat(self) -> Quat {
@@ -229,6 +236,29 @@ impl Neg for Radian {
     type Output = Radian;
     fn neg(self) -> Self::Output {
         Radian(-self.0)
+    }
+}
+
+impl Mul<f32> for Radian {
+    type Output = Self;
+
+    fn mul(mut self, rhs: f32) -> Self::Output {
+        self.0 *= rhs;
+        self
+    }
+}
+
+impl Sub for Radian {
+    type Output = Radian;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Radian(self.0 - rhs.0)
+    }
+}
+
+impl Add for Radian {
+    type Output = Radian;
+    fn add(self, rhs: Self) -> Self::Output {
+        Radian(self.0 + rhs.0)
     }
 }
 pub trait WrapRadian {
@@ -249,6 +279,11 @@ impl WrapRadian for Quat {
     }
 }
 
+impl WrapRadian for Radian {
+    fn wrap_radian(&self) -> Radian {
+        *self
+    }
+}
 #[derive(Component, Debug, PartialEq, Copy, Clone, Default, Deref, Deserialize, Serialize)]
 pub struct Position(pub Vec2);
 

@@ -1,10 +1,13 @@
 //! plugin to buffer inputs from the client
+//!
+//! client responsible to add verifier and apply them to [`CustomTransform`] and [`Transform`]
 
 use bevy::prelude::*;
 use common::{
     boat::Boat,
     primitives::{
-        CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Radian, Speed, WrapRadian as _
+        CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Radian, Speed,
+        WrapRadian as _,
     },
     protocol::{Move, Reversed, Rotate},
     util::{add_circle_hud, calculate_from_proportion, get_rotate_radian},
@@ -30,7 +33,10 @@ impl Plugin for InputBufferPlugin {
             (buffer_rotate, buffer_move)
                 .in_set(InputSystems::WriteClientInputs)
                 .run_if(resource_changed::<CursorPos>)
-                .run_if(BoatState::in_state_2(BoatState::Moving { locked: true }, BoatState::Moving { locked: false })),
+                .run_if(BoatState::in_state_2(
+                    BoatState::Moving { locked: true },
+                    BoatState::Moving { locked: false },
+                )),
         );
     }
 }
@@ -46,9 +52,11 @@ fn buffer_rotate(
     state: Res<State<BoatState>>,
     mut rotate: Single<&mut ActionState<Rotate>, With<InputMarker<Rotate>>>,
     mut reversed: Single<&mut ActionState<Reversed>, With<InputMarker<Reversed>>>,
-    boat: Single<&Boat, With<Controlled>>
+    boat: Single<&Boat, With<Controlled>>,
 ) {
-    let BoatState::Moving { locked } = state.get() else { unreachable!() };
+    let BoatState::Moving { locked } = state.get() else {
+        unreachable!()
+    };
     let custom_transform = position.into_inner();
 
     let mut current_rotation = custom_transform.rotation;
@@ -65,10 +73,7 @@ fn buffer_rotate(
             // custom_transform.reversed = true;
             *reversed.0 |= true;
             moved_from_current = moved_from_current.flip();
-        } else if moved_from_current.abs() <= MINIMUM_REVERSE
-            && reversed.to_bool()
-            && !locked
-        {
+        } else if moved_from_current.abs() <= MINIMUM_REVERSE && reversed.to_bool() && !locked {
             // going forwards
             // custom_transform.reversed = false;
             *reversed.0 = false;
@@ -83,15 +88,15 @@ fn buffer_rotate(
     // return;
     // target_rotation.0 = Some(target_move.wrap_radian());
 
-    let max_turn = boat.max_turn().to_radians();
+    let max_turn = boat.max_turn();
 
     // indirection
-    if moved_from_current.abs() > max_turn {
+    if moved_from_current.abs() > max_turn.0 {
         // turning degree bigger than maximum
         if moved_from_current > 0.0 {
-            current_rotation.rotate_local_z(max_turn.wrap_radian());
+            current_rotation.rotate_local_z(max_turn);
         } else if moved_from_current < 0.0 {
-            current_rotation.rotate_local_z(-max_turn.wrap_radian());
+            current_rotation.rotate_local_z(-max_turn);
         }
     } else if moved_from_current != 0.0 {
         // normal
@@ -121,9 +126,6 @@ fn buffer_move(
         max_speed,
         boat.radius(),
     );
-    
-    move_action.0.0 = Some(Speed::from_raw(speed));
-    return;
 
     // target_speed.0 = Speed::from_raw(speed);
     let mut speed = Speed::from_raw(speed);

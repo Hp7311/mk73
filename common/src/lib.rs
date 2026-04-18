@@ -9,6 +9,10 @@ pub mod protocol;
 pub mod util;
 pub mod weapon;
 pub mod world;
+mod movement;
+
+pub use movement::MovementPlugin;
+use crate::primitives::Radian;
 
 pub const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), SERVER_PORT);
 pub const LOCAL_SERVER_ADDR: SocketAddr =
@@ -25,7 +29,7 @@ pub const DIVING_OVERLAY: f32 = 35.0;
 const SERVER_PORT: u16 = 8000;
 const CLIENT_PORT: u16 = 8001;
 
-const DEFAULT_MAX_TURN_DEG: f32 = 0.5;
+const DEFAULT_MAX_TURN_DEG: Radian = Radian::from_deg(0.5);
 
 /// # Warning
 /// Code will break silently if we use something else

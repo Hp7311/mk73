@@ -1,6 +1,8 @@
+use std::ops::Mul;
 use bevy::prelude::*;
 
 use crate::{DEFAULT_MAX_TURN_DEG, primitives::Speed};
+use crate::primitives::Radian;
 
 #[derive(Debug, Component, Clone, Copy)]
 pub enum Weapon {
@@ -38,10 +40,9 @@ impl Weapon {
             Weapon::Set65 => 10.0,
         })
     }
-    fn max_turn_radian(&self) -> f32 {
+    fn max_turn_radian(&self) -> Radian {
         match self {
             Weapon::Set65 => DEFAULT_MAX_TURN_DEG * 3.0,
         }
-        .to_radians()
     }
 }

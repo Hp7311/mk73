@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
 use bevy::color::palettes::css::{GRAY, RED, TEAL};
-use bevy::ecs::system::FunctionSystem;
 use bevy::prelude::*;
 
 use common::boat::Boat;
@@ -21,11 +20,10 @@ use common::util::{
 use common::weapon::Weapon;
 use common::world::{Background, WorldPlugin, WorldSize};
 use common::{
-    CIRCLE_HUD, CLIENT_ADDR, MainCamera, PROTOCOL_ID, SERVER_ADDR, WATER_SURFACE, add_dbg_app,
-    print_num,
+    CIRCLE_HUD, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, WATER_SURFACE,
+    add_dbg_app, print_num,
 };
 
-use lightyear::input::client::InputSystems;
 use lightyear::netcode::auth::Authentication;
 use lightyear::netcode::{Key, NetcodeClient};
 use lightyear::prelude::client::{ClientConfig, NetcodeConfig, WebSocketClientIo, WebSocketScheme};
@@ -71,6 +69,8 @@ fn main() {
     .init_state::<BoatState>()
     .add_plugins(WorldPlugin)
     .add_plugins(InputBufferPlugin)
+    .add_plugins(MovementPlugin { is_server: false })
+
     .add_systems(Startup, setup)
     .add_observer(spawn_boat) // FIXME
     .add_observer(on_added_actionstate::<Rotate>)
@@ -104,8 +104,7 @@ fn main() {
 
 // TODO performance problem on client num > 1
 
-
-/// using hack to achieve achieve system to be only triggered when both
+/// using hack to achieve system to be only triggered when both
 /// [`ActionState<T>`] and [`Controlled`] added
 #[deny(unused)]
 fn on_added_actionstate<T>(
@@ -127,7 +126,10 @@ fn on_added_actionstate<T>(
         .id();
     info!(
         "Added InputMarker for this client (only once): {}, ID: {}",
-        std::any::type_name::<T>().split("::").last().unwrap_or_default(),
+        std::any::type_name::<T>()
+            .split("::")
+            .last()
+            .unwrap_or_default(),
         id
     );
 }
@@ -192,16 +194,14 @@ enum BoatState {
     /// potentially fire a weapon
     FiringWeapon(Duration),
     /// maybe locked in a direction (LMB pressed), unlocked for one frame only
-    /// 
+    ///
     /// always transition here with locked: false if can change direction (forward/reverse)
-    Moving {
-        locked: bool
-    },
+    Moving { locked: bool },
     /// LMB not pressed
     Released,
 }
 
-// potential bug: NextState laggiing
+// potential bug: NextState lagging
 fn update_state(
     current_state: Res<State<BoatState>>,
     mut setter: ResMut<NextState<BoatState>>,
@@ -215,9 +215,12 @@ fn update_state(
             }
         }
         BoatState::Moving { locked } => {
-            if !locked { setter.set(BoatState::Moving { locked: true }) }
+            if !locked {
+                setter.set(BoatState::Moving { locked: true })
+            }
 
-            if !mouse_button.pressed(MouseButton::Left) {  // not just_released for countering rare bug
+            if !mouse_button.pressed(MouseButton::Left) {
+                // not just_released for countering rare bug
                 setter.set(BoatState::Released);
             }
         }
@@ -230,7 +233,7 @@ fn update_state(
             let duration = *elapsed + time.delta();
 
             if duration > TIME_TO_LAUNCH_WEAPON {
-                setter.set(BoatState::Moving { locked: false });  // TODO true?
+                setter.set(BoatState::Moving { locked: false }); // TODO true?
             } else if mouse_button.just_released(MouseButton::Left) {
                 info!("Firing weapon ->>>>>"); // TODO
                 setter.set(BoatState::Released);
@@ -315,7 +318,11 @@ fn update_transform(
 
     let mut translation = custom.position.to_vec3(transform.translation.z);
 
-    translation += move_with_rotation(custom.rotation.to_quat(), custom.speed.get_raw()); // ignores frame lagging temporary
+    translation += move_with_rotation(
+        custom.rotation,
+        custom.speed.get_raw(),
+        transform.translation.z,
+    ); // ignores frame lagging temporary
 
     custom.position.0 = translation.xy();
 
@@ -386,12 +393,12 @@ fn boat_to_target(
 
     let moved = (target_rotation - current_rotation).normalize();
 
-    let ship_max_turn = boat.max_turn().to_radians();
-    if moved.abs() > ship_max_turn {
+    let ship_max_turn = boat.max_turn();
+    if moved.abs() > ship_max_turn.0 {
         if moved > 0.0 {
-            custom_transform.rotate_local_z(ship_max_turn.wrap_radian());
+            custom_transform.rotate_local_z(ship_max_turn);
         } else if moved < 0.0 {
-            custom_transform.rotate_local_z(-ship_max_turn.wrap_radian());
+            custom_transform.rotate_local_z(-ship_max_turn);
         }
     } else {
         custom_transform.rotate_local_z(moved.wrap_radian());
@@ -468,35 +475,42 @@ fn spawn_boat(
                 CircleHud {
                     radius: circle_hud_radius,
                     center: custom.position.0,
-                }
+                },
             ));
             // not client's ship
             if !controls {
                 return;
             }
 
-            hud
-                .insert(MeshBundle {
-                    mesh: Mesh2d(meshes.add(Circle::new(circle_hud_radius).to_ring(3.0))),
-                    materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
-                })
-                .insert(children![
-                    // reverse indicators
-                    (
-                        Transform::from_xyz(circle_hud_radius * MINIMUM_REVERSE.cos(), circle_hud_radius * MINIMUM_REVERSE.sin(), CIRCLE_HUD),
-                        MeshBundle {
-                            mesh: Mesh2d(meshes.add(Rectangle::new(6.0, 6.0))),
-                            materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
-                        }
+            hud.insert(MeshBundle {
+                mesh: Mesh2d(meshes.add(Circle::new(circle_hud_radius).to_ring(3.0))),
+                materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
+            })
+            .insert(children![
+                // reverse indicators
+                (
+                    Transform::from_xyz(
+                        circle_hud_radius * MINIMUM_REVERSE.cos(),
+                        circle_hud_radius * MINIMUM_REVERSE.sin(),
+                        CIRCLE_HUD
                     ),
-                    (
-                        Transform::from_xyz(circle_hud_radius * (-MINIMUM_REVERSE).cos(), circle_hud_radius * (-MINIMUM_REVERSE.sin()), CIRCLE_HUD),
-                        MeshBundle {
-                            mesh: Mesh2d(meshes.add(Rectangle::new(6.0, 6.0))),
-                            materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
-                        }
-                    )
-                ]);
+                    MeshBundle {
+                        mesh: Mesh2d(meshes.add(Rectangle::new(6.0, 6.0))),
+                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
+                    }
+                ),
+                (
+                    Transform::from_xyz(
+                        circle_hud_radius * (-MINIMUM_REVERSE).cos(),
+                        circle_hud_radius * (-MINIMUM_REVERSE.sin()),
+                        CIRCLE_HUD
+                    ),
+                    MeshBundle {
+                        mesh: Mesh2d(meshes.add(Rectangle::new(6.0, 6.0))),
+                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
+                    }
+                )
+            ]);
         });
 }
 
@@ -553,9 +567,7 @@ fn on_remove_disconnect(_: On<Remove, Disconnected>) {
 impl BoatState {
     /// subsitute for `run_if` not working on multiple states
     fn in_state_2(first: Self, second: Self) -> impl Fn(Res<State<BoatState>>) -> bool {
-        move | state: Res<State<BoatState>> | {
-            *state.get() == first || *state.get() == second
-        }
+        move |state: Res<State<BoatState>>| *state.get() == first || *state.get() == second
     }
 }
 
@@ -566,11 +578,19 @@ fn spawn_gui(mut commands: Commands) {
             font_size: 30.0,
             ..default()
         },
-        Transform::from_xyz(-200.0, 200.0, 0.0)
+        Transform::from_xyz(-200.0, 200.0, 0.0),
     ));
 }
-fn update_gui(mut text: Single<&mut Text2d>, rotate: Single<&ActionState<Rotate>, With<InputMarker<Rotate>>>, moves: Single<&ActionState<Move>, With<InputMarker<Move>>>) {
-    let new_text = format!("Rotate: {} degrees\nMove: {} knots", rotate.0.0.unwrap_or_default().to_degrees(), moves.0.0.unwrap_or_default().get_knots());
+fn update_gui(
+    mut text: Single<&mut Text2d>,
+    rotate: Single<&ActionState<Rotate>, With<InputMarker<Rotate>>>,
+    moves: Single<&ActionState<Move>, With<InputMarker<Move>>>,
+) {
+    let new_text = format!(
+        "Rotate: {} degrees\nMove: {} knots",
+        rotate.0.0.unwrap_or_default().to_degrees(),
+        moves.0.0.unwrap_or_default().get_knots()
+    );
 
     if new_text != text.0 {
         text.0 = new_text;
