@@ -1,29 +1,31 @@
+mod input;
+
 use std::f32::consts::PI;
 use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
-use bevy::color::palettes::css::{GRAY, TEAL};
+use bevy::color::palettes::css::{GRAY, RED, TEAL};
+use bevy::ecs::system::FunctionSystem;
 use bevy::prelude::*;
 
 use common::boat::Boat;
 use common::collision::out_of_bounds;
 use common::primitives::{
-    CircleHud, CursorPos, CustomTransform, DecimalPoint, FlipRadian, MeshBundle, MkRect,
-    NormalizeRadian, OutOfBound, Radian, Speed, TargetRotation, TargetSpeed, ToRadian,
-    WeaponCounter,
+    CircleHud, CursorPos, CustomTransform, FlipRadian, MeshBundle, MkRect, NormalizeRadian,
+    OutOfBound, Speed, TargetRotation, TargetSpeed, WeaponCounter, WrapRadian,
 };
-use common::protocol::{ActionType, DbgClientInput, MinimalBoat, PlayerAction, PlayerPos, ProtocolPlugin, SendToServer};
+use common::protocol::{Move, ProtocolPlugin, Reversed, Rotate};
 use common::util::{
     add_circle_hud, calculate_from_proportion, get_rotate_radian, move_with_rotation,
 };
 use common::weapon::Weapon;
 use common::world::{Background, WorldPlugin, WorldSize};
 use common::{
-    CIRCLE_HUD, CLIENT_ADDR, MainCamera, PROTOCOL_ID, SERVER_ADDR, WATER_SURFACE, add_dbg_app, print_num
+    CIRCLE_HUD, CLIENT_ADDR, MainCamera, PROTOCOL_ID, SERVER_ADDR, WATER_SURFACE, add_dbg_app,
+    print_num,
 };
 
 use lightyear::input::client::InputSystems;
-use lightyear::link::LinkConditioner;
 use lightyear::netcode::auth::Authentication;
 use lightyear::netcode::{Key, NetcodeClient};
 use lightyear::prelude::client::{ClientConfig, NetcodeConfig, WebSocketClientIo, WebSocketScheme};
@@ -31,9 +33,10 @@ use lightyear::prelude::input::native::{ActionState, InputMarker};
 use lightyear::prelude::{client::ClientPlugins, *};
 use lightyear::websocket::client::WebSocketTarget;
 
-#[cfg(not(target_family = "wasm"))]
-// compile_error!{"Should compile by trunk serve"}
-const FIX_LATER: &str = "Uncomment above in production, gives ugly warnings in rust-analyzer";
+use crate::input::InputBufferPlugin;
+
+#[cfg(all(not(target_family = "wasm"), not(debug_assertions)))]
+compile_error! {"Should compile by trunk serve on production"}
 
 // FIXME client disconnects on switching tabs
 
@@ -64,17 +67,18 @@ fn main() {
     .add_plugins(ProtocolPlugin)
     .add_plugins(PanCameraPlugin)
     .insert_resource(ClearColor(TEAL.into()))
-    // .init_state::<BoatState>()
     // init
+    .init_state::<BoatState>()
     .add_plugins(WorldPlugin)
+    .add_plugins(InputBufferPlugin)
     .add_systems(Startup, setup)
-    // .add_observer(spawn_boat)
-    .add_observer(demo_spawn_sprite)
-    .add_systems(Update, demo_update_transform)
-    // MUST BE FixedPreUpdate and in set WriteClientInputs to avoid jerky movement
-    .add_systems(FixedPreUpdate, buffer_input.in_set(InputSystems::WriteClientInputs))
-    .add_systems(FixedUpdate, local_simulation)
-    // .add_systems(Update, update_state)
+    .add_observer(spawn_boat) // FIXME
+    .add_observer(on_added_actionstate::<Rotate>)
+    .add_observer(on_added_actionstate::<Move>)
+    .add_observer(on_added_actionstate::<Reversed>)
+    .add_systems(Update, update_state)
+    // handling
+    // .add_systems(FixedUpdate, local_simulation)
     // move
     // .add_systems(Update, move_camera)
     // .add_systems(
@@ -88,94 +92,49 @@ fn main() {
     //     )
     //         .chain(),
     // )
+    .add_systems(Update, (sync_transform_from_custom, move_camera))
     .add_observer(on_disconnect)
-    .add_observer(on_remove_disconnect)
-    .add_observer(on_added_actionstate);
+    .add_observer(on_remove_disconnect);
 
-    // .add_systems(Update, update_boat_transform_from_replicate);
-    // .add_systems(Update, dbg_transform_sync);
+    app.add_systems(Startup, spawn_gui);
+    app.add_systems(Update, update_gui);
 
-    add_dbg_app!(&mut app, demo_log);
-    
     app.run();
 }
 
-fn demo_log(query: Query<(&PlayerPos, &Confirmed<PlayerPos>), Changed<PlayerPos>>) {
-    for (local, confirmed) in query {
-        let local = local.0;
-        let confirmed = confirmed.0.0;
+// TODO performance problem on client num > 1
 
-        info!(?local, ?confirmed);
-    }
-}
 
 /// using hack to achieve achieve system to be only triggered when both
-/// [`ActionState<DbgClientInput>`] and [`Controlled`] added
-/// 
-/// maybe use .run_if() ?
+/// [`ActionState<T>`] and [`Controlled`] added
 #[deny(unused)]
-fn on_added_actionstate(
-    trigger: On<Add, ActionState<DbgClientInput>>,
-    controlled_action_states: Query<(), (With<ActionState<DbgClientInput>>, With<Controlled>)>,
+fn on_added_actionstate<T>(
+    trigger: On<Add, ActionState<T>>,
+    controlled_action_states: Query<(), (With<ActionState<T>>, With<Controlled>)>,
     mut commands: Commands,
-) {
-
+) where
+    T: Default + Send + Sync + 'static,
+{
     if controlled_action_states.get(trigger.entity).is_err() {
         // other client's
         return;
     }
 
-    commands.get_entity(trigger.entity).unwrap()
-        .insert(InputMarker::<DbgClientInput>::default());
-    info!("Added InputMarker for this client (only once): {}", trigger.entity);
+    let id = commands
+        .get_entity(trigger.entity)
+        .unwrap()
+        .insert(InputMarker::<T>::default())
+        .id();
+    info!(
+        "Added InputMarker for this client (only once): {}, ID: {}",
+        std::any::type_name::<T>().split("::").last().unwrap_or_default(),
+        id
+    );
 }
 
-
-fn buffer_input(
-    mut query: Query<&mut ActionState<DbgClientInput>, With<InputMarker<DbgClientInput>>>,
-    keypresses: Res<ButtonInput<KeyCode>>
-) {
-    let Ok(mut action_state) = query
-        .single_mut()
-        // .inspect_err(|e| warn!("Single: {:?}", e))
-    else { return; };
-
-    let mut moved = false;
-    if keypresses.just_pressed(KeyCode::KeyW) {
-        action_state.0 = DbgClientInput::Move(vec2(0.0, 10.0));
-        moved |= true;
-    }
-    // FIXME simultaneous presses
-    if keypresses.pressed(KeyCode::KeyA) {
-        action_state.0 = DbgClientInput::Move(vec2(-10.0, 0.0));
-        moved |= true;
-    }
-    if keypresses.pressed(KeyCode::KeyS) {
-        action_state.0 = DbgClientInput::Move(vec2(0.0, -10.0));
-        moved |= true;
-    }
-    if keypresses.pressed(KeyCode::KeyD) {
-        action_state.0 = DbgClientInput::Move(vec2(10.0, 0.0));
-        moved |= true;
-    }
-    if !moved {
-        action_state.0 = DbgClientInput::None;
-    }
-}
-
-// TODO shared
-fn local_simulation(
-    mut query: Query<(&mut PlayerPos, &ActionState<DbgClientInput>), (With<Predicted>, With<Controlled>)>
-) {
-    let Ok((mut pos, action)) = query.single_mut() else { return };
-    
-    if let DbgClientInput::Move(move_by) = action.0 {
-        info!("Moving {}", move_by);
-        pos.0 += move_by;
-    }
-}
-
-// TODO no interpolation yet
+/// ActionState<Rotate> and ActionState<Move>
+///
+/// required to handle Rotate first
 
 fn setup(mut commands: Commands) {
     let client_id = rand::random_range(0..100);
@@ -191,21 +150,18 @@ fn setup(mut commands: Commands) {
             Client::default(),
             LocalAddr(CLIENT_ADDR),
             PeerAddr(SERVER_ADDR),
-            Link::new(Some(LinkConditioner::new(
-                LinkConditionerConfig::average_condition(),
-            ))),
-            ReplicationReceiver::default(),
-            PredictionManager::default(),
+            Link::default(),
             NetcodeClient::new(auth, NetcodeConfig::default()).unwrap(),
             WebSocketClientIo {
                 // https://github.com/cBournhonesque/lightyear/blob/main/examples/common/src/client.rs#L102
                 config: ClientConfig::default(),
+                #[cfg(debug_assertions)]
                 target: WebSocketTarget::Addr(WebSocketScheme::Plain),
-            }
+            },
+            ReplicationReceiver::default(),
+            PredictionManager::default(),
         ))
         .id();
-
-    info!(?client);
 
     commands.trigger(Connect { entity: client });
 
@@ -235,14 +191,17 @@ enum BoatState {
     Stopped,
     /// potentially fire a weapon
     FiringWeapon(Duration),
-    /// locked in a direction (LMB pressed)
-    LockedDir,
-    /// middle state between `LockedDir` and `Released`, can change direction
-    FreeDir,
+    /// maybe locked in a direction (LMB pressed), unlocked for one frame only
+    /// 
+    /// always transition here with locked: false if can change direction (forward/reverse)
+    Moving {
+        locked: bool
+    },
     /// LMB not pressed
     Released,
 }
 
+// potential bug: NextState laggiing
 fn update_state(
     current_state: Res<State<BoatState>>,
     mut setter: ResMut<NextState<BoatState>>,
@@ -252,18 +211,15 @@ fn update_state(
     match current_state.get() {
         BoatState::Stopped => {
             if mouse_button.just_pressed(MouseButton::Left) {
-                // may not be correct
-                setter.set(BoatState::FreeDir);
+                setter.set(BoatState::Moving { locked: false });
             }
         }
-        BoatState::LockedDir => {
-            if mouse_button.just_released(MouseButton::Left) {
+        BoatState::Moving { locked } => {
+            if !locked { setter.set(BoatState::Moving { locked: true }) }
+
+            if !mouse_button.pressed(MouseButton::Left) {  // not just_released for countering rare bug
                 setter.set(BoatState::Released);
             }
-        }
-        BoatState::FreeDir => {
-            // allow 1 frame in freedir
-            setter.set(BoatState::LockedDir);
         }
         BoatState::Released => {
             if mouse_button.just_pressed(MouseButton::Left) {
@@ -274,7 +230,7 @@ fn update_state(
             let duration = *elapsed + time.delta();
 
             if duration > TIME_TO_LAUNCH_WEAPON {
-                setter.set(BoatState::FreeDir);
+                setter.set(BoatState::Moving { locked: false });  // TODO true?
             } else if mouse_button.just_released(MouseButton::Left) {
                 info!("Firing weapon ->>>>>"); // TODO
                 setter.set(BoatState::Released);
@@ -285,8 +241,8 @@ fn update_state(
     }
 }
 
-fn dbg_transform_sync(
-    mut query: Query<(&mut Transform, &CustomTransform), With<Boat>>
+fn sync_transform_from_custom(
+    mut query: Query<(&mut Transform, &CustomTransform), (With<Boat>, Changed<CustomTransform>)>,
 ) {
     for (mut transform, custom) in query.iter_mut() {
         transform.translation.x = custom.position.x;
@@ -295,87 +251,17 @@ fn dbg_transform_sync(
     }
 }
 
-// does not descriminate controlled
-fn update_boat_transform_from_replicate(
-    mut query: Query<(&MinimalBoat, &mut Transform, &CustomTransform)>,
-) {
-    for (template, mut transform, custom) in query.iter_mut() {
-        info!("Position: {:?}\nSpeed: {}\nRotation: {}", custom.position.0, custom.speed.get_knots(), custom.rotation.to_degrees());
-        transform.translation.x = template.position.x;
-        transform.translation.y = template.position.y;
-        transform.rotation = template.rotation.to_quat();
-
-        // custom.position.0 = template.position;
-        // custom.rotation.0 = template.rotation;
-    }
-}
-
 // TODO targetrotation & targetspeed
-/// handle rotation (manipulate [`CustomTransform`])
-fn rotate_boat(
-    query: Single<(&mut CustomTransform, &mut TargetRotation, &Boat), With<Controlled>>,
-    state: Res<State<BoatState>>,
-    cursor_pos: Res<CursorPos>,
-) {
-    let state = *state.get();
-
-    let (mut custom_transform, mut target_rotation, boat) = query.into_inner();
-    let raw_moved = get_rotate_radian(custom_transform.position.0, cursor_pos.0); // diff from radian 0
-    // let (.., current_rotation) = transform.rotation.to_euler(EulerRot::XYZ);
-    let current_rotation = custom_transform.rotation.0;
-    let mut target_move = raw_moved;
-
-    let moved = {
-        // radians to move from current rotation
-        let mut moved_from_current = (raw_moved - current_rotation).normalize();
-
-        // -- adjust for reversed ---
-        if moved_from_current.abs() > MINIMUM_REVERSE && state == BoatState::FreeDir {
-            // reversing
-            custom_transform.reversed = true;
-            moved_from_current = moved_from_current.flip();
-            target_move = target_move.flip()
-        } else if moved_from_current.abs() <= MINIMUM_REVERSE
-            && custom_transform.reversed
-            && state == BoatState::FreeDir
-        {
-            // going forwards
-            custom_transform.reversed = false;
-        } else if custom_transform.reversed {
-            // unable to go forward, haven't released key yet
-            moved_from_current = moved_from_current.flip();
-            target_move = target_move.flip()
-        }
-
-        moved_from_current
-    };
-
-    // turning degree bigger than maximum
-    let max_turn = boat.max_turn().to_radians();
-
-    if moved.abs() > max_turn {
-        if moved > 0.0 {
-            custom_transform.rotate_local_z(max_turn.to_radian_unchecked());
-        } else if moved < 0.0 {
-            custom_transform.rotate_local_z(-max_turn.to_radian_unchecked());
-        }
-    } else if moved != 0.0 {
-        // normal
-        custom_transform.rotate_local_z(moved.to_radian_unchecked());
-    }
-
-    target_rotation.0 = Some(target_move);
-}
 
 /// handle moving (manipulate [`CustomTransform`]'s [`Speed`])
 fn move_boat(
     query: Single<(&mut CustomTransform, &mut TargetSpeed, &Boat), With<Controlled>>,
-    cursor_pos: Res<CursorPos>
+    cursor_pos: Res<CursorPos>,
 ) {
     let (mut custom_transform, mut target_speed, boat) = query.into_inner();
     let cursor_distance = cursor_pos.0.distance(custom_transform.position.0);
     let max_speed = if custom_transform.reversed {
-        - boat.rev_max_speed().get_raw()
+        -boat.rev_max_speed().get_raw()
     } else {
         boat.max_speed().get_raw()
     };
@@ -402,28 +288,26 @@ fn move_boat(
     }
     // not exceeding acceleration
     else if speed_diff.abs() > 0.1 {
-        custom_transform.speed.overwrite_with_raw(speed);
+        custom_transform.speed.overwrite(Speed::from_raw(speed));
     }
 }
 
-// send messages to server
+// TODO common
 fn update_transform(
     query: Single<
         (
-            &Transform,
+            &mut Transform,
             &mut CustomTransform,
             &Children,
             &Sprite,
             &mut OutOfBound,
         ),
-        (With<Boat>, With<Controlled>)
+        (With<Boat>, With<Controlled>),
     >,
     mut circle_huds: Single<(Entity, &mut CircleHud)>,
     world_size: Single<&WorldSize>,
-    mut sender: Single<&mut MessageSender<PlayerAction>>,
-    client_id: Single<&LocalId>
 ) {
-    let (transform, mut custom, children, sprite, mut out_of_bound) = query.into_inner();
+    let (mut transform, mut custom, children, sprite, mut out_of_bound) = query.into_inner();
 
     let Some(custom_size) = sprite.custom_size else {
         return;
@@ -443,29 +327,29 @@ fn update_transform(
         },
         custom.rotation.to_quat(),
     ) {
-        custom.position.0 = transform.translation.truncate();  // changes have no effect
+        custom.position.0 = transform.translation.truncate(); // changes have no effect
         out_of_bound.0 = true;
         return;
     } else if out_of_bound.0 {
         out_of_bound.0 = false;
     }
 
-    sender.send::<SendToServer>(PlayerAction {
-        action: ActionType::Rotate(custom.rotation),
-        client: client_id.to_bits()
-    });
-    // TODO more info?
-    sender.send::<SendToServer>(PlayerAction {
-        action: ActionType::Move(custom.position.0),
-        client: client_id.to_bits()
-    });
+    // sender.send::<SendToServer>(PlayerAction {
+    //     action: ActionType::Rotate(custom.rotation),
+    //     client: client_id.to_bits()
+    // });
+    // // TODO more info?
+    // sender.send::<SendToServer>(PlayerAction {
+    //     action: ActionType::Move(custom.position.0),
+    //     client: client_id.to_bits()
+    // });
 
-    // let target = Transform {
-    //     translation,
-    //     rotation: custom.rotation.to_quat(),
-    //     scale: Vec3::ONE,
-    // };
-    // *transform = target;
+    let target = Transform {
+        translation,
+        rotation: custom.rotation.to_quat(),
+        scale: Vec3::ONE,
+    };
+    *transform = target;
 
     // ^^^^^^^^^^^^^^ only do these if server says so through replication
 
@@ -476,22 +360,23 @@ fn update_transform(
             break;
         }
     }
-
-    info!("Speed: {} knots", custom.speed.get_knots());
 }
 
 /// remember the last move angle and rotate toward it when button not pressed
 fn boat_to_target(
-    boat: Single<(
-        &Transform,
-        &mut CustomTransform,
-        &TargetRotation,
-        &TargetSpeed,
-        &Boat,
-    ), With<Controlled>>,
+    boat: Single<
+        (
+            &Transform,
+            &mut CustomTransform,
+            &TargetRotation,
+            &TargetSpeed,
+            &Boat,
+        ),
+        With<Controlled>,
+    >,
 ) {
     let (transform, mut custom_transform, target_rotation, target_speed, boat) = boat.into_inner();
-    
+
     // ------ rotation
     let Some(target_rotation) = target_rotation.0 else {
         return;
@@ -504,12 +389,12 @@ fn boat_to_target(
     let ship_max_turn = boat.max_turn().to_radians();
     if moved.abs() > ship_max_turn {
         if moved > 0.0 {
-            custom_transform.rotate_local_z(ship_max_turn.to_radian_unchecked());
+            custom_transform.rotate_local_z(ship_max_turn.wrap_radian());
         } else if moved < 0.0 {
-            custom_transform.rotate_local_z(-ship_max_turn.to_radian_unchecked());
+            custom_transform.rotate_local_z(-ship_max_turn.wrap_radian());
         }
     } else {
-        custom_transform.rotate_local_z(moved.to_radian_unchecked());
+        custom_transform.rotate_local_z(moved.wrap_radian());
     }
     // ------ speed
     let speed_diff = target_speed.get_raw() - custom_transform.speed.get_raw();
@@ -519,15 +404,12 @@ fn boat_to_target(
     } else if speed_diff < -acceleration.get_raw() {
         custom_transform.speed.subtract_raw(acceleration.get_raw());
     } else {
-        custom_transform
-            .speed
-            .overwrite_with_raw(target_speed.get_raw());
+        custom_transform.speed.overwrite(target_speed.0);
     }
-
 }
 
 fn move_camera(
-    mut camera: Single<&mut Transform, With<MainCamera>>,
+    mut camera: Single<&mut Transform, (With<MainCamera>, Without<Boat>)>,
     ship: Single<&Transform, (With<Boat>, With<Controlled>)>,
 ) {
     if ship.translation.xy() != camera.translation.xy() {
@@ -535,41 +417,26 @@ fn move_camera(
     }
 }
 
-fn demo_update_transform(
-    mut query: Query<(&PlayerPos, &mut Transform), Changed<PlayerPos>>
-) {
-    for (pos, mut transform) in query.iter_mut() {
-        transform.translation = pos.0.extend(0.0);
-    }
-}
-fn demo_spawn_sprite(
-    trigger: On<Add, PlayerPos>,
-    player_pos: Query<&PlayerPos>,
-    asset_server: Res<AssetServer>,
-    mut commands: Commands
-) {
-    info!("New playerpos");
-    let Ok(player_pos) = player_pos.get(trigger.entity) else { return; };  // seems to be triggered twice for the same spawning?
-    commands
-        .get_entity(trigger.entity).unwrap()
-        .insert((
-           Sprite::from_image(asset_server.load("yasen.png")),
-           Transform::from_translation(player_pos.0.extend(0.0))
-        ));
-}
 fn spawn_boat(
-    trigger: On<Add, MinimalBoat>,
-    templates: Query<&MinimalBoat>,
-    controlled: Query<(), (With<MinimalBoat>, With<Controlled>)>,
+    trigger: On<Add, Boat>, // assume CustomTransform also added
+    boats: Query<&Boat>,
+    customs: Query<&CustomTransform, With<Boat>>,
+    controlled: Query<(), (With<Boat>, With<Controlled>)>,
 
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let template = templates.get(trigger.entity).unwrap();
-    let boat = template.boat;
-    let circle_hud_radius = add_circle_hud(boat.sprite_size().x / 2.0);
+    let Ok(custom) = customs
+        .get(trigger.entity)
+        .inspect_err(|_| error!("Should replicate CustomTransform along with Boat"))
+    else {
+        return;
+    };
+
+    let &boat = boats.get(trigger.entity).unwrap();
+    let circle_hud_radius = add_circle_hud(boat.radius());
     let controls = controlled.get(trigger.entity).is_ok();
 
     commands
@@ -587,53 +454,67 @@ fn spawn_boat(
                 ..default()
             },
             transform: Transform {
-                translation: template.position.extend(WATER_SURFACE),
-                rotation: template.rotation.to_quat(),
+                translation: custom.position.extend(WATER_SURFACE),
+                rotation: custom.rotation.to_quat(),
                 ..default()
             },
-            custom_transform: CustomTransform {
-                position: template.position.into(),
-                rotation: template.rotation.to_radian_unchecked(),
-                ..default()
-            },
+            custom_transform: *custom,
             ..BoatBundle::default()
         })
         .with_children(|parent| {
-            let mut circle_hud = parent.spawn((
-                MeshBundle {
-                    mesh: Mesh2d(meshes.add(Circle::new(circle_hud_radius).to_ring(3.0))),
-                    materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
-                },
+            // reequired for other clients to have a CircleHud for rig's point attraction
+            let mut hud = parent.spawn((
                 Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
                 CircleHud {
                     radius: circle_hud_radius,
-                    center: template.position,
-                },
+                    center: custom.position.0,
+                }
             ));
-
-            // hide circle hud if not client's ship
+            // not client's ship
             if !controls {
-                circle_hud.insert(Visibility::Hidden);
+                return;
             }
+
+            hud
+                .insert(MeshBundle {
+                    mesh: Mesh2d(meshes.add(Circle::new(circle_hud_radius).to_ring(3.0))),
+                    materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
+                })
+                .insert(children![
+                    // reverse indicators
+                    (
+                        Transform::from_xyz(circle_hud_radius * MINIMUM_REVERSE.cos(), circle_hud_radius * MINIMUM_REVERSE.sin(), CIRCLE_HUD),
+                        MeshBundle {
+                            mesh: Mesh2d(meshes.add(Rectangle::new(6.0, 6.0))),
+                            materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
+                        }
+                    ),
+                    (
+                        Transform::from_xyz(circle_hud_radius * (-MINIMUM_REVERSE).cos(), circle_hud_radius * (-MINIMUM_REVERSE.sin()), CIRCLE_HUD),
+                        MeshBundle {
+                            mesh: Mesh2d(meshes.add(Rectangle::new(6.0, 6.0))),
+                            materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
+                        }
+                    )
+                ]);
         });
-    // insert circle hud if controlls
 }
 
 #[derive(Bundle, Debug, Clone)]
 pub struct BoatBundle {
     /// tranform to update in seperate system
-    transform: Transform,
+    transform: Transform, // cannot
     /// ship's sprite
-    sprite: Sprite,
+    sprite: Sprite, // cannot
     /// whether reversed, speed etc
-    custom_transform: CustomTransform,
+    custom_transform: CustomTransform, // check
     /// where the user's mouse was facing
     mouse_target: TargetRotation,
     /// the target speed of the Boat
     target_speed: TargetSpeed,
     out_of_bound: OutOfBound,
     weapon_counter: WeaponCounter,
-    boat: Boat,
+    boat: Boat, // check
 }
 
 impl Default for BoatBundle {
@@ -662,12 +543,36 @@ impl Default for BoatBundle {
 
 fn on_disconnect(trigger: On<Add, Disconnected>, query: Query<&Disconnected>) {
     let disconnected = query.get(trigger.entity).unwrap();
-    info!(
-        "Client disconnected because: {}",
-        disconnected.reason.as_ref().map(|s| s.as_str()).unwrap_or("None")
-    )
+    info!("Client disconnected because: {:?}", disconnected.reason)
 }
 
 fn on_remove_disconnect(_: On<Remove, Disconnected>) {
     info!("Client re-connected")
+}
+
+impl BoatState {
+    /// subsitute for `run_if` not working on multiple states
+    fn in_state_2(first: Self, second: Self) -> impl Fn(Res<State<BoatState>>) -> bool {
+        move | state: Res<State<BoatState>> | {
+            *state.get() == first || *state.get() == second
+        }
+    }
+}
+
+fn spawn_gui(mut commands: Commands) {
+    commands.spawn((
+        Text2d::new("Rotate: 0 degrees\nMove: 0 knots"),
+        TextFont {
+            font_size: 30.0,
+            ..default()
+        },
+        Transform::from_xyz(-200.0, 200.0, 0.0)
+    ));
+}
+fn update_gui(mut text: Single<&mut Text2d>, rotate: Single<&ActionState<Rotate>, With<InputMarker<Rotate>>>, moves: Single<&ActionState<Move>, With<InputMarker<Move>>>) {
+    let new_text = format!("Rotate: {} degrees\nMove: {} knots", rotate.0.0.unwrap_or_default().to_degrees(), moves.0.0.unwrap_or_default().get_knots());
+
+    if new_text != text.0 {
+        text.0 = new_text;
+    }
 }

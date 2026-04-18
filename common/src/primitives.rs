@@ -1,6 +1,6 @@
 use std::{
     f32::consts::PI,
-    ops::{AddAssign, Neg},
+    ops::{Add, AddAssign, Neg, Sub, SubAssign},
 };
 
 use bevy::{prelude::*, sprite_render::Material2d};
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{boat::Boat, weapon::Weapon};
 
-#[derive(Component, Debug, Copy, Clone, Default)]
+#[derive(Component, Debug, Copy, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct CustomTransform {
     /// along the `rotation`
     pub speed: Speed,
@@ -17,13 +17,14 @@ pub struct CustomTransform {
     ///
     /// ignores any reverse, calculates them like normal
     pub rotation: Radian,
+    // TODO delete
     pub reversed: bool,
 }
 
 impl CustomTransform {
     pub fn rotate_local_z(&mut self, angle: Radian) {
         let rotation = angle.to_quat();
-        self.rotation = (rotation * self.rotation.to_quat()).to_radian_unchecked();
+        self.rotation = (rotation * self.rotation.to_quat()).wrap_radian();
     }
     /// from a not-moving entity
     pub fn from_static(position: Vec2) -> Self {
@@ -113,12 +114,15 @@ impl MkRect {
     pub(crate) fn contains(&self, pos: Vec2) -> bool {
         self.to_rect().contains(pos)
     }
-    pub(crate) fn to_rect(&self) -> Rect {
+    pub(crate) fn to_rect(self) -> Rect {
         Rect::from_center_size(self.center, self.dimensions.to_vec2())
     }
 }
 
-#[derive(Component, Debug, Copy, Clone, Default)]
+/// helper struct containing a raw speed
+/// 
+/// all ops default to raw repensentation
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Deref, Component, PartialEq, Reflect)]
 pub struct Speed(f32);
 
 impl Speed {
@@ -128,9 +132,11 @@ impl Speed {
     pub fn from_raw(raw: f32) -> Self {
         Speed(raw)
     }
+    #[deprecated = "Use += instead"]
     pub fn add_raw(&mut self, raw: f32) {
         self.0 += raw;
     }
+    #[deprecated = "Use -= instead"]
     pub fn subtract_raw(&mut self, raw: f32) {
         self.0 -= raw;
     }
@@ -140,8 +146,43 @@ impl Speed {
     pub fn get_raw(&self) -> f32 {
         self.0
     }
-    pub fn overwrite_with_raw(&mut self, raw: f32) {
-        self.0 = raw
+    /// with raw
+    pub fn overwrite(&mut self, with: Speed) {
+        *self = with;
+    }
+}
+
+impl Sub for Speed {
+    type Output = Speed;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Speed::from_raw(self.0 - rhs.0)
+    }
+}
+impl SubAssign for Speed {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;
+    }
+}
+impl Add for Speed {
+    type Output = Speed;
+    fn add(self, rhs: Self) -> Self::Output {
+        Speed::from_raw(self.0 + rhs.0)
+    }
+}
+impl AddAssign for Speed {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+impl Neg for Speed {
+    type Output = Speed;
+    fn neg(self) -> Self::Output {
+        Speed::from_raw(-self.0)
+    }
+}
+impl PartialOrd for Speed {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
     }
 }
 
@@ -154,13 +195,33 @@ pub struct TargetRotation(pub Option<f32>);
 pub struct TargetSpeed(pub Speed);
 
 /// Used by [`CustomTransform`] for rotation
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Deref, Component, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default,  Component, PartialEq, Reflect)]
 pub struct Radian(pub f32);
 
 impl Radian {
-    /// Vec2 to be added to Origin to rotate
-    pub(crate) fn to_vec(self) -> Vec2 {
+    /// multiply return type by the length to find the coordinates of a point 
+    /// ### Example
+    /// ```ignore
+    /// # use common::primitives::Radian;
+    /// # use bevy::prelude::vec2;
+    /// let angle = Radian::from_deg(45.0);
+    /// assert_eq!(angle.to_vec() * 18.0f32.sqrt(), vec2(3.0, 3.0));  // approximate
+    /// ```
+    pub fn to_vec(self) -> Vec2 {
         vec2(self.0.cos(), self.0.sin())
+    }
+    pub fn rotate_local_z(&mut self, angle: Radian) {
+        let rotation = angle.to_quat();
+        *self = (rotation * self.to_quat()).wrap_radian();
+    }
+    pub fn from_deg(deg: f32) -> Self {
+        Radian(deg.to_radians())
+    }
+    pub fn to_quat(self) -> Quat {
+        Quat::from_rotation_z(self.0)
+    }
+    pub fn to_degrees(self) -> f32 {
+        self.0.to_degrees()
     }
 }
 
@@ -170,33 +231,25 @@ impl Neg for Radian {
         Radian(-self.0)
     }
 }
-pub trait ToRadian {
-    fn to_radian_unchecked(&self) -> Radian;
+pub trait WrapRadian {
+    fn wrap_radian(&self) -> Radian;
 }
 
-impl ToRadian for f32 {
-    /// assumes already radian, wraps [`f32`] by Radian()
-    fn to_radian_unchecked(&self) -> Radian {
+impl WrapRadian for f32 {
+    /// assumes already radian, wraps [`f32`] by [`Radian()`]
+    fn wrap_radian(&self) -> Radian {
         Radian(*self)
     }
 }
-impl ToRadian for Quat {
+impl WrapRadian for Quat {
     /// takes the Z-rotation and wraps it in [`f32`]
-    fn to_radian_unchecked(&self) -> Radian {
+    fn wrap_radian(&self) -> Radian {
         let (.., z) = self.to_euler(EulerRot::XYZ);
         Radian(z)
     }
 }
-impl Radian {
-    pub fn from_deg(deg: f32) -> Self {
-        Radian(deg.to_radians())
-    }
-    pub fn to_quat(self) -> Quat {
-        Quat::from_rotation_z(self.0)
-    }
-}
 
-#[derive(Component, Debug, PartialEq, Copy, Clone, Default, Deref)]
+#[derive(Component, Debug, PartialEq, Copy, Clone, Default, Deref, Deserialize, Serialize)]
 pub struct Position(pub Vec2);
 
 impl AddAssign for Position {
@@ -246,7 +299,7 @@ impl Altitude for Transform {
 pub struct OutOfBound(pub bool);
 
 /// ### Example
-/// ```rs,norun
+/// ```rs,no_run
 /// // params
 /// mut meshes: ResMut<Assets<Mesh>>,
 /// mut materials: ResMut<Assets<ColorMaterial>>
@@ -288,7 +341,7 @@ impl DecimalPoint {
     }
 }
 
-/// flips a radian 180 degrees
+/// flips a radian 180 degrees along with normalizing
 pub trait FlipRadian {
     fn flip(self) -> Self;
 }
@@ -298,9 +351,15 @@ impl FlipRadian for f32 {
         (self + PI).normalize()
     }
 }
+impl FlipRadian for Radian {
+    fn flip(self) -> Self {
+        Radian(self.0.flip())
+    }
+}
 
 /// eliminates offset when turning over the negative x-axis
 pub trait NormalizeRadian {
+    /// normalize a radian within range `-PI..PI`
     fn normalize(self) -> Self;
 }
 impl NormalizeRadian for f32 {
@@ -311,6 +370,11 @@ impl NormalizeRadian for f32 {
             self += 2.0 * PI;
         }
         self
+    }
+}
+impl NormalizeRadian for Radian {
+    fn normalize(self) -> Self {
+        self.0.normalize().wrap_radian()
     }
 }
 

@@ -7,7 +7,7 @@ use common::{
     CIRCLE_HUD, LOCAL_SERVER_ADDR, PROTOCOL_ID,
     boat::Boat,
     primitives::*,
-    protocol::{ActionType, DbgClientInput, MinimalBoat, PlayerAction, PlayerPos, ProtocolPlugin, SendToClient},
+    protocol::{Move, ProtocolPlugin, Reversed, Rotate, SendToClient},
     util::add_circle_hud,
     world::{Background, WorldPlugin},
 };
@@ -41,49 +41,26 @@ fn main() {
         .add_observer(handle_connected_client)
 
         // handle client action
-        // .add_systems(Update, recv_player_action)
         // .add_systems(Update, dbg_recv_client)
-        .add_systems(FixedUpdate, move_by_action)
+        .add_systems(FixedUpdate, handle_input)
         .run();
 }
 
-// fn dbg_recv_client(
-//     mut recv: Single<&mut MessageReceiver<DbgClientAction>>,
-//     mut player_pos: Single<&mut PlayerPos>
-// ) {
-//     for msg in recv.receive() {
-//         match msg {
-//             DbgClientAction::Move(by) => player_pos.0 += by
-//         }
-//     }
-// }
-// fn recv_player_action(
-//     mut receiver: Single<&mut MessageReceiver<PlayerAction>>,
-//     mut templates: Query<&mut MinimalBoat>,
-//     client_map: Single<&ClientMap>
-// ) {
-//     for PlayerAction { action, client } in receiver.receive() {
-//         let entity = client_map.0.get(&client).unwrap();
-//         let mut template = templates.get_mut(*entity).unwrap();
 
-//         info!("Accepted: {:?}", action);
-//         match action {
-//             ActionType::Fire(_) => todo!(),
-//             ActionType::Move(target) => {
-//                 template.position = target;  // accept all
-//             }
-//             ActionType::Rotate(rotation) => {
-//                 template.rotation = rotation;
-//             }
-//         }
-//     }
-// }
+
+fn handle_input(rotate: Query<(&mut CustomTransform, &ActionState<Rotate>, &ActionState<Move>)>) {
+    // for (mut custom, action) in query {
+        // if let ClientInput::Move(move_by) = action.0 {
+        //     custom.position.0 += move_by;
+        // }
+    // }
+}
 
 /// starts the server
 fn setup(mut commands: Commands) {
     let server = commands
         .spawn((
-            NetcodeServer::new(NetcodeConfig::default().with_protocol_id(PROTOCOL_ID).with_client_timeout_secs(30)),
+            NetcodeServer::new(NetcodeConfig::default().with_protocol_id(PROTOCOL_ID)),
             LocalAddr(LOCAL_SERVER_ADDR),
             WebSocketServerIo {
                 #[cfg(debug_assertions)]
@@ -95,15 +72,7 @@ fn setup(mut commands: Commands) {
         .id();
 
     commands.trigger(Start { entity: server });
-
-    commands.spawn(ClientMap::default());
 }
-
-/// identify the main struct storing [`MinimalBoat`] which is replicated and used to accept clients' request
-/// 
-/// see [`common::protocol::PlayerAction`]
-#[derive(Debug, Clone, Component, Default)]
-struct ClientMap(HashMap<u64, Entity>);
 
 /// connecting client
 fn handle_new_client(connecting_client: On<Add, LinkOf>, mut commands: Commands) {
@@ -118,19 +87,13 @@ fn handle_new_client(connecting_client: On<Add, LinkOf>, mut commands: Commands)
         );
 }
 
-fn move_by_action(query: Query<(&mut PlayerPos, &ActionState<DbgClientInput>)>) {
-    for (mut player_pos, action) in query {
-        if let DbgClientInput::Move(move_by) = action.0 {
-            player_pos.0 += move_by;
-        }
-    }
-}
+// TODO seperate CUstomTransform?
+
 /// connected client. setup sprites etc
 fn handle_connected_client(
     connected_client: On<Add, Connected>,
     clients: Query<&RemoteId, With<ClientOf>>,
-    mut commands: Commands,
-    mut client_map: Single<&mut ClientMap>
+    mut commands: Commands
 ) {
     let entity = connected_client.entity;  // NOT equal to client id or Client entity in client's world
     let Ok(RemoteId(client_id)) = clients.get(entity) else {
@@ -144,35 +107,33 @@ fn handle_connected_client(
         rand::random_range(-200.0..200.0),
     );  // TODO
 
-    let boat_id = commands.spawn((
-        // MinimalBoat {  // TODO consider making an observer that updates CustomTransform and Transform if MinimalBoat changes (potentially through Replication)
-        //     position,
-        //     boat,
-        //     rotation: Radian::from_deg(rand::random_range(-180.0..180.0))
-        // },
-        PlayerPos(Vec2::default()),
+    commands.spawn((
+        CustomTransform {
+            position: Position(position),
+            ..CustomTransform::default()
+        },
+        boat,
         
         Replicate::to_clients(NetworkTarget::All),
 
         PredictionTarget::to_clients(NetworkTarget::Single(*client_id)),
         InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(*client_id)),
 
-        ActionState::<DbgClientInput>::default(),
+        ActionState::<Rotate>::default(),
+        ActionState::<Move>::default(),
+        ActionState::<Reversed>::default(),
 
         ControlledBy {
             owner: entity,
             lifetime: Lifetime::SessionBased,
         }
-    )).id();
-
-    
-    client_map.0.insert(client_id.to_bits(), boat_id);
+    ));
 }
 
-use std::fs;
-use std::path::Path;
+/// webtransport certificate
+fn from_pem_file(cert_path: impl AsRef<std::path::Path>, key_path: impl AsRef<std::path::Path>) -> Identity {
+    use std::fs;
 
-fn from_pem_file(cert_path: impl AsRef<Path>, key_path: impl AsRef<Path>) -> Identity {
     let cert_chain_bytes = fs::read(cert_path).unwrap();
     let key_bytes = fs::read(key_path).unwrap();
 

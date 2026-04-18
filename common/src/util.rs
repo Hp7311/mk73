@@ -152,33 +152,6 @@ pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
     )
 }
 
-/// Asynchronously loads a Lightyear Identity from PEM files
-// pub async fn load_identity_async(
-//     cert_path: impl AsRef<Path>,
-//     key_path: impl AsRef<Path>,
-// ) -> Identity {
-//     let cert_bytes = fs::read(cert_path).await.unwrap();
-//     let key_bytes = fs::read(key_path).await.unwrap();
-
-//     // We wrap the bytes in a standard Cursor since the parsing itself is CPU-bound and fast
-//     let mut cert_reader = std::io::Cursor::new(cert_bytes);
-//     let certs = rustls_pemfile::certs(&mut cert_reader)
-//         .collect::<Result<Vec<_>, _>>()
-//         .context("Failed to parse certificates")?;
-
-//     let mut key_reader = std::io::Cursor::new(key_bytes);
-//     let key = rustls_pemfile::private_key(&mut key_reader)
-//         .context("Failed to parse private key")?
-//         .context("No private key found in file")?;
-
-//     let server_config = config_from_pem_file(cert, key).await?;
-//     let inner = Arc::new(ArcSwap::from_pointee(server_config));
-
-//     Ok(Self { inner })
-//     // 3. Return the loaded Identity
-//     Identity::new(certs, key)
-// }
-
 /// adds the specified systems to the [`Update`] schedule in the app
 #[macro_export]
 macro_rules! add_dbg_app {
@@ -190,19 +163,63 @@ macro_rules! add_dbg_app {
     };
 }
 
-/// prints number of a entity with specified query filter passed in With to console
+/// prints number of a entity with specified query filter passed in to console
+/// filter defaults to [`With`]
+/// ## Example
+/// 
+/// ```ignore
+/// print_num!(&mut app, ActionState<Move>, InputMarker<Move>);
+/// // expands to:
+/// let system =  |query:Query<(), (With<ActionState<Move>>, With<InputMarker<Move>>)>| {
+///     let len = query.iter().len();
+///     info!("{} entities of {}", len, stringify!((ActionState<Move>, InputMarker<Move>)));
+/// };
+/// app.add_systems(Update, system);
+/// ```
 #[macro_export]
 macro_rules! print_num {
-    ($app:expr, $filter:ty) => {
-        let system = |query: Query<(), With<$filter>>| {
+    ($app:expr, $($filter:ty),*) => {
+        let system = |query: Query<(), ( $(
+            With<$filter>
+        ),* ) >| {
             let len = query.iter().len();
             
-            info!("{} entities of {}", len, stringify!($filter));
+            let mut filter_str = String::new();
+            filter_str.push('(');
+            $(
+                filter_str.push_str(stringify!($filter));
+                filter_str.push_str(", ");
+            )*
+            filter_str.push(')');
+            info!("{} entities of {}", len, filter_str);
         };
 
         $app.add_systems(Update, system);
     };
 }
+
+/// allows a generic [`into`](Into::into), has a blanket implementation
+/// 
+/// ```
+///# use common::util::InputExt;
+/// let x: u8 = 3;
+/// let y = x.to::<u16>().to::<i32>().to::<i64>();
+/// ```
+pub trait InputExt 
+    where Self: Sized
+{
+    fn to<T>(self) -> T 
+        where T: From<Self>;
+}
+
+impl <T> InputExt for T {
+    fn to<U>(self) -> U 
+        where U: From<Self>
+    {
+        From::from(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
