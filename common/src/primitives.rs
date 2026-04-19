@@ -1,11 +1,11 @@
+use bevy::{prelude::*, sprite_render::Material2d};
+use serde::{Deserialize, Serialize};
+use std::ops::Mul;
 use std::{
     f32::consts::PI,
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
 };
-use std::ops::Mul;
-use bevy::{prelude::*, sprite_render::Material2d};
-use serde::{Deserialize, Serialize};
-
+use bevy::math::FloatPow;
 use crate::{boat::Boat, weapon::Weapon};
 
 #[derive(Component, Debug, Copy, Clone, Default, Deserialize, Serialize, PartialEq)]
@@ -17,8 +17,6 @@ pub struct CustomTransform {
     ///
     /// ignores any reverse, calculates them like normal
     pub rotation: Radian,
-    // TODO delete
-    pub reversed: bool,
 }
 
 impl CustomTransform {
@@ -26,32 +24,25 @@ impl CustomTransform {
         let rotation = angle.to_quat();
         self.rotation = (rotation * self.rotation.to_quat()).wrap_radian();
     }
-    /// from a not-moving entity
-    pub fn from_static(position: Vec2) -> Self {
-        CustomTransform {
-            position: Position(position),
-            ..default()
-        }
-    }
 }
+
 /// helper struct for accessing the [`Boat`]'s circle HUD
 #[derive(Debug, Component, Copy, Clone)]
 pub struct CircleHud {
     pub radius: f32,
-    pub center: Vec2,
 }
 
 impl CircleHud {
     /// whether `point` is in the Circle HUD
-    pub(crate) fn contains(&self, point: Vec2) -> bool {
-        point.distance_squared(self.center) < self.radius.powi(2)
+    pub(crate) fn contains(&self, self_center: Vec2, point: Vec2) -> bool {
+        point.distance_squared(self_center) < self.radius.squared()
     }
     /// whether a point is at HUD's center
     ///
     /// adjusted for decimal-point precision
-    pub(crate) fn at_center(&self, point: Vec2, decimal_point: DecimalPoint) -> bool {
-        let x_diff = (point.x - self.center.x).abs();
-        let y_diff = (point.y - self.center.y).abs();
+    pub(crate) fn at_center(&self, self_center: Vec2, point: Vec2, decimal_point: DecimalPoint) -> bool {
+        let x_diff = (point.x - self_center.x).abs();
+        let y_diff = (point.y - self_center.y).abs();
 
         x_diff < decimal_point.to_f32() && y_diff < decimal_point.to_f32()
     }
@@ -91,13 +82,13 @@ impl MkRect {
             ),
         ]
     }
-    pub(crate) fn get_relative_corners(&self) -> [Vec2; 4] {
+    pub(crate) fn get_relative_corners(&self) -> impl Iterator<Item = Vec2> {
         [
             vec2(-self.dimensions.width / 2.0, self.dimensions.height / 2.0),
             vec2(self.dimensions.width / 2.0, self.dimensions.height / 2.0),
             vec2(self.dimensions.width / 2.0, -self.dimensions.height / 2.0),
             vec2(-self.dimensions.width / 2.0, -self.dimensions.height / 2.0),
-        ]
+        ].into_iter()
     }
     pub(crate) fn width(&self) -> f32 {
         self.dimensions.width
@@ -197,7 +188,9 @@ pub struct TargetRotation(pub Option<f32>);
 pub struct TargetSpeed(pub Speed);
 
 /// Used by [`CustomTransform`] for rotation
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Component, PartialEq, Reflect, PartialOrd)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Copy, Default, Component, PartialEq, Reflect, PartialOrd,
+)]
 pub struct Radian(pub f32);
 
 impl Radian {
@@ -413,7 +406,8 @@ impl NormalizeRadian for Radian {
     }
 }
 
-#[derive(Component, Debug, Copy, Clone)]
+
+#[derive(Resource, Debug, Copy, Clone, Deserialize, Serialize, PartialEq)]
 pub struct WidthHeight {
     pub width: f32,
     pub height: f32,

@@ -1,6 +1,15 @@
 //! plugin to buffer inputs from the client
 //!
 //! client responsible to add verifier and apply them to [`CustomTransform`] and [`Transform`]
+//!
+//! ## Steps
+//! - buffer player's intended action into [`ActionState`], without checking acceleration or maximum turning degree (may change for bandwidth cost)
+//! - server and client both add [MovementPlugin](common::MovementPlugin), it verifies input against constraints and does anti-cheat checks,
+//!   then apply the rollback-if-incorrect input to [`CustomTransform`]
+//! - client update's the boat's [`Transform`]
+//! - any cheating input will be rolled-back once confirmation from the server arrives
+
+// TODO add move-to-target, should be localised in client, maybe replicate to server?
 
 use bevy::prelude::*;
 use common::{
@@ -26,7 +35,7 @@ pub struct InputBufferPlugin;
 
 impl Plugin for InputBufferPlugin {
     fn build(&self, app: &mut App) {
-        // inputs
+        // buffering inputs
         // MUST BE FixedPreUpdate and in set WriteClientInputs to avoid jerky movement
         app.add_systems(
             FixedPreUpdate,
@@ -40,8 +49,6 @@ impl Plugin for InputBufferPlugin {
         );
     }
 }
-
-// TODO should we put bound checking (max turn deg, acceleration, max speed) to handling input for anti-cheat?
 
 /// buffer the [`ActionState<Rotate>`]
 ///
@@ -61,9 +68,9 @@ fn buffer_rotate(
 
     let mut current_rotation = custom_transform.rotation;
 
-    let raw_moved = get_rotate_radian(custom_transform.position.0, cursor_pos.0); // diff from + x axis
+    let raw_moved = get_rotate_radian(custom_transform.position.0, cursor_pos.0); // diff from positive x-axis
 
-    let moved_from_current = {
+    let moved_after_reverse_check = {
         // radians to move from current rotation
         let mut moved_from_current = (raw_moved - current_rotation.0).normalize();
 
@@ -81,29 +88,12 @@ fn buffer_rotate(
             // unable to go forward, haven't released key yet
             moved_from_current = moved_from_current.flip();
         }
-        moved_from_current
+        current_rotation.rotate_local_z_ret(moved_from_current.wrap_radian())
     };
 
-    // rotate.0.0 = Some(target_move.wrap_radian());
-    // return;
+    rotate.0.0 = Some(moved_after_reverse_check);
     // target_rotation.0 = Some(target_move.wrap_radian());
-
-    let max_turn = boat.max_turn();
-
-    // indirection
-    if moved_from_current.abs() > max_turn.0 {
-        // turning degree bigger than maximum
-        if moved_from_current > 0.0 {
-            current_rotation.rotate_local_z(max_turn);
-        } else if moved_from_current < 0.0 {
-            current_rotation.rotate_local_z(-max_turn);
-        }
-    } else if moved_from_current != 0.0 {
-        // normal
-        current_rotation.rotate_local_z(moved_from_current.wrap_radian());
-    }
-
-    rotate.0.0 = Some(current_rotation);
+    // TODO maybe store Rotate and Move as struct with current and last input instead of separate components but consider bandwidth
 }
 
 fn buffer_move(
@@ -128,24 +118,6 @@ fn buffer_move(
     );
 
     // target_speed.0 = Speed::from_raw(speed);
-    let mut speed = Speed::from_raw(speed);
-
-    // adjust for acceleration
-    let speed_diff = speed - custom_transform.speed;
-    let acceleration = boat.acceleration();
-
-    if speed_diff > acceleration {
-        // accelerating too much forwards
-        // custom_transform.speed += acceleration;
-        speed += acceleration;
-    } else if speed_diff < -acceleration {
-        // accelerating too much backwards
-        // custom_transform.speed -= acceleration;
-        speed -= acceleration;
-    }
-    // not exceeding acceleration
-    // else if speed_diff.abs() > 0.1 {
-    // custom_transform.speed.overwrite(speed);
-    // }
+    let speed = Speed::from_raw(speed);
     move_action.0.0 = Some(speed);
 }

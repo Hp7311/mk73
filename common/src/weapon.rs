@@ -1,8 +1,8 @@
-use std::ops::Mul;
 use bevy::prelude::*;
+use std::ops::Mul;
 
-use crate::{DEFAULT_MAX_TURN_DEG, primitives::Speed};
 use crate::primitives::Radian;
+use crate::{DEFAULT_MAX_TURN_DEG, primitives::Speed};
 
 #[derive(Debug, Component, Clone, Copy)]
 pub enum Weapon {

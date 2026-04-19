@@ -3,11 +3,11 @@
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
 
+use crate::primitives::{Radian, Speed};
 use crate::{
     MainCamera,
     primitives::{DecimalPoint, MkRect, WidthHeight},
 };
-use crate::primitives::Radian;
 
 /// the equivalent of `==` only with a specified precision
 pub(crate) fn eq(x: f32, y: f32, precision: DecimalPoint) -> bool {
@@ -32,8 +32,8 @@ pub fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
 }
 
 /// calculates Vec3 to add to `Transform.translation` from the rotation and speed
-pub fn move_with_rotation(rotation: Radian, speed: f32, z_index: f32) -> Vec3 {
-    (rotation.to_vec() * speed).extend(z_index)
+pub fn move_with_rotation(rotation: Radian, speed: Speed, z_index: f32) -> Vec3 {
+    (rotation.to_vec() * speed.get_raw()).extend(z_index)
 }
 
 /// centre point at middle of window
@@ -139,10 +139,9 @@ pub fn add_circle_hud(length: f32) -> f32 {
     length * 0.7 + length
 }
 
-/// rotates a local point by angle
-pub(crate) fn rotate_vec2(source: Vec2, angle: Quat) -> Vec2 {
-    let angle = angle.to_euler(EulerRot::XYZ).2;
-
+/// known Euclidean coordinates, known angle to be rotated, calculates the
+/// correct coordinates after rotation
+pub(crate) fn rotate_vec2(source: Vec2, Radian(angle): Radian) -> Vec2 {
     vec2(
         source.x * angle.cos() - source.y * angle.sin(),
         source.y * angle.cos() + source.x * angle.sin(),
@@ -255,7 +254,7 @@ mod tests {
     #[test]
     fn test_move_with_rotation() {
         let rotation = Radian::from_deg(90.0);
-        assert_eq!(move_with_rotation(rotation, 2.0, 0.0).y, 2.0);
+        assert_eq!(move_with_rotation(rotation, Speed::from_raw(2.0), 0.0).y, 2.0);
     }
     #[test]
     fn test_add_circle_hud() {

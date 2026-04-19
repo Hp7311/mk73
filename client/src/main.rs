@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 mod input;
 
 use std::f32::consts::PI;
@@ -9,14 +11,9 @@ use bevy::prelude::*;
 
 use common::boat::Boat;
 use common::collision::out_of_bounds;
-use common::primitives::{
-    CircleHud, CursorPos, CustomTransform, FlipRadian, MeshBundle, MkRect, NormalizeRadian,
-    OutOfBound, Speed, TargetRotation, TargetSpeed, WeaponCounter, WrapRadian,
-};
+use common::primitives::{CircleHud, CursorPos, CustomTransform, FlipRadian, MeshBundle, MkRect, NormalizeRadian, OutOfBound, Speed, TargetRotation, TargetSpeed, WeaponCounter, WidthHeight, WrapRadian};
 use common::protocol::{Move, ProtocolPlugin, Reversed, Rotate};
-use common::util::{
-    add_circle_hud, calculate_from_proportion, get_rotate_radian, move_with_rotation,
-};
+use common::util::{add_circle_hud, calculate_from_proportion, get_rotate_radian, move_with_rotation, InputExt};
 use common::weapon::Weapon;
 use common::world::{Background, WorldPlugin, WorldSize};
 use common::{
@@ -67,32 +64,28 @@ fn main() {
     .insert_resource(ClearColor(TEAL.into()))
     // init
     .init_state::<BoatState>()
-    .add_plugins(WorldPlugin)
+    .add_plugins(WorldPlugin { is_server: false })
     .add_plugins(InputBufferPlugin)
     .add_plugins(MovementPlugin { is_server: false })
 
+    // init
     .add_systems(Startup, setup)
     .add_observer(spawn_boat) // FIXME
     .add_observer(on_added_actionstate::<Rotate>)
     .add_observer(on_added_actionstate::<Move>)
     .add_observer(on_added_actionstate::<Reversed>)
     .add_systems(Update, update_state)
-    // handling
-    // .add_systems(FixedUpdate, local_simulation)
-    // move
-    // .add_systems(Update, move_camera)
+    .add_systems(Update, move_camera)
     // .add_systems(
     //     Update,
     //     (
-    //         (rotate_boat, move_boat).run_if(|state: Res<State<BoatState>>| {
-    //             matches!(state.get(), BoatState::FreeDir | BoatState::LockedDir)  // consider .run_if(in_state(LockedDir))
-    //         }),
     //         boat_to_target.run_if(in_state(BoatState::Released)),
     //         update_transform,
     //     )
     //         .chain(),
     // )
     .add_systems(Update, (sync_transform_from_custom, move_camera))
+
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect);
 
@@ -133,10 +126,6 @@ fn on_added_actionstate<T>(
         id
     );
 }
-
-/// ActionState<Rotate> and ActionState<Move>
-///
-/// required to handle Rotate first
 
 fn setup(mut commands: Commands) {
     let client_id = rand::random_range(0..100);
@@ -256,119 +245,6 @@ fn sync_transform_from_custom(
 
 // TODO targetrotation & targetspeed
 
-/// handle moving (manipulate [`CustomTransform`]'s [`Speed`])
-fn move_boat(
-    query: Single<(&mut CustomTransform, &mut TargetSpeed, &Boat), With<Controlled>>,
-    cursor_pos: Res<CursorPos>,
-) {
-    let (mut custom_transform, mut target_speed, boat) = query.into_inner();
-    let cursor_distance = cursor_pos.0.distance(custom_transform.position.0);
-    let max_speed = if custom_transform.reversed {
-        -boat.rev_max_speed().get_raw()
-    } else {
-        boat.max_speed().get_raw()
-    };
-
-    let speed = calculate_from_proportion(
-        cursor_distance,
-        add_circle_hud(boat.sprite_size().x / 2.0),
-        max_speed,
-        boat.sprite_size().x / 2.0,
-    );
-
-    target_speed.0 = Speed::from_raw(speed);
-
-    // adjust for acceleration
-    let speed_diff = speed - custom_transform.speed.get_raw();
-    let acceleration = boat.acceleration();
-
-    if speed_diff > acceleration.get_raw() {
-        // accelerating too much forwards
-        custom_transform.speed.add_raw(acceleration.get_raw());
-    } else if speed_diff < -acceleration.get_raw() {
-        // accelerating too much backwards
-        custom_transform.speed.subtract_raw(acceleration.get_raw());
-    }
-    // not exceeding acceleration
-    else if speed_diff.abs() > 0.1 {
-        custom_transform.speed.overwrite(Speed::from_raw(speed));
-    }
-}
-
-// TODO common
-fn update_transform(
-    query: Single<
-        (
-            &mut Transform,
-            &mut CustomTransform,
-            &Children,
-            &Sprite,
-            &mut OutOfBound,
-        ),
-        (With<Boat>, With<Controlled>),
-    >,
-    mut circle_huds: Single<(Entity, &mut CircleHud)>,
-    world_size: Single<&WorldSize>,
-) {
-    let (mut transform, mut custom, children, sprite, mut out_of_bound) = query.into_inner();
-
-    let Some(custom_size) = sprite.custom_size else {
-        return;
-    };
-
-    let mut translation = custom.position.to_vec3(transform.translation.z);
-
-    translation += move_with_rotation(
-        custom.rotation,
-        custom.speed.get_raw(),
-        transform.translation.z,
-    ); // ignores frame lagging temporary
-
-    custom.position.0 = translation.xy();
-
-    if out_of_bounds(
-        &world_size,
-        MkRect {
-            center: custom.position.0,
-            dimensions: custom_size.into(),
-        },
-        custom.rotation.to_quat(),
-    ) {
-        custom.position.0 = transform.translation.truncate(); // changes have no effect
-        out_of_bound.0 = true;
-        return;
-    } else if out_of_bound.0 {
-        out_of_bound.0 = false;
-    }
-
-    // sender.send::<SendToServer>(PlayerAction {
-    //     action: ActionType::Rotate(custom.rotation),
-    //     client: client_id.to_bits()
-    // });
-    // // TODO more info?
-    // sender.send::<SendToServer>(PlayerAction {
-    //     action: ActionType::Move(custom.position.0),
-    //     client: client_id.to_bits()
-    // });
-
-    let target = Transform {
-        translation,
-        rotation: custom.rotation.to_quat(),
-        scale: Vec3::ONE,
-    };
-    *transform = target;
-
-    // ^^^^^^^^^^^^^^ only do these if server says so through replication
-
-    // TODO seperate function
-    for &child in children {
-        if child == circle_huds.0 {
-            circle_huds.1.center = translation.xy();
-            break;
-        }
-    }
-}
-
 /// remember the last move angle and rotate toward it when button not pressed
 fn boat_to_target(
     boat: Single<
@@ -424,6 +300,7 @@ fn move_camera(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_boat(
     trigger: On<Add, Boat>, // assume CustomTransform also added
     boats: Query<&Boat>,
@@ -443,8 +320,6 @@ fn spawn_boat(
     };
 
     let &boat = boats.get(trigger.entity).unwrap();
-    let circle_hud_radius = add_circle_hud(boat.radius());
-    let controls = controlled.get(trigger.entity).is_ok();
 
     commands
         .get_entity(trigger.entity)
@@ -469,12 +344,14 @@ fn spawn_boat(
             ..BoatBundle::default()
         })
         .with_children(|parent| {
-            // reequired for other clients to have a CircleHud for rig's point attraction
+            // required for other clients to have a CircleHud for rig's point attraction
+            let circle_hud_radius = add_circle_hud(boat.radius());
+            let controls = controlled.get(trigger.entity).is_ok();
+
             let mut hud = parent.spawn((
                 Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
                 CircleHud {
-                    radius: circle_hud_radius,
-                    center: custom.position.0,
+                    radius: circle_hud_radius
                 },
             ));
             // not client's ship
@@ -502,7 +379,7 @@ fn spawn_boat(
                 (
                     Transform::from_xyz(
                         circle_hud_radius * (-MINIMUM_REVERSE).cos(),
-                        circle_hud_radius * (-MINIMUM_REVERSE.sin()),
+                        circle_hud_radius * (-MINIMUM_REVERSE).sin(),
                         CIRCLE_HUD
                     ),
                     MeshBundle {
@@ -573,7 +450,7 @@ impl BoatState {
 
 fn spawn_gui(mut commands: Commands) {
     commands.spawn((
-        Text2d::new("Rotate: 0 degrees\nMove: 0 knots"),
+        Text2d::new("Rotate: 0 degrees\nMove: 0 knots\nState: Stopped"),
         TextFont {
             font_size: 30.0,
             ..default()
@@ -585,11 +462,13 @@ fn update_gui(
     mut text: Single<&mut Text2d>,
     rotate: Single<&ActionState<Rotate>, With<InputMarker<Rotate>>>,
     moves: Single<&ActionState<Move>, With<InputMarker<Move>>>,
+    state: Res<State<BoatState>>
 ) {
     let new_text = format!(
-        "Rotate: {} degrees\nMove: {} knots",
+        "Rotate: {} degrees\nMove: {} knots\nState: {}",
         rotate.0.0.unwrap_or_default().to_degrees(),
-        moves.0.0.unwrap_or_default().get_knots()
+        moves.0.0.unwrap_or_default().get_knots(),
+        format!("{:?}", state.into_inner()).split("State(").last().unwrap()
     );
 
     if new_text != text.0 {

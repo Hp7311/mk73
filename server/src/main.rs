@@ -5,14 +5,7 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
 };
-use common::{
-    CIRCLE_HUD, LOCAL_SERVER_ADDR, PROTOCOL_ID,
-    boat::Boat,
-    primitives::*,
-    protocol::{Move, ProtocolPlugin, Reversed, Rotate, SendToClient},
-    util::add_circle_hud,
-    world::{Background, WorldPlugin},
-};
+use common::{CIRCLE_HUD, LOCAL_SERVER_ADDR, PROTOCOL_ID, boat::Boat, primitives::*, protocol::{Move, ProtocolPlugin, Reversed, Rotate, SendToClient}, util::add_circle_hud, world::{Background, WorldPlugin}, MovementPlugin};
 use lightyear::{
     input::{
         native::plugin::InputPlugin,
@@ -39,32 +32,18 @@ fn main() {
                 ..default()
             }),
         )
-        .insert_resource(ClearColor(TEAL.into()))
         .add_plugins(ServerPlugins::default())
         .add_plugins(ProtocolPlugin)
         .add_systems(Startup, setup)
+        .add_plugins(WorldPlugin { is_server: true })
+        // handle client action
+        .add_plugins(MovementPlugin { is_server: true })
         // handle client req
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client)
-        // handle client action
-        // .add_systems(Update, dbg_recv_client)
-        .add_systems(FixedUpdate, handle_input)
         .run();
 }
 
-fn handle_input(
-    rotate: Query<(
-        &mut CustomTransform,
-        &ActionState<Rotate>,
-        &ActionState<Move>,
-    )>,
-) {
-    // for (mut custom, action) in query {
-    // if let ClientInput::Move(move_by) = action.0 {
-    //     custom.position.0 += move_by;
-    // }
-    // }
-}
 
 /// starts the server
 fn setup(mut commands: Commands) {

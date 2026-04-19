@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::primitives::Radian;
 use crate::{
     DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK,
     primitives::{CircleHud, CustomTransform, OutOfBound, Speed},
@@ -8,7 +9,6 @@ use crate::{
     weapon::Weapon,
     world::WorldSize,
 };
-use crate::primitives::Radian;
 
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Boat {

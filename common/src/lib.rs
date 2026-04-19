@@ -4,15 +4,15 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 pub mod boat;
 pub mod cert;
 pub mod collision;
+mod movement;
 pub mod primitives;
 pub mod protocol;
 pub mod util;
 pub mod weapon;
 pub mod world;
-mod movement;
 
-pub use movement::MovementPlugin;
 use crate::primitives::Radian;
+pub use movement::MovementPlugin;
 
 pub const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), SERVER_PORT);
 pub const LOCAL_SERVER_ADDR: SocketAddr =

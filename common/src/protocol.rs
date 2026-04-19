@@ -10,16 +10,18 @@ use lightyear::{
     prelude::{input::native::ActionState, *},
 };
 use serde::{Deserialize, Serialize};
+use crate::world::WorldSize;
 
 pub struct SendToClient;
 pub struct SendToServer;
 
-/// currently, client sending [`PlayerAction`] to server and server compares the data with existing [`MinimalBoat`], if accepted, server updates
-/// the [`MinimalBoat`] in server world and is replicated back to client where an observer catches it
+/// ship's head's angle with positive x-axis
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
 pub struct Rotate(pub Option<Radian>);
+/// speed can be negative on reverse
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
 pub struct Move(pub Option<Speed>);
+/// indicates whether ship is reversed. a cheating player setting this to invalid value wouldn't have too great consequences
 #[derive(
     Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq, Deref, DerefMut,
 )]
@@ -59,6 +61,7 @@ pub struct ProtocolPlugin;
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
         // replication
+        app.register_component::<WorldSize>();
         // app.register_component::<PlayerPos>()
         //     .add_prediction()
         //     .add_linear_interpolation();

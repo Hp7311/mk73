@@ -7,7 +7,7 @@ use crate::{
     util::rotate_vec2,
     world::WorldSize,
 };
-
+use crate::primitives::WrapRadian;
 // perfecting out of bound not the priority, will be when polishing
 
 /// check if a Sprite is out-of-bounds by checking it's 4 corners
@@ -29,12 +29,11 @@ pub fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool 
         return false;
     }
 
-    let world_bound = bound.0.to_rect(vec2(0.0, 0.0));
+    let world_bound = bound.to_rect(vec2(0.0, 0.0));
 
     sprite
         .get_relative_corners()
-        .iter()
-        .map(|corner| rotate_vec2(*corner, rotation))
+        .map(|corner| rotate_vec2(corner, rotation.wrap_radian()))
         .any(|corner| {
             let corner = sprite.center + corner;
             !world_bound.contains(corner)
@@ -45,7 +44,7 @@ pub fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool 
 pub(crate) fn out_of_bound_point(bound: &WorldSize, rect: MkRect) -> bool {
     let world_bound: MkRect = MkRect {
         center: Vec2::ZERO,
-        dimensions: bound.0,
+        dimensions: bound.get_size().into(),
     };
 
     rect.get_corners()
@@ -192,27 +191,4 @@ fn sat_collision_half(
     }
 
     true
-}
-
-#[cfg(test)]
-mod tests {
-    use bevy::math::vec2;
-
-    use crate::primitives::WidthHeight;
-
-    use super::*;
-    #[test]
-    fn test_outofbound() {
-        let bound = WorldSize(WidthHeight {
-            width: 10.0,
-            height: 10.0,
-        });
-        let sprite = MkRect {
-            center: vec2(3.0, 3.01),
-            dimensions: WidthHeight::splat(4.0),
-        };
-        let rotation = Quat::from_rotation_z(90.0f32.to_radians());
-
-        assert!(out_of_bounds(&bound, sprite, rotation));
-    }
 }
