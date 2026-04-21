@@ -8,7 +8,8 @@ use std::time::Duration;
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
 use bevy::color::palettes::css::{GRAY, RED, TEAL};
 use bevy::prelude::*;
-
+use bevy_inspector_egui::bevy_egui::EguiPlugin;
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use common::boat::Boat;
 use common::collision::out_of_bounds;
 use common::primitives::{CircleHud, CursorPos, CustomTransform, FlipRadian, MeshBundle, MkRect, NormalizeRadian, OutOfBound, Speed, TargetRotation, TargetSpeed, WeaponCounter, WidthHeight, WrapRadian};
@@ -39,6 +40,9 @@ const DEFAULT_MAX_ZOOM: f32 = 2.0;
 const TIME_TO_LAUNCH_WEAPON: Duration = Duration::from_millis(100);
 /// absolute value of minimum radians that must be reached to reverse the Boat
 const MINIMUM_REVERSE: f32 = PI * (2. / 3.);
+
+#[cfg(all(not(debug_assertions), target_family = "wasm"))]
+compile_error!("Web app");
 
 fn main() {
     let mut app = App::new();
@@ -87,13 +91,16 @@ fn main() {
     .add_systems(Update, (sync_transform_from_custom, move_camera))
 
     .add_observer(on_disconnect)
-    .add_observer(on_remove_disconnect);
+    .add_observer(on_remove_disconnect)
+        .add_plugins(EguiPlugin::default())
+        .add_plugins(WorldInspectorPlugin::default());
 
     app.add_systems(Startup, spawn_gui);
     app.add_systems(Update, update_gui);
 
     app.run();
 }
+
 
 // TODO performance problem on client num > 1
 
@@ -136,6 +143,7 @@ fn setup(mut commands: Commands) {
         protocol_id: PROTOCOL_ID,
     };
 
+
     let client = commands
         .spawn((
             Client::default(),
@@ -150,7 +158,7 @@ fn setup(mut commands: Commands) {
                 target: WebSocketTarget::Addr(WebSocketScheme::Plain),
             },
             ReplicationReceiver::default(),
-            PredictionManager::default(),
+            PredictionManager::default()
         ))
         .id();
 
@@ -302,9 +310,9 @@ fn move_camera(
 
 #[allow(clippy::too_many_arguments)]
 fn spawn_boat(
-    trigger: On<Add, Boat>, // assume CustomTransform also added
+    trigger: On<Add, CustomTransform>,
     boats: Query<&Boat>,
-    customs: Query<&CustomTransform, With<Boat>>,
+    customs: Query<&CustomTransform>,//, With<Boat>>,
     controlled: Query<(), (With<Boat>, With<Controlled>)>,
 
     mut commands: Commands,
@@ -312,12 +320,13 @@ fn spawn_boat(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let Ok(custom) = customs
+    let Ok(&custom) = customs
         .get(trigger.entity)
-        .inspect_err(|_| error!("Should replicate CustomTransform along with Boat"))
+        .inspect_err(|e| error!("Should replicate CustomTransform along with Boat: {e}, customs len {}, controls: {}", customs.iter().len(), controlled.get(trigger.entity).is_ok()))
     else {
         return;
     };
+    println!("Passed");
 
     let &boat = boats.get(trigger.entity).unwrap();
 
@@ -340,7 +349,7 @@ fn spawn_boat(
                 rotation: custom.rotation.to_quat(),
                 ..default()
             },
-            custom_transform: *custom,
+            custom_transform: custom,
             ..BoatBundle::default()
         })
         .with_children(|parent| {
@@ -434,7 +443,7 @@ impl Default for BoatBundle {
 
 fn on_disconnect(trigger: On<Add, Disconnected>, query: Query<&Disconnected>) {
     let disconnected = query.get(trigger.entity).unwrap();
-    info!("Client disconnected because: {:?}", disconnected.reason)
+    warn!("Client disconnected because: {:?}", disconnected.reason)
 }
 
 fn on_remove_disconnect(_: On<Remove, Disconnected>) {
@@ -450,7 +459,7 @@ impl BoatState {
 
 fn spawn_gui(mut commands: Commands) {
     commands.spawn((
-        Text2d::new("Rotate: 0 degrees\nMove: 0 knots\nState: Stopped"),
+        Text2d::new("State: Stopped\nPosition: None\nRotation: None\nSpeed: None"),
         TextFont {
             font_size: 30.0,
             ..default()
@@ -462,16 +471,22 @@ fn update_gui(
     mut text: Single<&mut Text2d>,
     rotate: Single<&ActionState<Rotate>, With<InputMarker<Rotate>>>,
     moves: Single<&ActionState<Move>, With<InputMarker<Move>>>,
-    state: Res<State<BoatState>>
+    state: Res<State<BoatState>>,
+    custom: Single<&CustomTransform, With<Controlled>>
 ) {
+    let state = format!("{:?}", state.into_inner()).split("State(").last().unwrap().to_owned();
+
     let new_text = format!(
-        "Rotate: {} degrees\nMove: {} knots\nState: {}",
-        rotate.0.0.unwrap_or_default().to_degrees(),
-        moves.0.0.unwrap_or_default().get_knots(),
-        format!("{:?}", state.into_inner()).split("State(").last().unwrap()
+        "State: {}\nPosition: {}\nRotation: {}\nSpeed: {}",
+        state.chars().take(state.len() - 1).collect::<String>(),
+        custom.position.0.round(),
+        custom.rotation.to_degrees().round(),
+        custom.speed.get_knots().round()
     );
 
     if new_text != text.0 {
         text.0 = new_text;
     }
 }
+
+// FIXME if a client leaves -> border shrinks and another client's boat in the shrunk area will lag

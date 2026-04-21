@@ -41,11 +41,12 @@ impl Plugin for InputBufferPlugin {
             FixedPreUpdate,
             (buffer_rotate, buffer_move)
                 .in_set(InputSystems::WriteClientInputs)
-                .run_if(resource_changed::<CursorPos>)
+                // .run_if(resource_changed::<CursorPos>)  // TODO commenting this out fixes lag ish
                 .run_if(BoatState::in_state_2(
                     BoatState::Moving { locked: true },
-                    BoatState::Moving { locked: false },
-                )),
+                    BoatState::Moving { locked: false }
+                ))
+                .chain(),
         );
     }
 }
@@ -66,7 +67,7 @@ fn buffer_rotate(
     };
     let custom_transform = position.into_inner();
 
-    let mut current_rotation = custom_transform.rotation;
+    let current_rotation = custom_transform.rotation;
 
     let raw_moved = get_rotate_radian(custom_transform.position.0, cursor_pos.0); // diff from positive x-axis
 

@@ -83,7 +83,7 @@ fn handle_connected_client(
     mut commands: Commands,
 ) {
     let entity = connected_client.entity; // NOT equal to client id or Client entity in client's world
-    let Ok(RemoteId(client_id)) = clients.get(entity) else {
+    let Ok(&RemoteId(client_id)) = clients.get(entity) else {
         warn!("Didn't find the connected client in Query<&RemoteId, With<ClientOf>");
         return;
     };
@@ -100,12 +100,16 @@ fn handle_connected_client(
             ..CustomTransform::default()
         },
         boat,
+        OutOfBound(false),
+        
         Replicate::to_clients(NetworkTarget::All),
-        PredictionTarget::to_clients(NetworkTarget::Single(*client_id)),
-        InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(*client_id)),
+        PredictionTarget::to_clients(NetworkTarget::Single(client_id)),
+        InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(client_id)),
+        
         ActionState::<Rotate>::default(),
         ActionState::<Move>::default(),
         ActionState::<Reversed>::default(),
+        
         ControlledBy {
             owner: entity,
             lifetime: Lifetime::SessionBased,

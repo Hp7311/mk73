@@ -59,7 +59,7 @@ impl Boat {
     }
     pub fn acceleration(&self) -> Speed {
         Speed::from_knots(match self {
-            Self::Yasen => 2.0,
+            Self::Yasen => 1.0,
         })
     }
     /// raw file size * [`DEFAULT_SPRITE_SHRINK`]

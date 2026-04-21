@@ -66,18 +66,14 @@ mod server {
         query: Query<
             (
                 &mut CustomTransform,
-                &Sprite,
+                &Boat,
                 &mut OutOfBound
             ),
             With<Boat>,
         >,
         world_size: Single<&WorldSize>
     ) {
-        for (mut custom, sprite, mut out_of_bound) in query {
-            let Some(custom_size) = sprite.custom_size else {
-                return;  // consider using Boat::sprite_size
-            };
-
+        for (mut custom, boat, mut out_of_bound) in query {
             let mut target = custom.position.to_vec3(0.0);
 
             target += move_with_rotation(
@@ -90,7 +86,7 @@ mod server {
                 &world_size,
                 MkRect {
                     center: target.truncate(),
-                    dimensions: custom_size.into(),
+                    dimensions: boat.sprite_size().into(),
                 },
                 custom.rotation.to_quat(),
             ) {
@@ -128,18 +124,15 @@ mod client {
         query: Single<
             (
                 &mut CustomTransform,
-                &Sprite,
+                &Boat,
                 &mut OutOfBound
             ),
             With<Boat>,
         >,
         world_size: Single<&WorldSize>
     ) {
-        let (mut custom, sprite, mut out_of_bound) = query.into_inner();
+        let (mut custom, boat, mut out_of_bound) = query.into_inner();
 
-        let Some(custom_size) = sprite.custom_size else {
-            return;  // consider using Boat::sprite_size
-        };
         let mut target = custom.position.to_vec3(0.0);
 
         target += move_with_rotation(
@@ -151,7 +144,7 @@ mod client {
             &world_size,
             MkRect {
                 center: target.truncate(),
-                dimensions: custom_size.into(),
+                dimensions: boat.sprite_size().into(),
             },
             custom.rotation.to_quat()
         ) {
@@ -168,12 +161,10 @@ mod client {
 /// validates client input against max turning degree
 fn validate_max_turn(rotate: &mut Rotate, current_rotation: Radian, max_turn: Radian) {
     let Some(ref mut target) = rotate.0 else {
-        info!("Ret");
         return;
     };
-    info!("Not ret");
     let diff = (*target - current_rotation).normalize();
-    if diff > max_turn {
+    if diff.abs() > max_turn {
         if diff.0 > 0.0 {
             *target = current_rotation.rotate_local_z_ret(max_turn);
         } else if diff.0 < 0.0 {
@@ -232,21 +223,6 @@ fn validate_speed_cheating(move_input: &mut Move, reversed: &Reversed, max_speed
         );
         info!("Setting back");
         *move_input = reverse_max_speed;
-    }
-
-    match reversed.0 {
-        true =>
-            if move_input.get_raw() > 0.0 {
-                error!("Cannot go forwards");
-                info!("Setting back");
-                *move_input = Speed::from_raw(0.0);
-            }
-        false =>
-            if move_input.get_raw() < 0.0 {
-                error!("Cannot go backwards");
-                info!("Setting back");
-                *move_input = Speed::from_raw(0.0);
-            }
     }
 }
 

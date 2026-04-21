@@ -9,3 +9,4 @@ bevy = { workspace = true }
 lightyear = { workspace = true }
 rand = "0.10"
 getrandom = {version = "0.4.2", features = ["wasm_js"]}  # align with rand
+bevy-inspector-egui = "0.36.0"

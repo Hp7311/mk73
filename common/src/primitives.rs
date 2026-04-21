@@ -223,6 +223,9 @@ impl Radian {
     pub fn to_degrees(self) -> f32 {
         self.0.to_degrees()
     }
+    pub fn abs(self) -> Self {
+        Radian(self.0.abs())
+    }
 }
 
 impl Neg for Radian {
@@ -323,7 +326,7 @@ impl Altitude for Transform {
     }
 }
 
-#[derive(Debug, Component, Clone, Copy)]
+#[derive(Debug, Component, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct OutOfBound(pub bool);
 
 /// ### Example

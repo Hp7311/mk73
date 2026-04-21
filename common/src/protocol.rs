@@ -10,6 +10,7 @@ use lightyear::{
     prelude::{input::native::ActionState, *},
 };
 use serde::{Deserialize, Serialize};
+use crate::primitives::{OutOfBound, Position};
 use crate::world::WorldSize;
 
 pub struct SendToClient;
@@ -42,31 +43,28 @@ impl MapEntities for Reversed {
     fn map_entities<E: EntityMapper>(&mut self, _entity_mapper: &mut E) {}
 }
 
-// NOTE message rx/sx are automatically spawned on specified direction
-
-/// demo
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Component, Deref, DerefMut)]
-struct PlayerPos(pub Vec2);
-
-/// interpolation
-impl Ease for PlayerPos {
+impl Ease for CustomTransform {
     fn interpolating_curve_unbounded(start: Self, end: Self) -> impl Curve<Self> {
         FunctionCurve::new(Interval::UNIT, move |t| {
-            PlayerPos(Vec2::lerp(start.0, end.0, t))
+            Self {
+                position: Position(Vec2::lerp(start.position.0, end.position.0, t)),
+                rotation: Radian(f32::lerp(start.rotation.0, end.rotation.0, t)),
+                speed: end.speed
+            }
         })
     }
 }
+
 pub struct ProtocolPlugin;
 
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
         // replication
-        app.register_component::<WorldSize>();
-        // app.register_component::<PlayerPos>()
-        //     .add_prediction()
-        //     .add_linear_interpolation();
+        app.register_component::<WorldSize>().add_delta_compression::<u32>();
         app.register_component::<Boat>();
-        app.register_component::<CustomTransform>().add_prediction();
+        app.register_component::<CustomTransform>().add_prediction()
+            .add_linear_interpolation();
+        app.register_component::<OutOfBound>().add_prediction();
 
         app.add_channel::<SendToClient>(ChannelSettings {
             mode: ChannelMode::OrderedReliable(ReliableSettings::default()),

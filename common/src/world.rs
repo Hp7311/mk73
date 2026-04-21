@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use lightyear::prelude::{Connected, Diffable, Disconnected, NetworkTarget, Replicate, Replicated};
+use lightyear::prelude::{Connected, DeltaManager, Diffable, Disconnected, NetworkTarget, Replicate, Replicated, Server};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -19,7 +19,7 @@ pub struct WorldPlugin {
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         if self.is_server {
-            app.add_systems(Startup, spawn_worldsize)
+            app.add_observer(spawn_worldsize)
                 .add_observer(on_new_client)
                 .add_observer(on_client_disconnected);
         } else {
@@ -36,24 +36,26 @@ impl Plugin for WorldPlugin {
 // TODO make this a resource when lightyear re-adds it
 #[derive(Component, Debug, Copy, Clone, Deserialize, Serialize, PartialEq)]
 pub struct WorldSize {
-    minimum_size: Vec2,
-    expand_per_multiplier: Vec2,
+    current_expand: u32,
     player_num: u32,
     /// avoid performance penalty
     computed: Vec2
 }
 
-impl Diffable for WorldSize {
+impl Diffable<u32> for WorldSize {
     fn base_value() -> Self {
-        todo!()
+        Self::new()
     }
 
-    fn diff(&self, new: &Self) -> Self {
-        todo!()
+    fn diff(&self, new: &Self) -> u32 {
+        new.player_num
     }
 
-    fn apply_diff(&mut self, delta: &Self) {
-        todo!()
+    fn apply_diff(&mut self, delta: &u32) {
+        self.player_num = *delta;
+
+        self.computed = get_map_size(self.player_num, Self::WORLD_MIN, Self::WORLD_EXPAND);
+        self.current_expand = get_multiplayer_by_player_num(self.player_num);
     }
 }
 
@@ -64,8 +66,7 @@ impl WorldSize {
     /// 0 players
     fn new() -> Self {
         WorldSize {
-            minimum_size: Self::WORLD_MIN,
-            expand_per_multiplier: Self::WORLD_EXPAND,
+            current_expand: get_multiplayer_by_player_num(0),
             player_num: 0,
             computed: get_map_size(0, Self::WORLD_MIN, Self::WORLD_EXPAND),
         }
@@ -73,12 +74,12 @@ impl WorldSize {
 
     pub fn add_player(&mut self) {
         self.player_num += 1;
-        self.computed += Self::WORLD_EXPAND
+        self.computed += Self::WORLD_EXPAND * (get_multiplayer_by_player_num(self.player_num) - self.current_expand) as f32;
     }
     pub fn remove_player(&mut self) {
         assert_ne!(self.player_num, 0, "0 player left");
         self.player_num -= 1;
-        self.computed -= Self::WORLD_EXPAND;
+        self.computed -= Self::WORLD_EXPAND * (get_multiplayer_by_player_num(self.player_num) - self.current_expand) as f32;
     }
     pub fn player_num(&self) -> u32 {
         self.player_num
@@ -132,34 +133,35 @@ fn update_sprite_size(mut sprite: Single<&mut Sprite, With<Background>>, world_s
     sprite.custom_size = Some(world_size.get_size());
 }
 
-// fn update_cursor_pos(
-//     mut cursor_pos: ResMut<CursorPos>,
-//     mut reader: MessageReader<CursorMoved>
-// ) {
-//     for CursorMoved { position, .. } in reader.read() {
-//         cursor_pos.0 = *position;
-//     }
-// }
 fn update_cursor_pos(
     mut cursor_pos: ResMut<CursorPos>,
+    // mut move_event: MessageReader<CursorMoved>
     window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>
 ) {
-    if let Some(pos) = get_cursor_pos(&window, &camera) {
+    if let Some(pos) = get_cursor_pos(&window, &camera)
+        && pos != cursor_pos.0
+    {
         cursor_pos.0 = pos;
     }
+    // for moved in move_event.read() {
+    //     cursor_pos.0 = moved.position;
+    // }
 }
 
 // -- server ---
 
 
-fn spawn_worldsize(mut commands: Commands) {
+fn spawn_worldsize(server: On<Add, Server>, mut commands: Commands) {
     let world_size = WorldSize::new();
 
     commands.spawn((
         world_size,
         Replicate::to_clients(NetworkTarget::All)
     ));
+
+    commands.get_entity(server.entity).unwrap()
+        .insert(DeltaManager::default());
 }
 
 fn on_new_client(
@@ -194,3 +196,4 @@ fn get_multiplayer_by_player_num(player_num: u32) -> u32 {
         _ => 7,
     }
 }
+// TODO test this by setting smaller
