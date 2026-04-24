@@ -108,7 +108,6 @@ fn handle_connected_client(
         
         ActionState::<Rotate>::default(),
         ActionState::<Move>::default(),
-        ActionState::<Reversed>::default(),
         
         ControlledBy {
             owner: entity,

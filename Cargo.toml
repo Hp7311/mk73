@@ -3,7 +3,7 @@ resolver = "2"
 members = ["client", "common", "server"]
 
 [workspace.dependencies]
-bevy = {version = "0.18", features = ["debug", "pan_camera"]}
+bevy = {version = "0.18", features = ["debug", "pan_camera", "dynamic_linking"]}
 lightyear = {version = "0.26", features = ["netcode", "websocket", "input_native"]}
 serde = "1"
 

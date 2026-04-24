@@ -16,15 +16,40 @@ use crate::world::WorldSize;
 pub struct SendToClient;
 pub struct SendToServer;
 
-/// ship's head's angle with positive x-axis
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
+pub struct Input {
+    pub reversed: bool,
+    pub rotate: Radian,
+    pub speed: Speed
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
+pub enum ClientInput {
+    Exists(Input),
+    #[default]
+    None
+}
+
+impl ClientInput {
+    pub fn unwrap(&self) -> Option<Input> {
+        match self {
+            Self::Exists(input) => Some(*input),
+            Self::None => None
+        }
+    }
+}
+
+/// ship's head's radian with positive x-axis
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
 pub struct Rotate(pub Option<Radian>);
-/// speed can be negative on reverse
+/// speed is negative on reverse
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
 pub struct Move(pub Option<Speed>);
-/// indicates whether ship is reversed. a cheating player setting this to invalid value wouldn't have too great consequences
+/// indicates whether ship is reversed.
+/// 
+/// used to communicate between rotate input buffering and moving input buffering
 #[derive(
-    Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq, Deref, DerefMut,
+    Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut, Component
 )]
 pub struct Reversed(pub bool);
 impl Reversed {
@@ -37,9 +62,6 @@ impl MapEntities for Rotate {
     fn map_entities<E: EntityMapper>(&mut self, _entity_mapper: &mut E) {}
 }
 impl MapEntities for Move {
-    fn map_entities<E: EntityMapper>(&mut self, _entity_mapper: &mut E) {}
-}
-impl MapEntities for Reversed {
     fn map_entities<E: EntityMapper>(&mut self, _entity_mapper: &mut E) {}
 }
 
@@ -81,9 +103,7 @@ impl Plugin for ProtocolPlugin {
         // MUST register these two for every input
         app.add_plugins(InputPlugin::<Rotate>::default());
         app.add_plugins(InputPlugin::<Move>::default());
-        app.add_plugins(InputPlugin::<Reversed>::default());
         app.register_component::<ActionState<Rotate>>();
         app.register_component::<ActionState<Move>>();
-        app.register_component::<ActionState<Reversed>>();
     }
 }

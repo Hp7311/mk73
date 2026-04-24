@@ -8,19 +8,15 @@
 //!   then apply the rollback-if-incorrect input to [`CustomTransform`]
 //! - client update's the boat's [`Transform`]
 //! - any cheating input will be rolled-back once confirmation from the server arrives
-
-// TODO add move-to-target, should be localised in client, maybe replicate to server?
+//!
+//! move-to-target currently implemented as not setting [`ActionState`] to `None`
+//! maybe store the move-to-target vals in a client-local component once released LMB
 
 use bevy::prelude::*;
-use common::{
-    boat::Boat,
-    primitives::{
-        CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Radian, Speed,
-        WrapRadian as _,
-    },
-    protocol::{Move, Reversed, Rotate},
-    util::{add_circle_hud, calculate_from_proportion, get_rotate_radian},
-};
+use common::{boat::Boat, eq, primitives::{
+    CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Radian, Speed,
+    WrapRadian as _,
+}, protocol::{Move, Reversed, Rotate}, util::{add_circle_hud, calculate_from_proportion, get_rotate_radian}};
 use lightyear::{
     input::client::InputSystems,
     prelude::{
@@ -46,21 +42,20 @@ impl Plugin for InputBufferPlugin {
                     BoatState::Moving { locked: true },
                     BoatState::Moving { locked: false }
                 ))
-                .chain(),
+                // .run_if(resource_changed::<CursorPos>)  // this causes bug where player doesn't move cursor but presses LMB
+                // .chain()
         );
     }
 }
 
-/// buffer the [`ActionState<Rotate>`]
-///
-/// checks about max turn etc
+/// buffer the [`ActionState<Rotate>`] for the target rotation the client wants to go to
+/// i.e. not modifying ActionState outside [here](self)
 fn buffer_rotate(
     cursor_pos: Res<CursorPos>,
     position: Single<&CustomTransform, (With<Controlled>, With<Boat>)>,
     state: Res<State<BoatState>>,
     mut rotate: Single<&mut ActionState<Rotate>, With<InputMarker<Rotate>>>,
-    mut reversed: Single<&mut ActionState<Reversed>, With<InputMarker<Reversed>>>,
-    boat: Single<&Boat, With<Controlled>>,
+    mut reversed: Single<&mut Reversed, With<Controlled>>
 ) {
     let BoatState::Moving { locked } = state.get() else {
         unreachable!()
@@ -78,13 +73,11 @@ fn buffer_rotate(
         // -- adjust for reversed ---
         if moved_from_current.abs() > MINIMUM_REVERSE && !locked {
             // reversing
-            // custom_transform.reversed = true;
-            *reversed.0 |= true;
+            reversed.0 = true;
             moved_from_current = moved_from_current.flip();
         } else if moved_from_current.abs() <= MINIMUM_REVERSE && reversed.to_bool() && !locked {
             // going forwards
-            // custom_transform.reversed = false;
-            *reversed.0 = false;
+            reversed.0 = false;
         } else if reversed.to_bool() {
             // unable to go forward, haven't released key yet
             moved_from_current = moved_from_current.flip();
@@ -92,20 +85,26 @@ fn buffer_rotate(
         current_rotation.rotate_local_z_ret(moved_from_current.wrap_radian())
     };
 
+    if eq!(custom_transform.rotation.0, moved_after_reverse_check.0) {
+        return;
+    }
+
     rotate.0.0 = Some(moved_after_reverse_check);
     // target_rotation.0 = Some(target_move.wrap_radian());
     // TODO maybe store Rotate and Move as struct with current and last input instead of separate components but consider bandwidth
 }
 
+/// updates actionstate to target speed that the player wants to go
+/// i.e. not modifying ActionState outside [here](self)
 fn buffer_move(
     query: Single<(&CustomTransform, /*&mut TargetSpeed,*/ &Boat), With<Controlled>>,
     mut move_action: Single<&mut ActionState<Move>, With<InputMarker<Move>>>,
     cursor_pos: Res<CursorPos>,
-    reversed: Single<&ActionState<Reversed>, With<InputMarker<Reversed>>>,
+    reversed: Single<&Reversed, With<Controlled>>,
 ) {
     let (custom_transform, boat) = query.into_inner();
     let cursor_distance = cursor_pos.0.distance(custom_transform.position.0);
-    let max_speed = if *reversed.0 {
+    let max_speed = if reversed.0 {
         -boat.rev_max_speed().get_raw()
     } else {
         boat.max_speed().get_raw()
@@ -118,6 +117,9 @@ fn buffer_move(
         boat.radius(),
     );
 
+    if eq!(speed, custom_transform.speed.get_raw()) {
+        return;
+    }
     // target_speed.0 = Speed::from_raw(speed);
     let speed = Speed::from_raw(speed);
     move_action.0.0 = Some(speed);

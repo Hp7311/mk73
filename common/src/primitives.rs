@@ -7,15 +7,16 @@ use std::{
 };
 use bevy::math::FloatPow;
 use crate::{boat::Boat, weapon::Weapon};
+use crate::collision::out_of_bounds;
+use crate::util::{move_with_rotation, InputExt};
+use crate::world::WorldSize;
 
 #[derive(Component, Debug, Copy, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct CustomTransform {
-    /// along the `rotation`
+    /// along the `rotation`, negative if reversed
     pub speed: Speed,
     pub position: Position,
-    /// stores the radian to move, with -> of Sprite as 0
-    ///
-    /// ignores any reverse, calculates them like normal
+    /// stores the radian to move for the head of the boat, with -> of Sprite as 0
     pub rotation: Radian,
 }
 
@@ -23,6 +24,29 @@ impl CustomTransform {
     pub fn rotate_local_z(&mut self, angle: Radian) {
         let rotation = angle.to_quat();
         self.rotation = (rotation * self.rotation.to_quat()).wrap_radian();
+    }
+    /// according to `self.rotation` and `self.speed`, move one frame
+    pub fn move_position(&mut self) {
+        self.position.0 += move_with_rotation(self.rotation, self.speed, 0.0).xy();
+    }
+    /// same as [`move_position`] but with bound checking, returns true if success
+    pub fn move_position_checked(&mut self, world_size: &WorldSize, sprite_size: Vec2) -> bool {
+        let mut target = self.position.0;
+        target += move_with_rotation(self.rotation, self.speed, 0.0).xy();
+        if out_of_bounds(
+            world_size,
+            MkRect {
+                center: target,
+                dimensions: sprite_size.to::<WidthHeight>(),
+            },
+            self.rotation.to_quat()
+        ) {
+            false
+        } else {
+            self.position.0 = target;
+            true
+        }
+        // consider slowing speed if out of bounds and decreasing health
     }
 }
 

@@ -9,9 +9,11 @@ use crate::{
     primitives::{DecimalPoint, MkRect, WidthHeight},
 };
 
-/// the equivalent of `==` only with a specified precision
-pub(crate) fn eq(x: f32, y: f32, precision: DecimalPoint) -> bool {
-    (x - y).abs() <= precision.to_f32()
+#[macro_export]
+macro_rules! eq {
+    ($x:expr, $y:expr) => {
+        ($x - $y).abs() <= 0.001
+    };
 }
 
 /// the equivalent of `==` only with a specified precision
@@ -275,7 +277,7 @@ mod tests {
     fn test_div_overlay() {
         let target = calculate_diving_overlay(-0.4, -2.0, 30.0, 50.0, 0.4);
 
-        assert!(eq(target.1, 0.2, DecimalPoint::Three));
+        assert!(eq!(target.1, 0.2));
         assert_eq!(target.0, 46.0);
     }
 }

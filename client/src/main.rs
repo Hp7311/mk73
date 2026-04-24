@@ -320,12 +320,7 @@ fn spawn_boat(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let Ok(&custom) = customs
-        .get(trigger.entity)
-        .inspect_err(|e| error!("Should replicate CustomTransform along with Boat: {e}, customs len {}, controls: {}", customs.iter().len(), controlled.get(trigger.entity).is_ok()))
-    else {
-        return;
-    };
+    let &custom = customs.get(trigger.entity).unwrap();
     println!("Passed");
 
     let &boat = boats.get(trigger.entity).unwrap();
@@ -333,6 +328,7 @@ fn spawn_boat(
     commands
         .get_entity(trigger.entity)
         .unwrap()
+        .insert(Reversed(false))
         .insert(BoatBundle {
             boat,
             weapon_counter: WeaponCounter {
@@ -381,8 +377,11 @@ fn spawn_boat(
                         CIRCLE_HUD
                     ),
                     MeshBundle {
-                        mesh: Mesh2d(meshes.add(Rectangle::new(6.0, 6.0))),
-                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
+                        mesh: Mesh2d(meshes.add(Segment2d::from_ray_and_length(
+                            Ray2d::new(Vec2::ZERO, Dir2::new(MINIMUM_REVERSE.wrap_radian().to_vec()).unwrap()),
+                            10.0
+                        ))),
+                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY)))
                     }
                 ),
                 (
@@ -392,8 +391,11 @@ fn spawn_boat(
                         CIRCLE_HUD
                     ),
                     MeshBundle {
-                        mesh: Mesh2d(meshes.add(Rectangle::new(6.0, 6.0))),
-                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(RED)))
+                        mesh: Mesh2d(meshes.add(Segment2d::from_ray_and_length(
+                            Ray2d::new(Vec2::ZERO, Dir2::new((-MINIMUM_REVERSE).wrap_radian().to_vec()).unwrap()),
+                            10.0
+                        ))),
+                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY)))
                     }
                 )
             ]);
@@ -451,15 +453,15 @@ fn on_remove_disconnect(_: On<Remove, Disconnected>) {
 }
 
 impl BoatState {
-    /// subsitute for `run_if` not working on multiple states
+    /// substitute for `run_if` not working on multiple states
     fn in_state_2(first: Self, second: Self) -> impl Fn(Res<State<BoatState>>) -> bool {
-        move |state: Res<State<BoatState>>| *state.get() == first || *state.get() == second
+        move |state| *state.get() == first || *state.get() == second
     }
 }
 
 fn spawn_gui(mut commands: Commands) {
     commands.spawn((
-        Text2d::new("State: Stopped\nPosition: None\nRotation: None\nSpeed: None"),
+        Text2d::new("RotateInput: None\nSpeedInput: None\nState: Stopped\nPosition: None\nRotation: None\nSpeed: None"),
         TextFont {
             font_size: 30.0,
             ..default()
@@ -477,7 +479,9 @@ fn update_gui(
     let state = format!("{:?}", state.into_inner()).split("State(").last().unwrap().to_owned();
 
     let new_text = format!(
-        "State: {}\nPosition: {}\nRotation: {}\nSpeed: {}",
+        "RotateInput: {}\nSpeedInput: {}\nState: {}\nPosition: {}\nRotation: {}\nSpeed: {}",
+        rotate.0.0.map(|r| r.to_degrees().round()).unwrap_or(0.0),
+        moves.0.0.map(|r| r.get_knots().round()).unwrap_or(0.0),
         state.chars().take(state.len() - 1).collect::<String>(),
         custom.position.0.round(),
         custom.rotation.to_degrees().round(),
