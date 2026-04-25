@@ -2,12 +2,9 @@
 
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
-
+use crate::MainCamera;
 use crate::primitives::{Radian, Speed};
-use crate::{
-    MainCamera,
-    primitives::{DecimalPoint, MkRect, WidthHeight},
-};
+use crate::primitives::{DecimalPoint, MkRect, WidthHeight};
 
 #[macro_export]
 macro_rules! eq {
@@ -33,11 +30,6 @@ pub fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
     atan2(y_diff, x_diff)
 }
 
-/// calculates Vec3 to add to `Transform.translation` from the rotation and speed
-pub fn move_with_rotation(rotation: Radian, speed: Speed, z_index: f32) -> Vec3 {
-    (rotation.to_vec() * speed.get_raw()).extend(z_index)
-}
-
 /// centre point at middle of window
 pub(crate) fn get_cursor_pos(
     window: &Single<&Window, With<PrimaryWindow>>,
@@ -49,6 +41,12 @@ pub(crate) fn get_cursor_pos(
         .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor).ok())
         .map(|ray| ray.origin.xy())
 }
+
+/// calculates Vec3 to add to `Transform.translation` from the rotation and speed
+pub fn move_with_rotation(rotation: Radian, speed: Speed, z_index: f32) -> Vec3 {
+    (rotation.to_vec() * speed.get_raw()).extend(z_index)
+}
+
 
 /// gets a approximately round area of tiles around a point
 /// # Unexpected behavior
@@ -75,7 +73,7 @@ pub(crate) fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
 ///
 /// note that we're returning the maximum darkness if calculated value exceeds instead of calculating the darkness according
 /// to the range between 0 and max_darkness
-pub(crate) fn calculate_diving_overlay(
+pub fn calculate_diving_overlay(
     altitude: f32,
     ocean_floor: f32,
     min_radius: f32,

@@ -1,34 +1,38 @@
 #![allow(clippy::type_complexity)]
 
 mod input;
+mod dive;
 
 use std::f32::consts::PI;
 use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
-use bevy::color::palettes::css::{GRAY, RED, TEAL};
+use bevy::color::palettes::css::{GRAY, TEAL};
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
+use bevy_inspector_egui::egui::emath::GuiRounding;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use common::boat::Boat;
-use common::collision::out_of_bounds;
-use common::primitives::{CircleHud, CursorPos, CustomTransform, FlipRadian, MeshBundle, MkRect, NormalizeRadian, OutOfBound, Speed, TargetRotation, TargetSpeed, WeaponCounter, WidthHeight, WrapRadian};
-use common::protocol::{Move, ProtocolPlugin, Reversed, Rotate};
-use common::util::{add_circle_hud, calculate_from_proportion, get_rotate_radian, move_with_rotation, InputExt};
-use common::weapon::Weapon;
-use common::world::{Background, WorldPlugin, WorldSize};
+use common::boat::{Boat, SubKind};
+use common::primitives::{
+    CircleHud, CustomTransform, MeshBundle, NormalizeRadian as _, OutOfBound, TargetRotation, TargetSpeed, WeaponCounter, WidthHeight, WrapRadian as _
+};
+use common::protocol::{Move, ProtocolPlugin, Rotate};
+use common::util::add_circle_hud;
+use common::world::WorldPlugin;
 use common::{
-    CIRCLE_HUD, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, WATER_SURFACE,
-    add_dbg_app, print_num,
+    CIRCLE_HUD, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, OCEAN_SURFACE,
 };
 
-use lightyear::netcode::auth::Authentication;
-use lightyear::netcode::{Key, NetcodeClient};
-use lightyear::prelude::client::{ClientConfig, NetcodeConfig, WebSocketClientIo, WebSocketScheme};
-use lightyear::prelude::input::native::{ActionState, InputMarker};
-use lightyear::prelude::{client::ClientPlugins, *};
+use lightyear::netcode::{auth::Authentication, Key, NetcodeClient};
+use lightyear::prelude::{
+    input::native::{ActionState, InputMarker},
+    client::{
+        ClientPlugins, ClientConfig, NetcodeConfig, WebSocketClientIo, WebSocketScheme
+    },
+    *
+};
 use lightyear::websocket::client::WebSocketTarget;
-
+use crate::dive::DivingPlugin;
 use crate::input::InputBufferPlugin;
 
 #[cfg(all(not(target_family = "wasm"), not(debug_assertions)))]
@@ -66,6 +70,7 @@ fn main() {
     .add_plugins(ProtocolPlugin)
     .add_plugins(PanCameraPlugin)
     .insert_resource(ClearColor(TEAL.into()))
+        .add_plugins(DivingPlugin)
     // init
     .init_state::<BoatState>()
     .add_plugins(WorldPlugin { is_server: false })
@@ -77,7 +82,6 @@ fn main() {
     .add_observer(spawn_boat) // FIXME
     .add_observer(on_added_actionstate::<Rotate>)
     .add_observer(on_added_actionstate::<Move>)
-    .add_observer(on_added_actionstate::<Reversed>)
     .add_systems(Update, update_state)
     .add_systems(Update, move_camera)
     // .add_systems(
@@ -185,9 +189,6 @@ fn setup(mut commands: Commands) {
 
 #[derive(Debug, States, Clone, Copy, Hash, PartialEq, Eq, Default)]
 enum BoatState {
-    /// start state
-    #[default]
-    Stopped,
     /// potentially fire a weapon
     FiringWeapon(Duration),
     /// maybe locked in a direction (LMB pressed), unlocked for one frame only
@@ -195,6 +196,7 @@ enum BoatState {
     /// always transition here with locked: false if can change direction (forward/reverse)
     Moving { locked: bool },
     /// LMB not pressed
+    #[default]
     Released,
 }
 
@@ -206,11 +208,6 @@ fn update_state(
     time: Res<Time>,
 ) {
     match current_state.get() {
-        BoatState::Stopped => {
-            if mouse_button.just_pressed(MouseButton::Left) {
-                setter.set(BoatState::Moving { locked: false });
-            }
-        }
         BoatState::Moving { locked } => {
             if !locked {
                 setter.set(BoatState::Moving { locked: true })
@@ -251,7 +248,7 @@ fn sync_transform_from_custom(
     }
 }
 
-// TODO targetrotation & targetspeed
+// targetrotation & targetspeed achieved by not clearing ActionState
 
 /// remember the last move angle and rotate toward it when button not pressed
 fn boat_to_target(
@@ -304,7 +301,8 @@ fn move_camera(
     ship: Single<&Transform, (With<Boat>, With<Controlled>)>,
 ) {
     if ship.translation.xy() != camera.translation.xy() {
-        camera.translation = ship.translation.with_z(WATER_SURFACE);
+        camera.translation.x = ship.translation.x;
+        camera.translation.y = ship.translation.y;
     }
 }
 
@@ -321,27 +319,24 @@ fn spawn_boat(
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let &custom = customs.get(trigger.entity).unwrap();
-    println!("Passed");
-
     let &boat = boats.get(trigger.entity).unwrap();
+    let controls = controlled.get(trigger.entity).is_ok();
 
     commands
-        .get_entity(trigger.entity)
-        .unwrap()
-        .insert(Reversed(false))
-        .insert(BoatBundle {
+        .get_entity(trigger.entity).unwrap()
+        .insert_if_new(BoatBundle {
             boat,
             weapon_counter: WeaponCounter {
                 aval_weapons: boat.get_armanents(),
                 selected_weapon: boat.default_weapon(),
             },
             sprite: Sprite {
-                image: asset_server.load(boat.file_name()), // TODO preload assets
+                image: asset_server.load(boat.file_name()), // preload assets
                 custom_size: Some(boat.sprite_size()),
                 ..default()
             },
             transform: Transform {
-                translation: custom.position.extend(WATER_SURFACE),
+                translation: custom.position.extend(OCEAN_SURFACE),
                 rotation: custom.rotation.to_quat(),
                 ..default()
             },
@@ -351,7 +346,6 @@ fn spawn_boat(
         .with_children(|parent| {
             // required for other clients to have a CircleHud for rig's point attraction
             let circle_hud_radius = add_circle_hud(boat.radius());
-            let controls = controlled.get(trigger.entity).is_ok();
 
             let mut hud = parent.spawn((
                 Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
@@ -399,8 +393,15 @@ fn spawn_boat(
                     }
                 )
             ]);
-        });
+        })
+        .insert(Name::new("Client's boat"));
+
+    commands.insert_resource(BoatType(boat.sub_kind()));
 }
+
+/// for performance improvements in diving
+#[derive(Resource)]
+struct BoatType(SubKind);
 
 #[derive(Bundle, Debug, Clone)]
 pub struct BoatBundle {
@@ -435,7 +436,7 @@ impl Default for BoatBundle {
             mouse_target: TargetRotation::default(),
             target_speed: TargetSpeed::default(),
             weapon_counter: WeaponCounter {
-                aval_weapons: vec![],
+                aval_weapons: Vec::new(),
                 selected_weapon: None,
             },
             boat: Boat::Yasen, // should be G5
@@ -461,7 +462,7 @@ impl BoatState {
 
 fn spawn_gui(mut commands: Commands) {
     commands.spawn((
-        Text2d::new("RotateInput: None\nSpeedInput: None\nState: Stopped\nPosition: None\nRotation: None\nSpeed: None"),
+        Text2d::new("RotateInput: None\nSpeedInput: None\nState: Stopped\nPosition: None\nAltitude: None\nRotation: None\nSpeed: None"),
         TextFont {
             font_size: 30.0,
             ..default()
@@ -474,16 +475,18 @@ fn update_gui(
     rotate: Single<&ActionState<Rotate>, With<InputMarker<Rotate>>>,
     moves: Single<&ActionState<Move>, With<InputMarker<Move>>>,
     state: Res<State<BoatState>>,
-    custom: Single<&CustomTransform, With<Controlled>>
+    custom: Single<&CustomTransform, With<Controlled>>,
+    transform: Single<&Transform, With<Controlled>>
 ) {
     let state = format!("{:?}", state.into_inner()).split("State(").last().unwrap().to_owned();
 
     let new_text = format!(
-        "RotateInput: {}\nSpeedInput: {}\nState: {}\nPosition: {}\nRotation: {}\nSpeed: {}",
+        "RotateInput: {}\nSpeedInput: {}\nState: {}\nPosition: {}\nAltitude: {}\nRotation: {}\nSpeed: {}",
         rotate.0.0.map(|r| r.to_degrees().round()).unwrap_or(0.0),
         moves.0.0.map(|r| r.get_knots().round()).unwrap_or(0.0),
         state.chars().take(state.len() - 1).collect::<String>(),
         custom.position.0.round(),
+        transform.translation.z.round_to_pixels(10.0),
         custom.rotation.to_degrees().round(),
         custom.speed.get_knots().round()
     );

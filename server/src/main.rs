@@ -5,7 +5,7 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
 };
-use common::{CIRCLE_HUD, LOCAL_SERVER_ADDR, PROTOCOL_ID, boat::Boat, primitives::*, protocol::{Move, ProtocolPlugin, Reversed, Rotate, SendToClient}, util::add_circle_hud, world::{Background, WorldPlugin}, MovementPlugin};
+use common::{CIRCLE_HUD, LOCAL_SERVER_ADDR, PROTOCOL_ID, boat::Boat, primitives::*, protocol::{Move, ProtocolPlugin, Rotate, SendToClient}, util::add_circle_hud, world::{Background, WorldPlugin}, MovementPlugin};
 use lightyear::{
     input::{
         native::plugin::InputPlugin,

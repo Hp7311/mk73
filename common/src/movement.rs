@@ -42,7 +42,6 @@ impl Plugin for MovementPlugin {
 }
 
 mod server {
-    use lightyear::prelude::*;
     use bevy::prelude::*;
     use lightyear::prelude::input::native::ActionState;
     use crate::boat::Boat;
@@ -64,8 +63,8 @@ mod server {
     }
 }
 mod client {
-    use lightyear::prelude::*;
     use bevy::prelude::*;
+    use lightyear::prelude::Controlled;
     use lightyear::prelude::input::native::ActionState;
     use crate::boat::Boat;
     use crate::primitives::*;

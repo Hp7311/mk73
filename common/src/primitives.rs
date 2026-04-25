@@ -336,11 +336,10 @@ pub trait Altitude {
 impl Altitude for Transform {
     fn decrease_with_limit(&mut self, meter: f32, limit: f32) {
         self.translation.z = (self.translation.z - meter).max(limit);
-        // info!("Altitude: {}", self.translation.z);
     }
 
     fn increase_with_limit(&mut self, meter: f32, limit: f32) {
-        self.translation.z = (self.translation.z + meter).max(limit);
+        self.translation.z = (self.translation.z + meter).min(limit);
     }
 
     fn reached(&self, target: f32, precision: DecimalPoint) -> bool {

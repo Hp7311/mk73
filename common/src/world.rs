@@ -2,11 +2,7 @@ use bevy::{prelude::*, window::PrimaryWindow};
 use lightyear::prelude::{Connected, DeltaManager, Diffable, Disconnected, NetworkTarget, Replicate, Replicated, Server};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    MainCamera,
-    primitives::{CursorPos, WidthHeight},
-    util::get_cursor_pos,
-};
+use crate::{primitives::{CursorPos, WidthHeight}, util::get_cursor_pos, MainCamera};
 
 const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
 

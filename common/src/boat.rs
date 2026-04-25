@@ -4,10 +4,8 @@ use serde::{Deserialize, Serialize};
 use crate::primitives::Radian;
 use crate::{
     DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK,
-    primitives::{CircleHud, CustomTransform, OutOfBound, Speed},
-    protocol::{Reversed, Rotate},
+    primitives::Speed,
     weapon::Weapon,
-    world::WorldSize,
 };
 
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]

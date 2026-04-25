@@ -6,7 +6,7 @@ use crate::{
 };
 use bevy::{ecs::entity::MapEntities, prelude::*};
 use lightyear::{
-    input::{self, native::plugin::InputPlugin},
+    input::{native::plugin::InputPlugin},
     prelude::{input::native::ActionState, *},
 };
 use serde::{Deserialize, Serialize};
@@ -16,47 +16,12 @@ use crate::world::WorldSize;
 pub struct SendToClient;
 pub struct SendToServer;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
-pub struct Input {
-    pub reversed: bool,
-    pub rotate: Radian,
-    pub speed: Speed
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
-pub enum ClientInput {
-    Exists(Input),
-    #[default]
-    None
-}
-
-impl ClientInput {
-    pub fn unwrap(&self) -> Option<Input> {
-        match self {
-            Self::Exists(input) => Some(*input),
-            Self::None => None
-        }
-    }
-}
-
 /// ship's head's radian with positive x-axis
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
 pub struct Rotate(pub Option<Radian>);
 /// speed is negative on reverse
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
 pub struct Move(pub Option<Speed>);
-/// indicates whether ship is reversed.
-/// 
-/// used to communicate between rotate input buffering and moving input buffering
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut, Component
-)]
-pub struct Reversed(pub bool);
-impl Reversed {
-    pub fn to_bool(&self) -> bool {
-        self.0
-    }
-}
 
 impl MapEntities for Rotate {
     fn map_entities<E: EntityMapper>(&mut self, _entity_mapper: &mut E) {}

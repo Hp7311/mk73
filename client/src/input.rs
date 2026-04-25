@@ -16,7 +16,7 @@ use bevy::prelude::*;
 use common::{boat::Boat, eq, primitives::{
     CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Radian, Speed,
     WrapRadian as _,
-}, protocol::{Move, Reversed, Rotate}, util::{add_circle_hud, calculate_from_proportion, get_rotate_radian}};
+}, protocol::{Move, Rotate}, util::{add_circle_hud, calculate_from_proportion, get_rotate_radian}};
 use lightyear::{
     input::client::InputSystems,
     prelude::{
@@ -31,6 +31,8 @@ pub struct InputBufferPlugin;
 
 impl Plugin for InputBufferPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<Reversed>();
+
         // buffering inputs
         // MUST BE FixedPreUpdate and in set WriteClientInputs to avoid jerky movement
         app.add_systems(
@@ -45,8 +47,12 @@ impl Plugin for InputBufferPlugin {
                 // .run_if(resource_changed::<CursorPos>)  // this causes bug where player doesn't move cursor but presses LMB
                 // .chain()
         );
+        app.add_systems(Update, check_reached);
     }
 }
+
+struct RotateToTarget(Radian);
+struct MoveToTarget(Speed);
 
 /// buffer the [`ActionState<Rotate>`] for the target rotation the client wants to go to
 /// i.e. not modifying ActionState outside [here](self)
@@ -55,7 +61,7 @@ fn buffer_rotate(
     position: Single<&CustomTransform, (With<Controlled>, With<Boat>)>,
     state: Res<State<BoatState>>,
     mut rotate: Single<&mut ActionState<Rotate>, With<InputMarker<Rotate>>>,
-    mut reversed: Single<&mut Reversed, With<Controlled>>
+    mut reversed: ResMut<Reversed>
 ) {
     let BoatState::Moving { locked } = state.get() else {
         unreachable!()
@@ -75,10 +81,10 @@ fn buffer_rotate(
             // reversing
             reversed.0 = true;
             moved_from_current = moved_from_current.flip();
-        } else if moved_from_current.abs() <= MINIMUM_REVERSE && reversed.to_bool() && !locked {
+        } else if moved_from_current.abs() <= MINIMUM_REVERSE && reversed.0 && !locked {
             // going forwards
             reversed.0 = false;
-        } else if reversed.to_bool() {
+        } else if reversed.0 {
             // unable to go forward, haven't released key yet
             moved_from_current = moved_from_current.flip();
         }
@@ -91,7 +97,6 @@ fn buffer_rotate(
 
     rotate.0.0 = Some(moved_after_reverse_check);
     // target_rotation.0 = Some(target_move.wrap_radian());
-    // TODO maybe store Rotate and Move as struct with current and last input instead of separate components but consider bandwidth
 }
 
 /// updates actionstate to target speed that the player wants to go
@@ -100,7 +105,7 @@ fn buffer_move(
     query: Single<(&CustomTransform, /*&mut TargetSpeed,*/ &Boat), With<Controlled>>,
     mut move_action: Single<&mut ActionState<Move>, With<InputMarker<Move>>>,
     cursor_pos: Res<CursorPos>,
-    reversed: Single<&Reversed, With<Controlled>>,
+    reversed: Res<Reversed>,
 ) {
     let (custom_transform, boat) = query.into_inner();
     let cursor_distance = cursor_pos.0.distance(custom_transform.position.0);
@@ -123,4 +128,24 @@ fn buffer_move(
     // target_speed.0 = Speed::from_raw(speed);
     let speed = Speed::from_raw(speed);
     move_action.0.0 = Some(speed);
+}
+
+/// indicates whether ship is reversed.
+///
+/// used to communicate between rotate input buffering and moving input buffering
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut, Resource)]
+struct Reversed(pub bool);
+
+
+/// clear [`ActionState<Rotate>`] if reached
+fn check_reached(
+    query: Single<(&CustomTransform, &mut ActionState<Rotate>), (With<Controlled>, Changed<CustomTransform>)>
+) {
+    let (custom, mut rotate) = query.into_inner();
+
+    if let Some(target) = rotate.0.0
+        && eq!(custom.rotation.0, target.0)
+    {
+        rotate.0.0 = None;
+    }
 }

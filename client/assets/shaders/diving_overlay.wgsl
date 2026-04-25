@@ -4,14 +4,14 @@
 struct Data {
     value: f32,
 #ifdef SIXTEEN_BYTE_ALIGNMENT
-    _d_padding: vec3<f32>
+    _padding: vec3<f32>
 #endif
 }
 
 struct Vec2Data {
     value: vec2<f32>,
 #ifdef SIXTEEN_BYTE_ALIGNMENT
-    _d_padding: vec2<f32>
+    _padding: vec2<f32>
 #endif
 }
 
