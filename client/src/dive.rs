@@ -8,6 +8,7 @@ use common::boat::{Boat, SubKind};
 use common::{eq, MainCamera, OCEAN_FLOOR, OCEAN_SURFACE};
 use common::primitives::{CustomTransform, DecimalPoint, MeshBundle, Altitude as _};
 use common::util::calculate_diving_overlay;
+use crate::BoatType;
 
 pub struct DivingPlugin;
 
@@ -18,9 +19,9 @@ impl Plugin for DivingPlugin {
         app.add_systems(Startup, spawn_diving_overlay.after(crate::setup));
         app.add_systems(Update, update_diving_overlay);
         app.add_systems(Update, (
-            update_diving_status.run_if(resource_changed::<ButtonInput<Key>>),
+            update_diving_status.run_if(resource_changed::<ButtonInput<KeyCode>>),
             act_on_state
-        ).chain());
+        ).chain().run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))));
     }
 }
 
@@ -79,12 +80,10 @@ enum DivingStatus {
 fn update_diving_status(
     mut setter: ResMut<NextState<DivingStatus>>,
     getter: Res<State<DivingStatus>>,
-    buttons: Res<ButtonInput<Key>>,
+    buttons: Res<ButtonInput<KeyCode>>,
     transform: Single<&Transform, (With<Controlled>, With<Boat>)>,
 ) {
-    if buttons.just_pressed(Key::Character("r".into()))
-        || buttons.just_pressed(Key::Character("R".into()))
-    {
+    if buttons.just_pressed(KeyCode::KeyR) {
         let mut target = *getter.get();
         match target {
             DivingStatus::None => {

@@ -1,16 +1,14 @@
-use std::{collections::HashMap, time::Duration};
+mod oil_rig;
+
+use std::time::Duration;
 
 use bevy::{
     color::palettes::css::{GRAY, TEAL},
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
 };
-use common::{CIRCLE_HUD, LOCAL_SERVER_ADDR, PROTOCOL_ID, boat::Boat, primitives::*, protocol::{Move, ProtocolPlugin, Rotate, SendToClient}, util::add_circle_hud, world::{Background, WorldPlugin}, MovementPlugin};
+use common::{LOCAL_SERVER_ADDR, PROTOCOL_ID, boat::Boat, primitives::*, protocol::{Move, ProtocolPlugin, Rotate, SendToClient}, util::add_circle_hud, world::{Background, WorldPlugin}, MovementPlugin};
 use lightyear::{
-    input::{
-        native::plugin::InputPlugin,
-        server::{ServerInputConfig, ServerInputPlugin},
-    },
     prelude::input::native::ActionState,
     websocket::server::Identity,
 };
@@ -21,6 +19,7 @@ use lightyear::{
         *,
     },
 };
+use crate::oil_rig::OilRigPlugin;
 
 fn main() {
     App::new()
@@ -34,6 +33,7 @@ fn main() {
         )
         .add_plugins(ServerPlugins::default())
         .add_plugins(ProtocolPlugin)
+        .add_plugins(OilRigPlugin)
         .add_systems(Startup, setup)
         .add_plugins(WorldPlugin { is_server: true })
         // handle client action
@@ -41,6 +41,7 @@ fn main() {
         // handle client req
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client)
+
         .run();
 }
 

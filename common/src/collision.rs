@@ -17,7 +17,7 @@ use crate::primitives::WrapRadian;
 /// `pos` has center point at the center.
 /// ### Performance
 /// slow if close to the border
-pub fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool {
+pub fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool {  // TODO accept Radian
     // if not near the border, return without redundant operations
     if !out_of_bound_point(
         bound,
@@ -41,7 +41,7 @@ pub fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool 
 }
 
 /// faster version of out_of_bounds with a rect, no rotation
-pub(crate) fn out_of_bound_point(bound: &WorldSize, rect: MkRect) -> bool {
+pub fn out_of_bound_point(bound: &WorldSize, rect: MkRect) -> bool {
     let world_bound: MkRect = MkRect {
         center: Vec2::ZERO,
         dimensions: bound.get_size().into(),
@@ -52,10 +52,9 @@ pub(crate) fn out_of_bound_point(bound: &WorldSize, rect: MkRect) -> bool {
         .any(|corner| !world_bound.contains(*corner))
 }
 
-/// primarily used for rig spawning,
-/// returns false if intersects
+/// returns false if may intersect
 /// ### length is added half
-pub(crate) fn square_does_not_intersects(
+pub fn square_does_not_intersects(
     center: Vec2,
     mut length: f32,
     other_center: Vec2,

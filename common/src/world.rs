@@ -121,6 +121,7 @@ fn spawn_sprite(
             },
             ..default()
         },
+        Name::new("Background"),
         Background,
     ));
 }

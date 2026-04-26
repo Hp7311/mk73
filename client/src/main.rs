@@ -16,7 +16,7 @@ use common::boat::{Boat, SubKind};
 use common::primitives::{
     CircleHud, CustomTransform, MeshBundle, NormalizeRadian as _, OutOfBound, TargetRotation, TargetSpeed, WeaponCounter, WidthHeight, WrapRadian as _
 };
-use common::protocol::{Move, ProtocolPlugin, Rotate};
+use common::protocol::{Move, OilRigInfo, OilRigMessage, ProtocolPlugin, Rotate};
 use common::util::add_circle_hud;
 use common::world::WorldPlugin;
 use common::{
@@ -96,6 +96,8 @@ fn main() {
 
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect)
+
+        .add_observer(spawn_rig)
         .add_plugins(EguiPlugin::default())
         .add_plugins(WorldInspectorPlugin::default());
 
@@ -105,8 +107,6 @@ fn main() {
     app.run();
 }
 
-
-// TODO performance problem on client num > 1
 
 /// using hack to achieve system to be only triggered when both
 /// [`ActionState<T>`] and [`Controlled`] added
@@ -399,8 +399,32 @@ fn spawn_boat(
     commands.insert_resource(BoatType(boat.sub_kind()));
 }
 
+fn spawn_rig(
+    trigger: On<Add, OilRigInfo>,
+    rigs: Query<&OilRigInfo>,
+    assert_server: Res<AssetServer>,
+    mut commands: Commands
+) {
+    // NOTE client-inserted components get removed when server despawns the replicating entity
+    let Ok(rig_info) = rigs.get(trigger.entity) else { panic!() };
+
+    commands.get_entity(trigger.entity).unwrap().insert((
+        Transform {
+            translation: rig_info.position.extend(0.0),
+            rotation: rig_info.rotation.to_quat(),
+            ..default()
+        },
+        Sprite {
+            image: assert_server.load(rig_info.file_name()),
+            custom_size: Some(rig_info.custom_size),
+            ..default()
+        },
+        Name::new("Oil rig")
+    ));
+}
+
 /// for performance improvements in diving
-#[derive(Resource)]
+#[derive(Resource, PartialEq)]
 struct BoatType(SubKind);
 
 #[derive(Bundle, Debug, Clone)]

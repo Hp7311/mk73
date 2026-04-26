@@ -53,18 +53,18 @@ impl CustomTransform {
 /// helper struct for accessing the [`Boat`]'s circle HUD
 #[derive(Debug, Component, Copy, Clone)]
 pub struct CircleHud {
-    pub radius: f32,
+    pub radius: f32
 }
 
 impl CircleHud {
     /// whether `point` is in the Circle HUD
-    pub(crate) fn contains(&self, self_center: Vec2, point: Vec2) -> bool {
+    pub fn contains(&self, self_center: Vec2, point: Vec2) -> bool {
         point.distance_squared(self_center) < self.radius.squared()
     }
     /// whether a point is at HUD's center
     ///
     /// adjusted for decimal-point precision
-    pub(crate) fn at_center(&self, self_center: Vec2, point: Vec2, decimal_point: DecimalPoint) -> bool {
+    pub fn at_center(self_center: Vec2, point: Vec2, decimal_point: DecimalPoint) -> bool {
         let x_diff = (point.x - self_center.x).abs();
         let y_diff = (point.y - self_center.y).abs();
 
@@ -441,7 +441,7 @@ pub struct WidthHeight {
 
 impl WidthHeight {
     pub(crate) const LARGE_BOX_MULTIPLIER: f32 = 1.3;
-    pub(crate) const ZERO: Self = WidthHeight {
+    pub const ZERO: Self = WidthHeight {
         width: 0.0,
         height: 0.0,
     };

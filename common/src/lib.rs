@@ -7,7 +7,7 @@ mod movement;
 pub mod primitives;
 pub mod protocol;
 pub mod util;
-pub mod weapon;
+mod weapon;
 pub mod world;
 
 use crate::primitives::Radian;

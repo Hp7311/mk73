@@ -50,8 +50,8 @@ pub fn move_with_rotation(rotation: Radian, speed: Speed, z_index: f32) -> Vec3 
 
 /// gets a approximately round area of tiles around a point
 /// # Unexpected behavior
-/// the `radius` will be rounded
-pub(crate) fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
+/// the `radius` will be rounded, therefore only reeturning integer points
+pub fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
     let radius_rg = radius.round() as i32;
     let mut ret = vec![];
 
@@ -99,7 +99,7 @@ pub fn calculate_diving_overlay(
     }
 }
 
-pub(crate) fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
+pub fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
     let square = MkRect {
         center: square_center,
         dimensions: WidthHeight::splat(square_len),

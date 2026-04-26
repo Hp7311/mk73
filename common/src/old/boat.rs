@@ -107,18 +107,6 @@ const MINIMUM_REVERSE: f32 = PI * (2. / 3.);
 
 const TIME_TO_LAUNCH_WEAPON: Duration = Duration::from_millis(100);
 
-#[derive(Debug, Clone, Copy, Resource, Default)]
-pub(crate) struct PlayerScore(u32);
-
-impl PlayerScore {
-    pub(crate) fn add_to_score(&mut self, points: u32) {
-        self.0 += points;
-    }
-    pub(crate) fn get_score(&self) -> u32 {
-        self.0
-    }
-}
-
 /// so a system can manipulate [`Transform`] without state concerns
 #[derive(Debug, States, Clone, Copy, Hash, PartialEq, Eq, Default)]
 enum DivingStatus {
