@@ -1,5 +1,7 @@
 //! defines structures to be sent between client and server
 
+use std::rc::Rc;
+use std::sync::Arc;
 use crate::{
     boat::Boat,
     primitives::{CustomTransform, Radian, Speed},
@@ -42,13 +44,6 @@ impl Ease for CustomTransform {
     }
 }
 
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub enum OilRigMessage {
-    Spawn(OilRigInfo),
-    Despawn(Entity)
-}
-
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Component)] // component to store it in server
 pub struct OilRigInfo {
     pub position: Vec2,
@@ -62,14 +57,29 @@ impl OilRigInfo {
     }
 }
 
-#[derive(Debug, Clone, Copy, Resource, Default)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Component)]
+pub struct PointInfo {
+    pub position: Vec2,
+    /// currently not doing prediction etc
+    pub file_name: Arc<str>
+}
+
+impl PointInfo {
+    pub fn custom_size() -> Vec2 {
+        vec2(5.0, 5.0)
+    }
+}
+#[derive(Debug, Clone, Copy, /*Resource, */ Default, Component, Deserialize, Serialize, PartialEq)]
 pub struct PlayerScore(u32);
 
 impl PlayerScore {
+    pub fn new(score: u32) -> Self {
+        Self(score)
+    }
     pub fn add_to_score(&mut self, points: u32) {
         self.0 += points;
     }
-    pub(crate) fn get_score(&self) -> u32 {
+    pub fn get_score(&self) -> u32 {
         self.0
     }
 }
@@ -85,7 +95,11 @@ impl Plugin for ProtocolPlugin {
         app.register_component::<CustomTransform>().add_prediction()
             .add_linear_interpolation();
         app.register_component::<OutOfBound>().add_prediction();
+
         app.register_component::<OilRigInfo>();
+        app.register_component::<PointInfo>();
+
+        app.register_component::<PlayerScore>();
 
         // MUST register these two for every input
         app.add_plugins(InputPlugin::<Rotate>::default());

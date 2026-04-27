@@ -4,6 +4,7 @@ mod input;
 mod dive;
 
 use std::f32::consts::PI;
+use std::panic::UnwindSafe;
 use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
@@ -16,12 +17,10 @@ use common::boat::{Boat, SubKind};
 use common::primitives::{
     CircleHud, CustomTransform, MeshBundle, NormalizeRadian as _, OutOfBound, TargetRotation, TargetSpeed, WeaponCounter, WidthHeight, WrapRadian as _
 };
-use common::protocol::{Move, OilRigInfo, OilRigMessage, ProtocolPlugin, Rotate};
+use common::protocol::{Move, OilRigInfo, PlayerScore, PointInfo, ProtocolPlugin, Rotate};
 use common::util::add_circle_hud;
 use common::world::WorldPlugin;
-use common::{
-    CIRCLE_HUD, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, OCEAN_SURFACE,
-};
+use common::{CIRCLE_HUD, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, OCEAN_SURFACE, print_num, add_dbg_app};
 
 use lightyear::netcode::{auth::Authentication, Key, NetcodeClient};
 use lightyear::prelude::{
@@ -97,16 +96,17 @@ fn main() {
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect)
 
-        .add_observer(spawn_rig)
-        .add_plugins(EguiPlugin::default())
-        .add_plugins(WorldInspectorPlugin::default());
+    .add_observer(spawn_rig)
+    .add_observer(spawn_point)
+    .add_systems(Update, sync_point_transform)
+    .add_plugins(EguiPlugin::default())
+    .add_plugins(WorldInspectorPlugin::default());
 
     app.add_systems(Startup, spawn_gui);
     app.add_systems(Update, update_gui);
 
     app.run();
 }
-
 
 /// using hack to achieve system to be only triggered when both
 /// [`ActionState<T>`] and [`Controlled`] added
@@ -345,7 +345,7 @@ fn spawn_boat(
         })
         .with_children(|parent| {
             // required for other clients to have a CircleHud for rig's point attraction
-            let circle_hud_radius = add_circle_hud(boat.radius());
+            let circle_hud_radius = boat.circle_hud_radius();
 
             let mut hud = parent.spawn((
                 Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
@@ -423,6 +423,34 @@ fn spawn_rig(
     ));
 }
 
+fn spawn_point(
+    trigger: On<Add, PointInfo>,
+    points: Query<&PointInfo>,
+    asset_server: Res<AssetServer>,
+    mut commands: Commands
+) {
+    let point_info = points.get(trigger.entity).unwrap();
+
+    commands.get_entity(trigger.entity).unwrap()
+        .insert((
+            Sprite {
+                image: asset_server.load((*point_info.file_name).to_owned()),
+                custom_size: Some(PointInfo::custom_size()),
+                ..default()
+            },
+            Transform::from_translation(point_info.position.extend(OCEAN_SURFACE)),
+            Name::new("Point")
+        ));
+}
+
+fn sync_point_transform(
+    points: Query<(&PointInfo, &mut Transform), Changed<PointInfo>>,
+) {
+    for (info, mut transform) in points {
+        transform.translation.x = info.position.x;
+        transform.translation.y = info.position.y;
+    }
+}
 /// for performance improvements in diving
 #[derive(Resource, PartialEq)]
 struct BoatType(SubKind);
@@ -486,7 +514,7 @@ impl BoatState {
 
 fn spawn_gui(mut commands: Commands) {
     commands.spawn((
-        Text2d::new("RotateInput: None\nSpeedInput: None\nState: Stopped\nPosition: None\nAltitude: None\nRotation: None\nSpeed: None"),
+        Text2d::new("RotateInput: None\nSpeedInput: None\nState: Stopped\nPosition: None\nAltitude: None\nRotation: None\nSpeed: None\nScore: None"),
         TextFont {
             font_size: 30.0,
             ..default()
@@ -500,19 +528,21 @@ fn update_gui(
     moves: Single<&ActionState<Move>, With<InputMarker<Move>>>,
     state: Res<State<BoatState>>,
     custom: Single<&CustomTransform, With<Controlled>>,
-    transform: Single<&Transform, With<Controlled>>
+    transform: Single<&Transform, With<Controlled>>,
+    player_score: Single<&PlayerScore>
 ) {
     let state = format!("{:?}", state.into_inner()).split("State(").last().unwrap().to_owned();
 
     let new_text = format!(
-        "RotateInput: {}\nSpeedInput: {}\nState: {}\nPosition: {}\nAltitude: {}\nRotation: {}\nSpeed: {}",
+        "RotateInput: {}\nSpeedInput: {}\nState: {}\nPosition: {}\nAltitude: {}\nRotation: {}\nSpeed: {}\nScore: {}",
         rotate.0.0.map(|r| r.to_degrees().round()).unwrap_or(0.0),
         moves.0.0.map(|r| r.get_knots().round()).unwrap_or(0.0),
         state.chars().take(state.len() - 1).collect::<String>(),
         custom.position.0.round(),
         transform.translation.z.round_to_pixels(10.0),
         custom.rotation.to_degrees().round(),
-        custom.speed.get_knots().round()
+        custom.speed.get_knots().round(),
+        player_score.get_score()
     );
 
     if new_text != text.0 {

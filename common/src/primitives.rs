@@ -35,7 +35,7 @@ impl CustomTransform {
         target += move_with_rotation(self.rotation, self.speed, 0.0).xy();
         if out_of_bounds(
             world_size,
-            MkRect {
+            Mk48Rect {
                 center: target,
                 dimensions: sprite_size.to::<WidthHeight>(),
             },
@@ -79,13 +79,13 @@ pub struct WeaponCounter {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MkRect {
+pub struct Mk48Rect {
     pub center: Vec2,
     pub dimensions: WidthHeight,
 }
 
 #[allow(dead_code)]
-impl MkRect {
+impl Mk48Rect {
     pub(crate) fn get_corners(&self) -> [Vec2; 4] {
         [
             vec2(
@@ -121,7 +121,7 @@ impl MkRect {
         self.dimensions.height
     }
     pub(crate) fn new(center: Vec2, width: f32, height: f32) -> Self {
-        MkRect {
+        Mk48Rect {
             center,
             dimensions: WidthHeight { width, height },
         }

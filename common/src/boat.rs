@@ -74,4 +74,8 @@ impl Boat {
     pub fn radius(&self) -> f32 {
         self.sprite_size().x / 2.0
     }
+    /// should use this function or code will break
+    pub fn circle_hud_radius(&self) -> f32 {
+        crate::util::add_circle_hud(self.radius())
+    }
 }

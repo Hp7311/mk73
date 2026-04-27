@@ -4,7 +4,7 @@
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
 use crate::MainCamera;
 use crate::primitives::{Radian, Speed};
-use crate::primitives::{DecimalPoint, MkRect, WidthHeight};
+use crate::primitives::{DecimalPoint, Mk48Rect, WidthHeight};
 
 #[macro_export]
 macro_rules! eq {
@@ -52,13 +52,13 @@ pub fn move_with_rotation(rotation: Radian, speed: Speed, z_index: f32) -> Vec3 
 /// # Unexpected behavior
 /// the `radius` will be rounded, therefore only reeturning integer points
 pub fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
-    let radius_rg = radius.round() as i32;
+    let radius = radius.round() as i32;
     let mut ret = vec![];
 
-    for r in -radius_rg..radius_rg {
-        for r2 in -radius_rg..radius_rg {
+    for r in -radius..radius {
+        for r2 in -radius..radius {
             let tile = vec2(r as f32, r2 as f32) + position;
-            if tile.distance(position) <= radius {
+            if tile.distance(position) <= radius as f32 {
                 ret.push(tile);
             }
         }
@@ -100,7 +100,7 @@ pub fn calculate_diving_overlay(
 }
 
 pub fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
-    let square = MkRect {
+    let square = Mk48Rect {
         center: square_center,
         dimensions: WidthHeight::splat(square_len),
     };

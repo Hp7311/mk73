@@ -1,15 +1,19 @@
 //! functions related to Oil Rigs
 
 use std::{f32::consts::PI, ops::Range};
-
+use std::sync::Arc;
+use bevy::ecs::system::command::trigger;
 use bevy::prelude::*;
-use lightyear::prelude::{MessageManager, MessageReceiver, MessageSender, NetworkTarget, Replicate};
+use bevy_inspector_egui::bevy_egui::EguiPlugin;
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use lightyear::prelude::{MessageManager, MessageReceiver, MessageSender, NetworkTarget, Replicate, ReplicateLike};
 use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
 use common::{eq, print_num, OCEAN_SURFACE};
-use common::collision::{out_of_bound_point, out_of_bounds, square_does_not_intersects};
-use common::primitives::{CircleHud, DecimalPoint, MkRect, Radian, WidthHeight};
-use common::protocol::{OilRigInfo, OilRigMessage, PlayerScore, SendToClient};
+use common::boat::Boat;
+use common::collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects};
+use common::primitives::{CircleHud, CustomTransform, DecimalPoint, Mk48Rect, Radian, WidthHeight};
+use common::protocol::{OilRigInfo, PlayerScore, PointInfo, SendToClient};
 use common::util::{point_in_square, tiles_around_point, InputExt};
 use common::world::WorldSize;
 // use crate::{
@@ -26,11 +30,15 @@ pub struct OilRigPlugin;
 
 impl Plugin for OilRigPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(spawn_rigs);  // TODO use system sets
-            // .add_systems(
-            //     Update,
-            //     (rig_spawn_points, move_points, points_obsorbed_despawn).chain(),
-            // );
+        app.add_observer(spawn_rigs)  // TODO use system sets
+            .add_systems(
+                Update,
+                (rig_spawn_points, move_points, points_obsorbed_despawn)
+            )
+            .add_plugins(EguiPlugin::default())
+            .add_plugins(WorldInspectorPlugin::default());
+
+        app.world_mut().spawn(Camera2d);
     }
 }
 
@@ -99,7 +107,7 @@ fn spawn_random_rig(
         );
         if out_of_bounds(
             world_size,
-            MkRect {
+            Mk48Rect {
                 center,
                 dimensions: rig_dimensions.into(),
             },
@@ -168,65 +176,54 @@ struct PointAmount {
 
 fn rig_spawn_points(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut transforms: Query<(&mut PointAmount, &Transform, &Sprite, Entity), With<OilRig>>,
+    rigs: Query<(&mut PointAmount, &Transform, Entity), With<OilRig>>,
     world_size: Single<&WorldSize>,
 ) {
-    use Point as P;
-    let point_sprites: [(Point, Handle<Image>); 3] = [
-        (P::Coin, asset_server.load(P::Coin.file_name())),
-        (P::Barrel, asset_server.load(P::Barrel.file_name())),
-        (P::Scrap, asset_server.load(P::Scrap.file_name())),
-    ]; // load sprites early for performance
+    let mut rng = rand::rng();
+    let mut spawn_p = vec![false; rng.random_range(SPAWN_POINT_SPRITE_P)];
+    spawn_p.push(true);
 
-    for (mut point_amount, transform, sprite, id) in transforms.iter_mut() {
-        let Some(sprite_size) = sprite.custom_size else {
-            continue;
-        };
+    for (mut point_amount, transform, id) in rigs {
         if point_amount.is_max() {
             continue;
         }
 
-        let avaliable_tiles = tiles_around_point(
-            transform.translation.xy(),
-            sprite_size.x + SPAWN_POINT_RADIUS_MAX,
-        );
-
-        let avaliable_tiles: Vec<_> = avaliable_tiles
-            .iter()
-            .filter(|&tile| !point_in_square(*tile, sprite_size.x, transform.translation.xy()))
-            .filter(|&tile| {
-                !out_of_bound_point(
-                    // okay to not use with rotation outofbound because how small a point is
-                    &world_size,
-                    MkRect {
-                        center: *tile,
-                        dimensions: WidthHeight::ZERO,
-                    },
-                )
-            })
-            .collect();
-
-        let mut rng = rand::rng();
-        let mut spawn_p = vec![false; rng.random_range(SPAWN_POINT_SPRITE_P)];
-        spawn_p.push(true);
-
         if *spawn_p.choose(&mut rng).unwrap() {
-            let (chosen_type, chosen_sprite) = point_sprites.choose(&mut rng).unwrap();
-            let chosen_tile = avaliable_tiles.choose(&mut rng).unwrap();  // TODO not efficient
+            let available_tiles: Vec<_> = tiles_around_point(
+                    transform.translation.xy(),
+                    SPRITE_SIZE.x + SPAWN_POINT_RADIUS_MAX,
+                )
+                .iter()
+                .filter(|&&tile| !point_in_square(tile, SPRITE_SIZE.x, transform.translation.xy()))
+                .filter(|&&tile| {
+                    !out_of_bound_no_rotation(
+                        // okay to not use with rotation outofbound because how small a point is
+                        &world_size,
+                        Mk48Rect {
+                            center: tile,
+                            dimensions: WidthHeight::ZERO,
+                        },
+                    )
+                })
+                .copied()
+                .collect();
+
+            let &chosen_type = Point::ALL.choose(&mut rng).unwrap();
+            let &chosen_tile = available_tiles.choose(&mut rng).unwrap();  // TODO not efficient
 
             commands.spawn((
-                Sprite {
-                    image: chosen_sprite.clone(),
-                    custom_size: Some(todo!()),
-                    ..default()
-                },
-                Transform {
+                Transform { // TODO consider not spawning Transform due to presence of PointInfo, same for rig
                     translation: chosen_tile.extend(OCEAN_SURFACE),
                     ..default()
                 },
-                *chosen_type,
+                chosen_type,
                 ParentRig(id),
+
+                PointInfo {
+                    position: chosen_tile,
+                    file_name: Arc::from(chosen_type.file_name())
+                },
+                Replicate::to_clients(NetworkTarget::All)
             ));
 
             point_amount.add(chosen_type.worth());
@@ -236,14 +233,14 @@ fn rig_spawn_points(
 
 /// move points toward ships that have a CircleHud overlapping them
 fn move_points(
-    mut points_transform: Query<&mut Transform, With<Point>>,
-    circle_huds: Query<(&CircleHud, &Transform)>,
+    mut points_transform: Query<&mut PointInfo, With<Point>>,
+    circle_huds: Query<(&Boat, &CustomTransform), Without<Point>>,
 ) {
     for (intersect_huds, mut transform) in points_transform.iter_mut().filter_map(|point_tf| {
         let huds_in_point: Vec<(f32, Vec2)> = circle_huds
             .iter()
-            .filter(|(hud, hud_tf)| hud.contains(hud_tf.translation.xy(), point_tf.translation.xy()))
-            .map(|(hud, tf)| (hud.radius, tf.translation.xy()))
+            .filter(|(boat, hud_tf)| CircleHud::contains(&CircleHud { radius: boat.circle_hud_radius()}, hud_tf.position.0, point_tf.position))
+            .map(|(boat, tf)| (boat.circle_hud_radius(), tf.position.0))
             .collect();
         if huds_in_point.is_empty() {
             None
@@ -253,8 +250,8 @@ fn move_points(
     }) {
         // move the point toward player for those in 1 player's circle hud
         if intersect_huds.len() == 1 {
-            transform.translation = transform.translation.move_towards(
-                intersect_huds.first().unwrap().1.extend(OCEAN_SURFACE),
+            transform.position = transform.position.move_towards(
+                intersect_huds.first().unwrap().1,
                 POINT_SPEED,
             );
             continue;
@@ -263,43 +260,45 @@ fn move_points(
         // calculate the distance and make the point go to the nearest ship
         let Some((_, hud_transform)) = intersect_huds.iter().min_by_key(|(_, hud_tf)| {
             transform
-                .translation
-                .distance_squared(hud_tf.extend(OCEAN_SURFACE))
+                .position
+                .distance_squared(*hud_tf)
                 .round() as u64  // pixles are too small to be noticeable
         }) else {
             return;
         };
 
-        transform.translation = transform
-            .translation
-            .move_towards(hud_transform.extend(OCEAN_SURFACE), POINT_SPEED);
+        transform.position = transform
+            .position
+            .move_towards(*hud_transform, POINT_SPEED);
     }
 }
 
 /// increment player's score and despawning the Point if absorbed
 fn points_obsorbed_despawn(
     mut commands: Commands,
-    points_transform: Query<(&Transform, &Point, &ParentRig, Entity)>,
-    circle_huds: Query<(&CircleHud, &Transform)>,
+    points_transform: Query<(&PointInfo, &Point, &ParentRig, Entity)>,
+    mut circle_huds: Query<(&Boat, &CustomTransform, &mut PlayerScore)>,
     mut oil_rigs: Query<&mut PointAmount, With<OilRig>>,
-    mut player_score: ResMut<PlayerScore>,
 ) {
     for (point_transform, point, parent_rig, id) in points_transform.iter() {
-        if circle_huds
-            .iter()
-            .any(|(_, tf)| CircleHud::at_center(tf.translation.xy(), point_transform.translation.xy(), DecimalPoint::Zero))
+        if let Some((_, _, mut player_score)) = circle_huds
+            .iter_mut()
+            .find(|(_, custom, _)| (custom.position.0 - point_transform.position).abs().x < 10.0 && (custom.position.0 - point_transform.position).abs().y < 10.0)
         {
             commands.get_entity(id).unwrap().despawn();
             let mut point_amount = oil_rigs.get_mut(parent_rig.0).unwrap();
             point_amount.remove(point.worth());
 
             player_score.add_to_score(point.worth() as u32);
+            // info!("Player's score after adding {}: {}", player_score.get_score(), point.worth() as u32);
         }
     }
 }
 
 
 impl Point {
+    const ALL: [Self; 3] = [Self::Barrel, Self::Coin, Self::Scrap];
+
     fn worth(&self) -> u16 {
         match self {
             Self::Barrel => 2,
@@ -313,6 +312,9 @@ impl Point {
             Self::Coin => "coin.png",
             Self::Scrap => "scrap.png",
         }
+    }
+    fn custom_size() -> Vec2 {
+        vec2(5.0, 5.0)
     }
 }
 

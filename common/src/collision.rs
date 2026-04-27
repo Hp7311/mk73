@@ -3,11 +3,11 @@
 use bevy::prelude::*;
 
 use crate::{
-    primitives::{CustomTransform, MkRect},
+    primitives::CustomTransform,
     util::rotate_vec2,
     world::WorldSize,
 };
-use crate::primitives::WrapRadian;
+use crate::primitives::{Mk48Rect, WrapRadian};
 // perfecting out of bound not the priority, will be when polishing
 
 /// check if a Sprite is out-of-bounds by checking it's 4 corners
@@ -17,11 +17,11 @@ use crate::primitives::WrapRadian;
 /// `pos` has center point at the center.
 /// ### Performance
 /// slow if close to the border
-pub fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool {  // TODO accept Radian
+pub fn out_of_bounds(bound: &WorldSize, sprite: Mk48Rect, rotation: Quat) -> bool {  // TODO accept Radian
     // if not near the border, return without redundant operations
-    if !out_of_bound_point(
+    if !out_of_bound_no_rotation(
         bound,
-        MkRect {
+        Mk48Rect {
             center: sprite.center,
             dimensions: sprite.dimensions.large_bounding_box(),
         },
@@ -41,8 +41,8 @@ pub fn out_of_bounds(bound: &WorldSize, sprite: MkRect, rotation: Quat) -> bool 
 }
 
 /// faster version of out_of_bounds with a rect, no rotation
-pub fn out_of_bound_point(bound: &WorldSize, rect: MkRect) -> bool {
-    let world_bound: MkRect = MkRect {
+pub fn out_of_bound_no_rotation(bound: &WorldSize, rect: Mk48Rect) -> bool {
+    let world_bound = Mk48Rect {
         center: Vec2::ZERO,
         dimensions: bound.get_size().into(),
     };

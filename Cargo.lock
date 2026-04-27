@@ -6677,10 +6677,12 @@ name = "server"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy-inspector-egui",
  "common",
  "lightyear",
  "rand 0.10.0",
  "rustls-pemfile",
+ "serde",
 ]
 
 [[package]]

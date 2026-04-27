@@ -3,9 +3,9 @@ resolver = "2"
 members = ["client", "common", "server"]
 
 [workspace.dependencies]
-bevy = {version = "0.18", features = ["debug", "pan_camera", "dynamic_linking"]}
+bevy = {version = "0.18", features = ["debug", "track_location", "pan_camera", "dynamic_linking"]}
 lightyear = {version = "0.26", features = ["netcode", "websocket", "input_native"]}
-serde = "1"
+serde = { version = "1", features = ["rc"] }
 
 [profile.dev]
 opt-level = 1
