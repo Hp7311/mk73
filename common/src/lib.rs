@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
+// TODO feature client/server
 pub mod boat;
 pub mod collision;
 mod movement;

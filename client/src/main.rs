@@ -15,12 +15,11 @@ use bevy_inspector_egui::egui::emath::GuiRounding;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use common::boat::{Boat, SubKind};
 use common::primitives::{
-    CircleHud, CustomTransform, MeshBundle, NormalizeRadian as _, OutOfBound, TargetRotation, TargetSpeed, WeaponCounter, WidthHeight, WrapRadian as _
+    CustomTransform, MeshBundle, NormalizeRadian as _, OutOfBound, TargetRotation, TargetSpeed, WeaponCounter, WrapRadian as _
 };
 use common::protocol::{Move, OilRigInfo, PlayerScore, PointInfo, ProtocolPlugin, Rotate};
-use common::util::add_circle_hud;
 use common::world::WorldPlugin;
-use common::{CIRCLE_HUD, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, OCEAN_SURFACE, print_num, add_dbg_app};
+use common::{CIRCLE_HUD, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, OCEAN_SURFACE, add_dbg_app};
 
 use lightyear::netcode::{auth::Authentication, Key, NetcodeClient};
 use lightyear::prelude::{
@@ -326,6 +325,7 @@ fn spawn_boat(
         .get_entity(trigger.entity).unwrap()
         .insert_if_new(BoatBundle {
             boat,
+            // TODO WeaponCounter, OutOfBound etc not needed for not controlling boat
             weapon_counter: WeaponCounter {
                 aval_weapons: boat.get_armanents(),
                 selected_weapon: boat.default_weapon(),
@@ -344,24 +344,18 @@ fn spawn_boat(
             ..BoatBundle::default()
         })
         .with_children(|parent| {
-            // required for other clients to have a CircleHud for rig's point attraction
-            let circle_hud_radius = boat.circle_hud_radius();
-
-            let mut hud = parent.spawn((
-                Transform::from_xyz(0.0, 0.0, CIRCLE_HUD),
-                CircleHud {
-                    radius: circle_hud_radius
-                },
-            ));
-            // not client's ship
             if !controls {
                 return;
             }
+            let circle_hud_radius = boat.circle_hud_radius();
 
-            hud.insert(MeshBundle {
-                mesh: Mesh2d(meshes.add(Circle::new(circle_hud_radius).to_ring(3.0))),
-                materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
-            })
+            parent.spawn((
+                MeshBundle {
+                    mesh: Mesh2d(meshes.add(Circle::new(circle_hud_radius).to_ring(3.0))),
+                    materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
+                },
+                Transform::from_xyz(0.0, 0.0, CIRCLE_HUD)
+            ))
             .insert(children![
                 // reverse indicators
                 (
@@ -423,6 +417,7 @@ fn spawn_rig(
     ));
 }
 
+// TODO we want points to be "below" the boat, unpredictable with all Z-index = 0.0
 fn spawn_point(
     trigger: On<Add, PointInfo>,
     points: Query<&PointInfo>,

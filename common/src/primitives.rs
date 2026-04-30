@@ -50,26 +50,10 @@ impl CustomTransform {
     }
 }
 
-/// helper struct for accessing the [`Boat`]'s circle HUD
-#[derive(Debug, Component, Copy, Clone)]
-pub struct CircleHud {
-    pub radius: f32
-}
-
-impl CircleHud {
-    /// whether `point` is in the Circle HUD
-    pub fn contains(&self, self_center: Vec2, point: Vec2) -> bool {
-        point.distance_squared(self_center) < self.radius.squared()
-    }
-    /// whether a point is at HUD's center
-    ///
-    /// adjusted for decimal-point precision
-    pub fn at_center(self_center: Vec2, point: Vec2, decimal_point: DecimalPoint) -> bool {
-        let x_diff = (point.x - self_center.x).abs();
-        let y_diff = (point.y - self_center.y).abs();
-
-        x_diff < decimal_point.to_f32() && y_diff < decimal_point.to_f32()
-    }
+/// check if two points in range of each other by Pathogras theorem
+#[inline]
+pub fn in_range(first: Vec2, second: Vec2, by: f32) -> bool {
+    Vec2::distance_squared(first, second) < by.squared()
 }
 
 #[derive(Debug, Component, Clone)]

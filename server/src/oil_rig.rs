@@ -2,28 +2,19 @@
 
 use std::{f32::consts::PI, ops::Range};
 use std::sync::Arc;
-use bevy::ecs::system::command::trigger;
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use lightyear::prelude::{MessageManager, MessageReceiver, MessageSender, NetworkTarget, Replicate, ReplicateLike};
+use lightyear::prelude::{NetworkTarget, Replicate};
 use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
 use common::{eq, print_num, OCEAN_SURFACE};
 use common::boat::Boat;
 use common::collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects};
-use common::primitives::{CircleHud, CustomTransform, DecimalPoint, Mk48Rect, Radian, WidthHeight};
-use common::protocol::{OilRigInfo, PlayerScore, PointInfo, SendToClient};
-use common::util::{point_in_square, tiles_around_point, InputExt};
+use common::primitives::{in_range, CustomTransform, Mk48Rect, Radian, WidthHeight};
+use common::protocol::{OilRigInfo, PlayerScore, PointInfo};
+use common::util::{point_in_square, tiles_around_point};
 use common::world::WorldSize;
-// use crate::{
-//     DEFAULT_SPRITE_SHRINK, WATER_SURFACE,
-//     boat::{CircleHud, PlayerScore},
-//     collision::{out_of_bound_point, out_of_bounds, square_does_not_intersects},
-//     primitives::{DecimalPoint, MkRect, WidthHeight},
-//     util::{eq, point_in_square, tiles_around_point},
-//     world::WorldSize,
-// };
 
 /// client
 pub struct OilRigPlugin;
@@ -212,10 +203,6 @@ fn rig_spawn_points(
             let &chosen_tile = available_tiles.choose(&mut rng).unwrap();  // TODO not efficient
 
             commands.spawn((
-                Transform { // TODO consider not spawning Transform due to presence of PointInfo, same for rig
-                    translation: chosen_tile.extend(OCEAN_SURFACE),
-                    ..default()
-                },
                 chosen_type,
                 ParentRig(id),
 
@@ -231,45 +218,41 @@ fn rig_spawn_points(
     }
 }
 
-/// move points toward ships that have a CircleHud overlapping them
+/// move points toward ships that have a circle hud overlapping them
 fn move_points(
     mut points_transform: Query<&mut PointInfo, With<Point>>,
-    circle_huds: Query<(&Boat, &CustomTransform), Without<Point>>,
+    boats: Query<(&Boat, &CustomTransform), Without<Point>>,
 ) {
-    for (intersect_huds, mut transform) in points_transform.iter_mut().filter_map(|point_tf| {
-        let huds_in_point: Vec<(f32, Vec2)> = circle_huds
+    // TODO use systemsets for scheduling
+    // TODO consider locally predicting the visible of map's points, 可見的lag在debug mode
+    for (boats_in_range, mut point) in points_transform.iter_mut().filter_map(|point_info| {
+        let boats_in_range = boats
             .iter()
-            .filter(|(boat, hud_tf)| CircleHud::contains(&CircleHud { radius: boat.circle_hud_radius()}, hud_tf.position.0, point_tf.position))
-            .map(|(boat, tf)| (boat.circle_hud_radius(), tf.position.0))
-            .collect();
-        if huds_in_point.is_empty() {
+            .filter(|(boat, CustomTransform { position, ..})| in_range(position.0, point_info.position, boat.circle_hud_radius()))
+            .map(|(_, CustomTransform { position, ..})| position.0)
+            .collect::<Vec<_>>();
+        if boats_in_range.is_empty() {
             None
         } else {
-            Some((huds_in_point, point_tf))
+            Some((boats_in_range, point_info))
         }
     }) {
         // move the point toward player for those in 1 player's circle hud
-        if intersect_huds.len() == 1 {
-            transform.position = transform.position.move_towards(
-                intersect_huds.first().unwrap().1,
+        if boats_in_range.len() == 1 {
+            point.position = point.position.move_towards(
+                boats_in_range[0],
                 POINT_SPEED,
             );
             continue;
         }
 
         // calculate the distance and make the point go to the nearest ship
-        let Some((_, hud_transform)) = intersect_huds.iter().min_by_key(|(_, hud_tf)| {
-            transform
-                .position
-                .distance_squared(*hud_tf)
-                .round() as u64  // pixles are too small to be noticeable
-        }) else {
-            return;
-        };
+        let boat_position = boats_in_range.iter().min_by_key(|boat_position| {
+            Vec2::distance_squared(point.position, **boat_position) as u32
+        }).unwrap();
 
-        transform.position = transform
-            .position
-            .move_towards(*hud_transform, POINT_SPEED);
+        point.position = point.position
+            .move_towards(*boat_position, POINT_SPEED);
     }
 }
 
@@ -277,20 +260,21 @@ fn move_points(
 fn points_obsorbed_despawn(
     mut commands: Commands,
     points_transform: Query<(&PointInfo, &Point, &ParentRig, Entity)>,
-    mut circle_huds: Query<(&Boat, &CustomTransform, &mut PlayerScore)>,
-    mut oil_rigs: Query<&mut PointAmount, With<OilRig>>,
+    mut boats: Query<(&Boat, &CustomTransform, &mut PlayerScore)>,
+    mut point_amounts: Query<&mut PointAmount, With<OilRig>>,
 ) {
     for (point_transform, point, parent_rig, id) in points_transform.iter() {
-        if let Some((_, _, mut player_score)) = circle_huds
+        if let Some((_, _, mut player_score)) = boats
             .iter_mut()
-            .find(|(_, custom, _)| (custom.position.0 - point_transform.position).abs().x < 10.0 && (custom.position.0 - point_transform.position).abs().y < 10.0)
+            // Vec2 is not Ord...
+            .find(|(_, custom, _)| (custom.position.0 - point_transform.position).abs().x < 1.0 && (custom.position.0 - point_transform.position).abs().y < 1.0)
         {
             commands.get_entity(id).unwrap().despawn();
-            let mut point_amount = oil_rigs.get_mut(parent_rig.0).unwrap();
+
+            let mut point_amount = point_amounts.get_mut(parent_rig.0).unwrap();
             point_amount.remove(point.worth());
 
             player_score.add_to_score(point.worth() as u32);
-            // info!("Player's score after adding {}: {}", player_score.get_score(), point.worth() as u32);
         }
     }
 }
