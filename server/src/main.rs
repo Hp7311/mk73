@@ -1,4 +1,5 @@
 mod oil_rig;
+mod weapon;
 
 use std::time::Duration;
 
@@ -7,8 +8,12 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
 };
-use bevy_inspector_egui::egui::NUM_POINTER_BUTTONS;
-use common::{LOCAL_SERVER_ADDR, PROTOCOL_ID, boat::Boat, primitives::*, protocol::{Move, ProtocolPlugin, Rotate, SendToClient}, util::add_circle_hud, world::{Background, WorldPlugin}, MovementPlugin};
+use common::{
+    LOCAL_SERVER_ADDR, PROTOCOL_ID, Boat, MovementPlugin, OCEAN_SURFACE,
+    primitives::{ZIndex, CustomTransform, OutOfBound, Position, WeaponCounter},
+    protocol::{Move, ProtocolPlugin, Rotate},
+    world::WorldPlugin
+};
 use lightyear::{
     prelude::input::native::ActionState,
     websocket::server::Identity,
@@ -20,14 +25,16 @@ use lightyear::{
         *,
     },
 };
-use common::protocol::{OilRigInfo, PlayerScore};
+use common::protocol::{EntityOnServer, NewZIndex, OilRigInfo, PlayerScore};
 use crate::oil_rig::OilRigPlugin;
+use crate::weapon::WeaponPlugin;
 
 fn main() {
     App::new()
         .add_plugins(
             // headless plugins
-            DefaultPlugins.set(WindowPlugin {
+            DefaultPlugins
+                .set(WindowPlugin {
                 primary_window: None,
                 exit_condition: bevy::window::ExitCondition::DontExit,
                 ..default()
@@ -36,10 +43,13 @@ fn main() {
         .add_plugins(ServerPlugins::default())
         .add_plugins(ProtocolPlugin)
         .add_plugins(OilRigPlugin)
+        .add_plugins(WeaponPlugin)
         .add_systems(Startup, setup)
         .add_plugins(WorldPlugin { is_server: true })
         // handle client action
-        .add_plugins(MovementPlugin { is_server: true })
+        .add_plugins(MovementPlugin { is_server: true, move_weapon: true })
+        .add_systems(FixedUpdate, recv_new_z_index)
+
         // handle client req
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client)
@@ -64,15 +74,6 @@ fn setup(mut commands: Commands) {
         .id();
 
     commands.trigger(Start { entity: server });
-
-    commands.spawn((
-        OilRigInfo {
-            position: default(),
-            rotation: Radian(0.0),
-            custom_size: Vec2::ZERO
-        },
-        Replicate::to_clients(NetworkTarget::All)
-    ));
 }
 
 /// connecting client
@@ -88,7 +89,7 @@ fn handle_new_client(connecting_client: On<Add, LinkOf>, mut commands: Commands)
 
 // TODO seperate CUstomTransform?
 
-/// connected client. setup sprites etc
+/// connected client. spawns the main boat entity
 fn handle_connected_client(
     connected_client: On<Add, Connected>,
     clients: Query<&RemoteId, With<ClientOf>>,
@@ -106,14 +107,21 @@ fn handle_connected_client(
         rand::random_range(-200.0..200.0),
     ); // TODO
 
-    commands.spawn((
+    let mut entity_commands = commands.spawn((
         CustomTransform {
             position: Position(position),
             ..CustomTransform::default()
         },
+        OCEAN_SURFACE,
         boat,
+        WeaponCounter {
+            weapons: boat.get_armanents(),
+            selected_weapon: boat.default_weapon()
+        },
         OutOfBound(false),
         PlayerScore::new(0),
+        
+        // BoatClientId(client_id),
         
         Replicate::to_clients(NetworkTarget::All),
         PredictionTarget::to_clients(NetworkTarget::Single(client_id)),
@@ -127,7 +135,20 @@ fn handle_connected_client(
             lifetime: Lifetime::SessionBased
         },
     ));
+    entity_commands.insert(EntityOnServer(entity_commands.id().to_bits()));
 }
+
+fn recv_new_z_index(
+    mut rx: Single<&mut MessageReceiver<NewZIndex>>,
+    mut z_index: Query<&mut ZIndex>
+) {
+    for msg in rx.receive() {
+        let Ok(mut z_index) = z_index.get_mut(Entity::from_bits(msg.entity_on_server.0)) else { unreachable!(); };
+
+        *z_index = msg.new_index;
+    }
+}
+
 
 /// webtransport certificate
 fn from_pem_file(

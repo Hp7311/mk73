@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -30,10 +31,10 @@ impl Boat {
             Self::Yasen => "yasen.png",
         }
     }
-    pub fn get_armanents(&self) -> Vec<Weapon> {
-        match self {
-            Self::Yasen => vec![Weapon::Set65],
-        }
+    pub fn get_armanents(&self) -> HashMap<Weapon, u8> {
+        HashMap::from(match self {
+            Self::Yasen => [(Weapon::Set65, 4),]
+        })
     }
     pub fn default_weapon(&self) -> Option<Weapon> {
         match self {

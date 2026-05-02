@@ -13,7 +13,7 @@
 //! maybe store the move-to-target vals in a client-local component once released LMB
 
 use bevy::prelude::*;
-use common::{boat::Boat, eq, primitives::{
+use common::{Boat, eq, primitives::{
     CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Radian, Speed,
     WrapRadian as _,
 }, protocol::{Move, Rotate}, util::{add_circle_hud, calculate_from_proportion, get_rotate_radian}};
@@ -24,10 +24,10 @@ use lightyear::{
         input::native::{ActionState, InputMarker},
     },
 };
-
+use common::util::in_states_2;
 use crate::{BoatState, MINIMUM_REVERSE};
 
-pub struct InputBufferPlugin;
+pub(crate) struct InputBufferPlugin;
 
 impl Plugin for InputBufferPlugin {
     fn build(&self, app: &mut App) {
@@ -40,12 +40,11 @@ impl Plugin for InputBufferPlugin {
             (buffer_rotate, buffer_move)
                 .in_set(InputSystems::WriteClientInputs)
                 // .run_if(resource_changed::<CursorPos>)  // TODO commenting this out fixes lag ish
-                .run_if(BoatState::in_state_2(
+                .run_if(in_states_2(
                     BoatState::Moving { locked: true },
                     BoatState::Moving { locked: false }
                 ))
                 // .run_if(resource_changed::<CursorPos>)  // this causes bug where player doesn't move cursor but presses LMB
-                // .chain()
         );
         app.add_systems(Update, check_reached);
     }
@@ -63,9 +62,7 @@ fn buffer_rotate(
     mut rotate: Single<&mut ActionState<Rotate>, With<InputMarker<Rotate>>>,
     mut reversed: ResMut<Reversed>
 ) {
-    let BoatState::Moving { locked } = state.get() else {
-        unreachable!()
-    };
+    let BoatState::Moving { locked } = state.get() else {unreachable!()};
     let custom_transform = position.into_inner();
 
     let current_rotation = custom_transform.rotation;

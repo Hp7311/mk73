@@ -5,7 +5,12 @@ use std::{
     f32::consts::PI,
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
 };
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use bevy::math::FloatPow;
+use rand::distr::StandardUniform;
+use rand::prelude::Distribution;
+use rand::{Rng, RngExt};
 use crate::{boat::Boat, weapon::Weapon};
 use crate::collision::out_of_bounds;
 use crate::util::{move_with_rotation, InputExt};
@@ -56,12 +61,14 @@ pub fn in_range(first: Vec2, second: Vec2, by: f32) -> bool {
     Vec2::distance_squared(first, second) < by.squared()
 }
 
-#[derive(Debug, Component, Clone)]
+#[derive(Debug, Component, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WeaponCounter {
-    pub aval_weapons: Vec<Weapon>, // FIXME and maybe HashMap<Weapon, u16>
-    pub selected_weapon: Option<Weapon>, // potential terry fox
+    pub weapons: HashMap<Weapon, u8>,
+    pub selected_weapon: Option<Weapon> // potential terry fox
 }
 
+// TODO maybe Trait on Rect
+/// useful helpers like getting corners and large bounding box
 #[derive(Debug, Clone, Copy)]
 pub struct Mk48Rect {
     pub center: Vec2,
@@ -70,6 +77,20 @@ pub struct Mk48Rect {
 
 #[allow(dead_code)]
 impl Mk48Rect {
+    /// only left-upper and right-bottom for when 4 is not necessary
+    pub(crate) fn get_two_corners(&self) -> [Vec2; 2] {
+        [
+            vec2(
+                self.center.x - self.dimensions.width / 2.0,
+                self.center.y + self.dimensions.height / 2.0,
+            ),
+            vec2(
+                self.center.x + self.dimensions.width / 2.0,
+                self.center.y - self.dimensions.height / 2.0,
+            )
+        ]
+    }
+    /// all 4 corners
     pub(crate) fn get_corners(&self) -> [Vec2; 4] {
         [
             vec2(
@@ -90,6 +111,7 @@ impl Mk48Rect {
             ),
         ]
     }
+    /// all 4 relative corners
     pub(crate) fn get_relative_corners(&self) -> impl Iterator<Item = Vec2> {
         [
             vec2(-self.dimensions.width / 2.0, self.dimensions.height / 2.0),
@@ -110,11 +132,21 @@ impl Mk48Rect {
             dimensions: WidthHeight { width, height },
         }
     }
+    pub fn from_point(point: Vec2) -> Self {
+        Mk48Rect {
+            center: point,
+            dimensions: WidthHeight::ZERO
+        }
+    }
     pub(crate) fn contains(&self, pos: Vec2) -> bool {
         self.to_rect().contains(pos)
     }
     pub(crate) fn to_rect(self) -> Rect {
         Rect::from_center_size(self.center, self.dimensions.to_vec2())
+    }
+    pub(crate) fn large_bounding_box(mut self) -> Self {
+        self.dimensions = self.dimensions.large_bounding_box();
+        self
     }
 }
 
@@ -127,6 +159,7 @@ impl Mk48Rect {
 pub struct Speed(f32);
 
 impl Speed {
+    pub const ZERO: Self = Self(0.0);
     pub fn from_knots(knots: f32) -> Self {
         Speed(knots / 23.0)
     }
@@ -189,16 +222,19 @@ impl PartialOrd for Speed {
 
 /// the direction by which the ship should aim to turn towards
 #[derive(Component, Debug, Clone, Copy, Default, Deref)]
-pub struct TargetRotation(pub Option<f32>);
+pub struct TargetRotation(pub Radian);
+
+
+/// used by weapons to find accleration
+#[derive(Component, Copy, Clone)]
+pub struct LastSpeed(pub Speed);
 
 /// the target speed by which the ships should aim to accelerate towards
 #[derive(Component, Debug, Copy, Clone, Default, Deref)]
 pub struct TargetSpeed(pub Speed);
 
 /// Used by [`CustomTransform`] for rotation
-#[derive(
-    Serialize, Deserialize, Debug, Clone, Copy, Default, Component, PartialEq, Reflect, PartialOrd,
-)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Component, PartialEq, Reflect, PartialOrd, )]
 pub struct Radian(pub f32);
 
 impl Radian {
@@ -236,6 +272,11 @@ impl Radian {
     }
 }
 
+impl Distribution<Radian> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, mut rng: &mut R) -> Radian {
+        Radian(rng.random())
+    }
+}
 impl Neg for Radian {
     type Output = Radian;
     fn neg(self) -> Self::Output {
@@ -265,6 +306,7 @@ impl Add for Radian {
         Radian(self.0 + rhs.0)
     }
 }
+
 pub trait WrapRadian {
     fn wrap_radian(&self) -> Radian;
 }
@@ -288,6 +330,54 @@ impl WrapRadian for Radian {
         *self
     }
 }
+
+#[derive(
+    Component,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Deref,
+    PartialOrd,
+    Copy,
+    Clone,
+    Debug,
+    Reflect,
+    Default
+)]
+pub struct ZIndex(pub f32);
+
+impl Sub for ZIndex {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+impl Neg for ZIndex {
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        Self(-self.0)
+    }
+}
+pub trait WrapZIndex {
+    /// wraps in [`ZIndex`]
+    fn wrap_z(self) -> ZIndex;
+}
+
+impl WrapZIndex for f32 {
+    fn wrap_z(self) -> ZIndex {
+        ZIndex(self)
+    }
+}
+
+pub trait GetZIndex {
+    fn z_index(self) -> ZIndex;
+}
+
+impl GetZIndex for Vec3 {
+    fn z_index(self) -> ZIndex {
+        self.z.wrap_z()
+    }
+}
 #[derive(Component, Debug, PartialEq, Copy, Clone, Default, Deref, Deserialize, Serialize)]
 pub struct Position(pub Vec2);
 
@@ -297,8 +387,9 @@ impl AddAssign for Position {
     }
 }
 impl Position {
-    pub fn to_vec3(self, z_index: f32) -> Vec3 {
-        self.0.extend(z_index)
+    /// making [`ZIndex`] Newtype work smoothly
+    pub fn extend(self, z_index: ZIndex) -> Vec3 {
+        self.0.extend(z_index.0)
     }
 }
 impl From<Vec2> for Position {
@@ -312,22 +403,26 @@ pub struct CursorPos(pub Vec2);
 
 /// the altitude of an entity
 pub trait Altitude {
-    fn decrease_with_limit(&mut self, meter: f32, limit: f32);
-    fn increase_with_limit(&mut self, meter: f32, limit: f32);
-    fn reached(&self, target: f32, precision: DecimalPoint) -> bool;
+    /// returns Z-index after diving
+    fn decrease_with_limit(&mut self, meter: f32, limit: ZIndex) -> ZIndex;
+    /// returns Z-index after surfacing
+    fn increase_with_limit(&mut self, meter: f32, limit: ZIndex) -> ZIndex;
+    fn reached(&self, target: ZIndex, precision: DecimalPoint) -> bool;
 }
 
 impl Altitude for Transform {
-    fn decrease_with_limit(&mut self, meter: f32, limit: f32) {
-        self.translation.z = (self.translation.z - meter).max(limit);
+    fn decrease_with_limit(&mut self, meter: f32, limit: ZIndex) -> ZIndex {
+        self.translation.z = (self.translation.z - meter).max(*limit);
+        self.translation.z_index()
     }
 
-    fn increase_with_limit(&mut self, meter: f32, limit: f32) {
-        self.translation.z = (self.translation.z + meter).min(limit);
+    fn increase_with_limit(&mut self, meter: f32, limit: ZIndex) -> ZIndex {
+        self.translation.z = (self.translation.z + meter).min(*limit);
+        self.translation.z_index()
     }
 
-    fn reached(&self, target: f32, precision: DecimalPoint) -> bool {
-        let diff = (target - self.translation.z).abs();
+    fn reached(&self, target: ZIndex, precision: DecimalPoint) -> bool {
+        let diff = (*target - self.translation.z).abs();
 
         diff <= precision.to_f32()
     }

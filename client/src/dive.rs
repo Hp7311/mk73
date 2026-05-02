@@ -1,16 +1,17 @@
-use bevy::input::keyboard::Key;
+use crate::BoatType;
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::AlphaMode2d;
-use lightyear::prelude::Controlled;
-use common::boat::{Boat, SubKind};
-use common::{eq, MainCamera, OCEAN_FLOOR, OCEAN_SURFACE};
-use common::primitives::{CustomTransform, DecimalPoint, MeshBundle, Altitude as _};
-use common::util::calculate_diving_overlay;
-use crate::BoatType;
+use common::primitives::{
+    Altitude as _, CustomTransform, DecimalPoint, GetZIndex, MeshBundle, ZIndex,
+};
+use common::protocol::{EntityOnServer, NewZIndex, SendToServer};
+use common::util::{calculate_diving_overlay, in_states_2};
+use common::{eq, Boat, MainCamera, SubKind, OCEAN_FLOOR, OCEAN_SURFACE};
+use lightyear::prelude::{Controlled, MessageSender};
 
-pub struct DivingPlugin;
+pub(crate) struct DivingPlugin;
 
 impl Plugin for DivingPlugin {
     fn build(&self, app: &mut App) {
@@ -18,10 +19,15 @@ impl Plugin for DivingPlugin {
         app.add_plugins(bevy::sprite_render::Material2dPlugin::<DivingOverlayShader>::default());
         app.add_systems(Startup, spawn_diving_overlay.after(crate::setup));
         app.add_systems(Update, update_diving_overlay);
-        app.add_systems(Update, (
-            update_diving_status.run_if(resource_changed::<ButtonInput<KeyCode>>),
-            act_on_state
-        ).chain().run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))));
+        app.add_systems(
+            FixedUpdate,
+            (
+                update_diving_status.run_if(resource_changed::<ButtonInput<KeyCode>>),
+                act_on_state.run_if(in_states_2(DivingStatus::Diving, DivingStatus::Surfacing)),
+            )
+                .chain()
+                .run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))),
+        );
     }
 }
 
@@ -61,12 +67,12 @@ fn update_diving_overlay(
     if let Some(diving_material) = diving_overlay_material.get_mut(*id) {
         diving_material.player_pos = ship.position.0;
         (diving_material.radius, diving_material.darkness) = calculate_diving_overlay(
-            transform.translation.z,
+            transform.translation.z_index(),
             OCEAN_FLOOR,
             DIVING_OVERLAY_MIN_RADIUS,
             DIVING_OVERLAY_MAX_RADIUS,
             DIVING_OVERLAY_MAX_DARKNESS,
-        )
+        );
     }
 }
 
@@ -75,7 +81,7 @@ enum DivingStatus {
     #[default]
     None,
     Surfacing,
-    Diving
+    Diving,
 }
 fn update_diving_status(
     mut setter: ResMut<NextState<DivingStatus>>,
@@ -101,43 +107,64 @@ fn update_diving_status(
     }
 }
 
-fn act_on_state(ships: Single<(&mut Transform, &Boat), With<Controlled>>, diving_status: Res<State<DivingStatus>>, mut setter: ResMut<NextState<DivingStatus>>) {
-    let (mut transform, boat) = ships.into_inner();
+fn act_on_state(
+    ships: Single<(&mut Transform, &mut ZIndex, &Boat, &EntityOnServer), With<Controlled>>,
+    diving_status: Res<State<DivingStatus>>,
+    mut setter: ResMut<NextState<DivingStatus>>,
+    mut new_z: Single<&mut MessageSender<NewZIndex>>,
+) {
+    let (mut transform, mut z_index, boat, &entity_on_server) = ships.into_inner();
 
     if boat.sub_kind() != SubKind::Submarine {
-        return;
+        warn!("Should .run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))));")
     }
 
     match diving_status.get() {
         DivingStatus::Diving => {
-            transform.decrease_with_limit(boat.diving_speed().get_raw(), OCEAN_FLOOR);
+            *z_index = transform.decrease_with_limit(boat.diving_speed().get_raw(), OCEAN_FLOOR);
+
             if transform.reached(OCEAN_FLOOR, DecimalPoint::Three) {
                 setter.set(DivingStatus::None);
             }
         }
         DivingStatus::Surfacing => {
-            transform.increase_with_limit(boat.diving_speed().get_raw(), OCEAN_SURFACE);
+            *z_index = transform.increase_with_limit(boat.diving_speed().get_raw(), OCEAN_SURFACE);
+
             if transform.reached(OCEAN_SURFACE, DecimalPoint::Three) {
                 setter.set(DivingStatus::None);
             }
         }
-        DivingStatus::None => ()
+        DivingStatus::None => {
+            error!(
+                "Should only act_on_state if in DivingStatus::Diving or DivingStatus::Surfacing"
+            );
+            return;
+        }
     }
+    new_z.send::<SendToServer>(NewZIndex {
+        new_index: *z_index,
+        entity_on_server,
+    });
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone, Copy, Debug, Default)]
 struct DivingOverlayShader {
     #[uniform(0)]
     pub radius: f32,
-    #[cfg(target_arch = "wasm32")]#[uniform(0)]pub _r_padding: Vec3,
+    #[cfg(target_arch = "wasm32")]
+    #[uniform(0)]
+    pub _r_padding: Vec3,
     #[uniform(1)]
     pub player_pos: Vec2,
-    #[cfg(target_arch = "wasm32")]#[uniform(1)]pub _p_padding: Vec2,
+    #[cfg(target_arch = "wasm32")]
+    #[uniform(1)]
+    pub _p_padding: Vec2,
     #[uniform(2)]
     pub darkness: f32,
-    #[cfg(target_arch = "wasm32")]#[uniform(2)]pub _d_padding: Vec3,
+    #[cfg(target_arch = "wasm32")]
+    #[uniform(2)]
+    pub _d_padding: Vec3,
 }
-
 
 const DIVING_OVERLAY_MIN_RADIUS: f32 = 800.0;
 const DIVING_OVERLAY_SHAPE: Rectangle = Rectangle::from_length(2000.0);
@@ -154,12 +181,5 @@ impl bevy::sprite_render::Material2d for DivingOverlayShader {
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
-    }
-}
-
-impl DivingStatus {
-    /// substitute for `run_if` not working on multiple states
-    fn in_state_2(first: Self, second: Self) -> impl Fn(Res<State<DivingStatus>>) -> bool {
-        move |state| *state.get() == first || *state.get() == second
     }
 }

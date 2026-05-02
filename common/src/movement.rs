@@ -9,13 +9,15 @@
 
 // note that we're passing owned vals everywhere which doesn't matter for types smaller than 64 bits
 use crate::boat::Boat;
-use crate::primitives::{CustomTransform, NormalizeRadian, Radian, Speed};
+use crate::primitives::{CustomTransform, LastSpeed, NormalizeRadian, Radian, Speed, TargetRotation, WrapRadian};
 use crate::protocol::{Move, Rotate};
 use crate::primitives::OutOfBound;
 use crate::world::WorldSize;
 
 use bevy::prelude::*;
 use lightyear::prelude::input::native::ActionState;
+use crate::{eq, Weapon};
+use crate::util::move_with_rotation;
 
 /// plugin to verify inputs and apply them to [`CustomTransform`]
 ///
@@ -23,20 +25,25 @@ use lightyear::prelude::input::native::ActionState;
 ///
 /// for client: local prediction
 /// for server: confirmation of input and prediction
+/// 
+/// also includes weapon moving, can be disabled via `move_weapon`, see [`WeaponMovementPlugin`]
 pub struct MovementPlugin {
     pub is_server: bool,
+    pub move_weapon: bool
 }
 
+// wow, private documented items can be seen from public
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
-        // [`FixedUpdate`] because inputs are tick-synced
-        match self.is_server {
-            true => {
-                app.add_systems(FixedUpdate, (server::rotate, server::move_));
-            }
-            false => {
-                app.add_systems(FixedUpdate, (client::rotate, client::move_));
-            }
+        // `FixedUpdate` because inputs are tick-synced
+        if self.is_server  {
+            app.add_systems(FixedUpdate, (server::rotate, server::move_));
+        } else {
+            app.add_systems(FixedUpdate, (client::rotate, client::move_));
+        }
+        
+        if self.move_weapon {
+            app.add_plugins(WeaponMovementPlugin);
         }
     }
 }
@@ -156,5 +163,64 @@ fn validate_speed_cheating(target: &Speed, max_speed: Speed, reverse_max_speed: 
         PlayerValidity::PotentialCheating
     } else {
         PlayerValidity::Normal
+    }
+}
+
+/// requires each weapon entity to have:
+/// - `Transform`
+/// - `TargetRotation`
+/// - `Weapon`
+/// - `LastSpeed`
+struct WeaponMovementPlugin;
+
+impl Plugin for WeaponMovementPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(FixedUpdate, (rotate_weapon, move_weapon).chain());  // chain and FixedUpdate for minimal diff between server and cient
+    }
+}
+
+
+fn rotate_weapon(q: Query<(&mut Transform, &TargetRotation, &Weapon)>) {
+    for (mut transform, target, weapon) in q {
+        let max_turn_radian = weapon.max_turn_radian();
+        let current_rotation = transform.rotation.wrap_radian();
+
+        let moved_from_current = (target.0 - current_rotation).normalize();
+
+        if eq!(moved_from_current.0, 0.0) {
+            continue;
+        }
+
+        if moved_from_current.abs() > max_turn_radian {
+            if moved_from_current.0 < 0.0 {
+                transform.rotate_local_z(-max_turn_radian.0);
+            } else {
+                transform.rotate_local_z(max_turn_radian.0);
+            }
+        } else {
+            transform.rotate_local_z(moved_from_current.0);
+        }
+    }
+}
+
+fn move_weapon(query: Query<(&mut Transform, &Weapon, &mut LastSpeed)>) {
+    for (mut transform, weapon, mut last_speed) in query {
+        let mut speed = last_speed.0;
+        let speed_diff = weapon.max_speed() - last_speed.0;
+        let acceleration = weapon.acceleration();
+
+        if speed_diff > acceleration {
+            speed += acceleration;
+        } else if speed_diff < -acceleration {
+            speed -= acceleration;
+        } else if speed_diff.abs() > 0.1 {
+            speed = weapon.max_speed();
+        } // weapons don't have dynamic speeds. therefore it'll always try to go at max speed
+
+        last_speed.0 = speed;
+
+        // update transform
+        let move_by = move_with_rotation(transform.rotation.wrap_radian(), speed, transform.translation.z);
+        transform.translation += move_by;
     }
 }

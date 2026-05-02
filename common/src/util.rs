@@ -6,10 +6,24 @@ use crate::MainCamera;
 use crate::primitives::{Radian, Speed};
 use crate::primitives::{DecimalPoint, Mk48Rect, WidthHeight};
 
+
+pub fn in_states_2<T: States>(first: T, second: T)  -> impl Fn(Res<State<T>>) -> bool {
+    move |state| *state.get() == first || *state.get() == second
+}
+
 #[macro_export]
 macro_rules! eq {
     ($x:expr, $y:expr) => {
-        ($x - $y).abs() <= 0.001
+        ($x - $y).abs() < 0.001
+    };
+    ($x:expr, $y:expr, ?vec2) => {
+        ($x - $y).abs().x < 0.001 && ($x - $y).abs().y < 0.001
+    };
+    ($x:expr, $y:expr, ?vec2, ?precision = $precision:expr) => {
+        ($x - $y).abs().x < $precision && ($x - $y).abs().y < $precision
+    };
+    ($x:expr, $y:expr, ?vec3) => {
+        ($x - $y).abs().x < 0.001 && ($x - $y).abs().y < 0.001 && ($x - $y).abs().z < 0.001
     };
 }
 
@@ -67,6 +81,7 @@ pub fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
     ret
 }
 
+use crate::primitives::ZIndex;
 /// returns the (radius, darkness (0..1)) to be passed into shaders
 ///
 /// the closer to the surface(0.0), the bigger the radius, smaller the darkness and vice versa
@@ -74,17 +89,17 @@ pub fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
 /// note that we're returning the maximum darkness if calculated value exceeds instead of calculating the darkness according
 /// to the range between 0 and max_darkness
 pub fn calculate_diving_overlay(
-    altitude: f32,
-    ocean_floor: f32,
+    altitude: ZIndex,
+    ocean_floor: ZIndex,
     min_radius: f32,
     max_radius: f32,
     max_darkness: f32,
 ) -> (f32, f32) {
-    if altitude > 0.0 {
+    if *altitude > 0.0 {
         return (max_radius, 0.0); // consider panicking?
     }
 
-    assert!(ocean_floor < 0.0);
+    assert!(*ocean_floor < 0.0);
     assert!(altitude >= ocean_floor);
     assert!(max_radius > min_radius);
 
@@ -243,6 +258,7 @@ impl<T> InputExt for T {
 
 #[cfg(test)]
 mod tests {
+    use crate::primitives::WrapZIndex;
     use super::*;
     #[test]
     fn test_get_rotate_radians() {
@@ -273,7 +289,7 @@ mod tests {
     }
     #[test]
     fn test_div_overlay() {
-        let target = calculate_diving_overlay(-0.4, -2.0, 30.0, 50.0, 0.4);
+        let target = calculate_diving_overlay(-0.4.wrap_z(), -2.0.wrap_z(), 30.0, 50.0, 0.4);
 
         assert!(eq!(target.1, 0.2));
         assert_eq!(target.0, 46.0);

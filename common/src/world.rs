@@ -2,7 +2,7 @@ use bevy::{prelude::*, window::PrimaryWindow};
 use lightyear::prelude::{Connected, DeltaManager, Diffable, Disconnected, NetworkTarget, Replicate, Replicated, Server};
 use serde::{Deserialize, Serialize};
 
-use crate::{primitives::{CursorPos, WidthHeight}, util::get_cursor_pos, MainCamera};
+use crate::{primitives::CursorPos, util::get_cursor_pos, MainCamera};
 
 const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
 
@@ -83,8 +83,9 @@ impl WorldSize {
     pub fn get_size(&self) -> Vec2 {
         self.computed
     }
-    pub fn to_rect(&self, center: Vec2) -> Rect {
-        Rect::from_center_size(center, self.computed)
+    /// assumes center is (0, 0)
+    pub fn to_rect(&self) -> Rect {
+        Rect::from_center_size(Vec2::ZERO, self.computed)
     }
 }
 
@@ -99,6 +100,7 @@ fn spawn_sprite(
 ) {
     if world_size.iter().len() != 1 {
         error!("Expected 1 worldsize");
+        return;
     }
     let Ok(world_size) = world_size.get(trigger.entity) else { unreachable!("above handled") };
 
@@ -167,7 +169,6 @@ fn on_new_client(
 ) {
     let Ok(mut world_size) = world_size.single_mut().inspect_err(|e| error!("expected only one worldsize: {e:?}")) else { return; };
     world_size.add_player();
-    info!("Adding WorldSize for client");
 }
 fn on_client_disconnected(
     _trigger: On<Add, Disconnected>,

@@ -17,39 +17,32 @@ use crate::primitives::{Mk48Rect, WrapRadian};
 /// `pos` has center point at the center.
 /// ### Performance
 /// slow if close to the border
-pub fn out_of_bounds(bound: &WorldSize, sprite: Mk48Rect, rotation: Quat) -> bool {  // TODO accept Radian
+pub fn out_of_bounds(bound: &WorldSize, rect: Mk48Rect, rotation: Quat) -> bool {  // TODO accept Radian
     // if not near the border, return without redundant operations
     if !out_of_bound_no_rotation(
         bound,
-        Mk48Rect {
-            center: sprite.center,
-            dimensions: sprite.dimensions.large_bounding_box(),
-        },
+        rect.large_bounding_box()
     ) {
         return false;
     }
 
-    let world_bound = bound.to_rect(vec2(0.0, 0.0));
+    let world_bound = bound.to_rect();
 
-    sprite
+    rect
         .get_relative_corners()
         .map(|corner| rotate_vec2(corner, rotation.wrap_radian()))
         .any(|corner| {
-            let corner = sprite.center + corner;
+            let corner = rect.center + corner;
             !world_bound.contains(corner)
         })
 }
 
 /// faster version of out_of_bounds with a rect, no rotation
+#[inline]
 pub fn out_of_bound_no_rotation(bound: &WorldSize, rect: Mk48Rect) -> bool {
-    let world_bound = Mk48Rect {
-        center: Vec2::ZERO,
-        dimensions: bound.get_size().into(),
-    };
-
-    rect.get_corners()
+    rect.get_two_corners()
         .iter()
-        .any(|corner| !world_bound.contains(*corner))
+        .any(|corner| !bound.to_rect().contains(*corner))
 }
 
 /// returns false if may intersect
