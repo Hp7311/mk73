@@ -13,6 +13,7 @@ pub mod world;
 
 pub use movement::MovementPlugin;
 pub use weapon::Weapon;
+pub use weapon::WeaponType;
 pub use boat::Boat;
 pub use boat::SubKind;
 
@@ -24,8 +25,14 @@ pub const PROTOCOL_ID: u64 = 0;
 
 // --- Z-ordering constants
 use crate::primitives::ZIndex;
+/// primarily for the main [`Boat`] on the surface
 pub const OCEAN_SURFACE: ZIndex = ZIndex(0.0);
 pub const OCEAN_FLOOR: ZIndex = ZIndex(-0.4);
+/// position.z += self when passing to Transform
+pub const POINTS_Z: f32 = -0.1;
+/// position.z += self when passing to Transform
+pub const OIL_RIG_Z: f32 = 0.1;
+/// circle-hud + weapon marker
 pub const CIRCLE_HUD: ZIndex = ZIndex(30.0);
 
 const SERVER_PORT: u16 = 8000;

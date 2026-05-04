@@ -2,9 +2,10 @@
 
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
+use lightyear::websocket::server::Identity;
 use crate::MainCamera;
 use crate::primitives::{Radian, Speed};
-use crate::primitives::{DecimalPoint, Mk48Rect, WidthHeight};
+use crate::primitives::{Mk48Rect, WidthHeight};
 
 
 pub fn in_states_2<T: States>(first: T, second: T)  -> impl Fn(Res<State<T>>) -> bool {
@@ -16,6 +17,9 @@ macro_rules! eq {
     ($x:expr, $y:expr) => {
         ($x - $y).abs() < 0.001
     };
+    ($x:expr, $y:expr, ?precision = $precision:expr) => {
+        ($x - $y).abs() < $precision
+    };
     ($x:expr, $y:expr, ?vec2) => {
         ($x - $y).abs().x < 0.001 && ($x - $y).abs().y < 0.001
     };
@@ -25,12 +29,9 @@ macro_rules! eq {
     ($x:expr, $y:expr, ?vec3) => {
         ($x - $y).abs().x < 0.001 && ($x - $y).abs().y < 0.001 && ($x - $y).abs().z < 0.001
     };
-}
-
-/// the equivalent of `==` only with a specified precision
-pub(crate) fn vec2_eq(x: Vec2, y: Vec2, precision: DecimalPoint) -> bool {
-    let subtracted = (x - y).abs();
-    subtracted.x <= precision.to_f32() && subtracted.y <= precision.to_f32()
+    ($x:expr, $y:expr, ?vec3, ?precision = $precision:expr) => {
+        ($x - $y).abs().x < $precision && ($x - $y).abs().y < $precision && ($x - $y).abs().z < $precision
+    };
 }
 
 /// gets the rotation in radians according to `source` and `destination`
@@ -57,8 +58,10 @@ pub(crate) fn get_cursor_pos(
 }
 
 /// calculates Vec3 to add to `Transform.translation` from the rotation and speed
-pub fn move_with_rotation(rotation: Radian, speed: Speed, z_index: f32) -> Vec3 {
-    (rotation.to_vec() * speed.get_raw()).extend(z_index)
+/// 
+/// doesn't do anything with the Z-axis (why did i make that mistake....)
+pub fn move_with_rotation(rotation: Radian, speed: Speed) -> Vec3 {
+    (rotation.to_vec() * speed.get_raw()).extend(0.0)
 }
 
 
@@ -115,10 +118,7 @@ pub fn calculate_diving_overlay(
 }
 
 pub fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
-    let square = Mk48Rect {
-        center: square_center,
-        dimensions: WidthHeight::splat(square_len),
-    };
+    let square = Mk48Rect::new(square_center, WidthHeight::splat(square_len));
 
     square.contains(point)
 }
@@ -178,7 +178,7 @@ macro_rules! add_dbg_app {
 /// filter defaults to [`With`]
 /// ## Example
 ///
-/// ```ignore
+/// ```norun
 /// print_num!(&mut app, ActionState<Move>, InputMarker<Move>);
 /// // expands to:
 /// let system =  |query:Query<(), (With<ActionState<Move>>, With<InputMarker<Move>>)>| {
@@ -231,6 +231,31 @@ macro_rules! extract {
     };
 }
 
+/// webtransport/websocket certificate, currently not used, using plain websockets
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn from_pem_file(
+    cert_path: impl AsRef<std::path::Path>,
+    key_path: impl AsRef<std::path::Path>,
+) -> Identity {
+    use std::fs;
+
+    let cert_chain_bytes = fs::read(cert_path).unwrap();
+    let key_bytes = fs::read(key_path).unwrap();
+
+    let mut cert_reader = std::io::Cursor::new(cert_chain_bytes);
+    let certs = rustls_pemfile::certs(&mut cert_reader)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    let mut key_reader = std::io::Cursor::new(key_bytes);
+    let key = rustls_pemfile::private_key(&mut key_reader)
+        .unwrap()
+        .unwrap();
+
+    Identity::new(certs, key)
+}
+
+
 /// allows a generic [`into`](Into::into), has a blanket implementation
 ///
 /// ```
@@ -270,7 +295,7 @@ mod tests {
     #[test]
     fn test_move_with_rotation() {
         let rotation = Radian::from_deg(90.0);
-        assert_eq!(move_with_rotation(rotation, Speed::from_raw(2.0), 0.0).y, 2.0);
+        assert_eq!(move_with_rotation(rotation, Speed::from_raw(2.0)).y, 2.0);
     }
     #[test]
     fn test_add_circle_hud() {

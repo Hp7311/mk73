@@ -19,7 +19,7 @@ use lightyear::prelude::input::native::ActionState;
 use crate::{eq, Weapon};
 use crate::util::move_with_rotation;
 
-/// plugin to verify inputs and apply them to [`CustomTransform`]
+/// plugin to verify inputs and apply them to [`CustomTransform`] only
 ///
 /// note that the client is responsible for translating angle + speed to Euclidean coordinates in [`CustomTransform::position`] and [`Transform`]
 ///
@@ -166,6 +166,10 @@ fn validate_speed_cheating(target: &Speed, max_speed: Speed, reverse_max_speed: 
     }
 }
 
+// TODO more advanced moving
+// - going up/down in depth
+// - tracking
+
 /// requires each weapon entity to have:
 /// - `Transform`
 /// - `TargetRotation`
@@ -220,7 +224,7 @@ fn move_weapon(query: Query<(&mut Transform, &Weapon, &mut LastSpeed)>) {
         last_speed.0 = speed;
 
         // update transform
-        let move_by = move_with_rotation(transform.rotation.wrap_radian(), speed, transform.translation.z);
+        let move_by = move_with_rotation(transform.rotation.wrap_radian(), speed);
         transform.translation += move_by;
     }
 }

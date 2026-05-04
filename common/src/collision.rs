@@ -7,7 +7,7 @@ use crate::{
     util::rotate_vec2,
     world::WorldSize,
 };
-use crate::primitives::{Mk48Rect, WrapRadian};
+use crate::primitives::{Mk48Rect, Radian};
 // perfecting out of bound not the priority, will be when polishing
 
 /// check if a Sprite is out-of-bounds by checking it's 4 corners
@@ -17,7 +17,7 @@ use crate::primitives::{Mk48Rect, WrapRadian};
 /// `pos` has center point at the center.
 /// ### Performance
 /// slow if close to the border
-pub fn out_of_bounds(bound: &WorldSize, rect: Mk48Rect, rotation: Quat) -> bool {  // TODO accept Radian
+pub fn out_of_bounds(bound: &WorldSize, rect: Mk48Rect, rotation: Radian) -> bool {
     // if not near the border, return without redundant operations
     if !out_of_bound_no_rotation(
         bound,
@@ -29,9 +29,9 @@ pub fn out_of_bounds(bound: &WorldSize, rect: Mk48Rect, rotation: Quat) -> bool 
     let world_bound = bound.to_rect();
 
     rect
-        .get_relative_corners()
-        .map(|corner| rotate_vec2(corner, rotation.wrap_radian()))
+        .relative_corners()
         .any(|corner| {
+            let corner = rotate_vec2(corner, rotation);
             let corner = rect.center + corner;
             !world_bound.contains(corner)
         })
@@ -40,7 +40,7 @@ pub fn out_of_bounds(bound: &WorldSize, rect: Mk48Rect, rotation: Quat) -> bool 
 /// faster version of out_of_bounds with a rect, no rotation
 #[inline]
 pub fn out_of_bound_no_rotation(bound: &WorldSize, rect: Mk48Rect) -> bool {
-    rect.get_two_corners()
+    rect.two_corners()
         .iter()
         .any(|corner| !bound.to_rect().contains(*corner))
 }
@@ -78,6 +78,7 @@ pub fn square_does_not_intersects(
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /// sat_collision performs continuous rectangle-based separating axis theorem collision.
+#[allow(dead_code)]
 pub(crate) fn sat_collision(
     mut transform: CustomTransform,
     mut dimensions: Vec2,
@@ -129,6 +130,7 @@ pub(crate) fn sat_collision(
 }
 
 /// sat_collision_half performs half an SAT test (checks angles of one of two rectangles).
+#[allow(dead_code)]
 fn sat_collision_half(
     position: Vec2,
     other_position: Vec2,

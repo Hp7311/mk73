@@ -1,25 +1,27 @@
 #![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
 
 mod input;
 mod dive;
 mod weapon;
+mod boat;
+mod oil_rig;
 
-use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
-use bevy::color::palettes::css::{GRAY, TEAL};
+use bevy::color::palettes::css::TEAL;
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::egui::emath::GuiRounding;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use common::primitives::{
-    CustomTransform, MeshBundle, NormalizeRadian as _, OutOfBound, TargetRotation, TargetSpeed, WeaponCounter, WrapRadian as _, ZIndex
+    CustomTransform, ZIndex
 };
-use common::protocol::{Move, NewZIndex, OilRigInfo, PlayerScore, PointInfo, ProtocolPlugin, Rotate};
+use common::protocol::{Move, PlayerScore, ProtocolPlugin, Rotate};
 use common::world::WorldPlugin;
-use common::{CIRCLE_HUD, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, OCEAN_SURFACE, OILRIG_SPRITE_SIZE, Boat, SubKind};
+use common::{Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, SubKind};
 
 use lightyear::netcode::{auth::Authentication, Key, NetcodeClient};
 use lightyear::prelude::{
@@ -30,8 +32,10 @@ use lightyear::prelude::{
     *
 };
 use lightyear::websocket::client::WebSocketTarget;
+use crate::boat::BoatPlugin;
 use crate::dive::DivingPlugin;
 use crate::input::InputBufferPlugin;
+use crate::oil_rig::OilRigPlugin;
 use crate::weapon::WeaponPlugin;
 
 #[cfg(all(not(target_family = "wasm"), not(debug_assertions)))]
@@ -70,15 +74,18 @@ fn main() {
     .add_plugins(PanCameraPlugin)
     .insert_resource(ClearColor(TEAL.into()))
         
-    .add_plugins(DivingPlugin)
-    // init
+    // plugins
     .init_state::<BoatState>()
     .add_plugins(WorldPlugin { is_server: false })
+    .add_plugins(OilRigPlugin)
+    .add_plugins(BoatPlugin)
     .add_plugins(InputBufferPlugin)
+    .add_plugins(MovementPlugin { is_server: false, move_weapon: true })
+    .add_plugins(DivingPlugin)
+    .add_plugins(WeaponPlugin)
 
     // init
     .add_systems(Startup, setup)
-    .add_observer(spawn_boat) // FIXME
     .add_observer(on_added_actionstate::<Rotate>)
     .add_observer(on_added_actionstate::<Move>)
 
@@ -86,15 +93,8 @@ fn main() {
     .add_systems(Update, move_camera)
     //     Update,
     //     boat_to_target.run_if(in_state(BoatState::Released))
-    .add_plugins(MovementPlugin { is_server: false, move_weapon: true })
-    .add_systems(Update, sync_transform_from_custom)
 
-    .add_observer(spawn_rig)
-        
-    .add_observer(spawn_point)
-    .add_systems(Update, sync_point_transform)
-        
-    .add_plugins(WeaponPlugin)
+    .add_systems(FixedUpdate, sync_z_index)
         
     .add_plugins(EguiPlugin::default())
     .add_plugins(WorldInspectorPlugin::default())
@@ -242,16 +242,6 @@ fn update_state(
 #[derive(Event)]
 struct FiresWeapon;
 
-fn sync_transform_from_custom(
-    mut query: Query<(&mut Transform, &CustomTransform), (With<Boat>, Changed<CustomTransform>)>,
-) {
-    for (mut transform, custom) in query.iter_mut() {
-        transform.translation.x = custom.position.x;
-        transform.translation.y = custom.position.y;
-        transform.rotation = custom.rotation.to_quat();
-    }
-}
-
 // targetrotation & targetspeed achieved by not clearing ActionState
 
 fn move_camera(
@@ -264,191 +254,18 @@ fn move_camera(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn spawn_boat(
-    trigger: On<Add, CustomTransform>,
-    boats: Query<&Boat>,
-    customs: Query<(&CustomTransform, &ZIndex)>,//, With<Boat>>,
-    controlled: Query<(), (With<Boat>, With<Controlled>)>,
-
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+/// here, we assumeee the modified ZIndex is the correct val to use for rendering
+fn sync_z_index(
+    query: Query<(&ZIndex, &mut Transform), (With<Boat>, Without<Controlled>, Changed<ZIndex>)>
 ) {
-    let (&custom, &z_index) = customs.get(trigger.entity).unwrap();
-    let &boat = boats.get(trigger.entity).unwrap();
-    let controls = controlled.get(trigger.entity).is_ok();
-
-    commands
-        .get_entity(trigger.entity).unwrap()
-        .insert_if_new(BoatBundle {
-            boat,
-            // TODO WeaponCounter, OutOfBound etc not needed for not controlling boat
-            weapon_counter: WeaponCounter {
-                weapons: boat.get_armanents(),
-                selected_weapon: boat.default_weapon(),
-            },
-            sprite: Sprite {
-                image: asset_server.load(boat.file_name()), // preload assets
-                custom_size: Some(boat.sprite_size()),
-                ..default()
-            },
-            transform: Transform {
-                translation: custom.position.extend(z_index),
-                rotation: custom.rotation.to_quat(),
-                ..default()
-            },
-            custom_transform: custom,
-            ..BoatBundle::default()
-        })
-        .with_children(|parent| {
-            if !controls {
-                return;
-            }
-            let circle_hud_radius = boat.circle_hud_radius();
-
-            parent.spawn((
-                MeshBundle {
-                    mesh: Mesh2d(meshes.add(Circle::new(circle_hud_radius).to_ring(3.0))),
-                    materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
-                },
-                Transform::from_xyz(0.0, 0.0, *CIRCLE_HUD)
-            ))
-            .insert(children![
-                // reverse indicators
-                (
-                    Transform::from_xyz(
-                        circle_hud_radius * MINIMUM_REVERSE.cos(),
-                        circle_hud_radius * MINIMUM_REVERSE.sin(),
-                        *CIRCLE_HUD
-                    ),
-                    MeshBundle {
-                        mesh: Mesh2d(meshes.add(Segment2d::from_ray_and_length(
-                            Ray2d::new(Vec2::ZERO, Dir2::new(MINIMUM_REVERSE.wrap_radian().to_vec()).unwrap()),
-                            10.0
-                        ))),
-                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY)))
-                    }
-                ),
-                (
-                    Transform::from_xyz(
-                        circle_hud_radius * (-MINIMUM_REVERSE).cos(),
-                        circle_hud_radius * (-MINIMUM_REVERSE).sin(),
-                        *CIRCLE_HUD
-                    ),
-                    MeshBundle {
-                        mesh: Mesh2d(meshes.add(Segment2d::from_ray_and_length(
-                            Ray2d::new(Vec2::ZERO, Dir2::new((-MINIMUM_REVERSE).wrap_radian().to_vec()).unwrap()),
-                            10.0
-                        ))),
-                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY)))
-                    }
-                )
-            ]);
-        })
-        .insert(Name::new("Client's boat"));
-
-    commands.insert_resource(BoatType(boat.sub_kind()));
-}
-
-fn spawn_rig(
-    trigger: On<Add, OilRigInfo>,
-    rigs: Query<&OilRigInfo>,
-    assert_server: Res<AssetServer>,
-    mut commands: Commands
-) {
-    // NOTE client-inserted components get removed when server despawns the replicating entity
-    let Ok(rig_info) = rigs.get(trigger.entity) else { panic!() };
-
-    commands.get_entity(trigger.entity).unwrap().insert((
-        Transform {
-            translation: rig_info.position.extend(0.0),
-            rotation: rig_info.rotation.to_quat(),
-            ..default()
-        },
-        Sprite {
-            image: assert_server.load(rig_info.file_name()),
-            custom_size: Some(OILRIG_SPRITE_SIZE),
-            ..default()
-        },
-        Name::new("Oil rig")
-    ));
-}
-
-// TODO we want points to be "below" the boat, unpredictable with all Z-index = 0.0
-fn spawn_point(
-    trigger: On<Add, PointInfo>,
-    points: Query<&PointInfo>,
-    asset_server: Res<AssetServer>,
-    mut commands: Commands
-) {
-    let point_info = points.get(trigger.entity).unwrap();
-
-    commands.get_entity(trigger.entity).unwrap()
-        .insert((
-            Sprite {
-                image: asset_server.load((*point_info.file_name).to_owned()),
-                custom_size: Some(PointInfo::custom_size()),
-                ..default()
-            },
-            Transform::from_translation(point_info.position),
-            Name::new("Point")
-        ));
-}
-
-fn sync_point_transform(
-    points: Query<(&PointInfo, &mut Transform), Changed<PointInfo>>,
-) {
-    for (info, mut transform) in points {
-        transform.translation.x = info.position.x;
-        transform.translation.y = info.position.y;
+    for (z_index, mut transform) in query {
+        transform.translation.z = z_index.0;
     }
 }
+
 /// for performance improvements in diving
 #[derive(Resource, PartialEq)]
 struct BoatType(SubKind);
-
-#[derive(Bundle, Debug, Clone)]
-pub struct BoatBundle {
-    /// tranform to update in seperate system
-    transform: Transform, // cannot
-    /// ship's sprite
-    sprite: Sprite, // cannot
-    /// whether reversed, speed etc
-    custom_transform: CustomTransform, // check
-    /// where the user's mouse was facing
-    // mouse_target: TargetRotation,
-    /// the target speed of the Boat
-    target_speed: TargetSpeed,
-    out_of_bound: OutOfBound,
-    weapon_counter: WeaponCounter,
-    boat: Boat, // check
-}
-
-impl Default for BoatBundle {
-    /// Should be overwritten:
-    /// - `boat`
-    /// - `weapon_counter`
-    /// - `sprite`
-    /// - `transform`
-    /// - `custom_transform`
-    fn default() -> Self {
-        BoatBundle {
-            transform: Transform::default(),
-            sprite: Sprite::default(),
-            custom_transform: CustomTransform::default(),
-            out_of_bound: OutOfBound(false),
-            // mouse_target: TargetRotation::default(),
-            target_speed: TargetSpeed::default(),
-            weapon_counter: WeaponCounter {
-                weapons: HashMap::new(),
-                selected_weapon: None,
-            },
-            boat: Boat::Yasen, // should be G5
-        }
-    }
-}
 
 fn on_disconnect(trigger: On<Add, Disconnected>, query: Query<&Disconnected>) {
     let disconnected = query.get(trigger.entity).unwrap();
@@ -476,7 +293,7 @@ fn update_gui(
     state: Res<State<BoatState>>,
     custom: Single<&CustomTransform, With<Controlled>>,
     transform: Single<&Transform, With<Controlled>>,
-    player_score: Single<&PlayerScore>
+    player_score: Single<&PlayerScore, With<Controlled>>
 ) {
     let state = format!("{:?}", state.into_inner()).split("State(").last().unwrap().to_owned();
 

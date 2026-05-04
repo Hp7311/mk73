@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use std::ops::Mul;
 use serde::{Deserialize, Serialize};
 use crate::primitives::Radian;
 use crate::{DEFAULT_MAX_TURN_DEG, primitives::Speed};
@@ -11,7 +10,7 @@ pub enum Weapon {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum WeaponType {
+pub enum WeaponType {
     Torpedo,
 }
 

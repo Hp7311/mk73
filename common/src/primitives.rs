@@ -5,17 +5,17 @@ use std::{
     f32::consts::PI,
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
 };
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use bevy::math::FloatPow;
 use rand::distr::StandardUniform;
 use rand::prelude::Distribution;
 use rand::{Rng, RngExt};
-use crate::{boat::Boat, weapon::Weapon};
+use crate::weapon::Weapon;
 use crate::collision::out_of_bounds;
-use crate::util::{move_with_rotation, InputExt};
+use crate::util::move_with_rotation;
 use crate::world::WorldSize;
 
+/// note that this is not updated on client for boats that it doesn't control
 #[derive(Component, Debug, Copy, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct CustomTransform {
     /// along the `rotation`, negative if reversed
@@ -32,19 +32,17 @@ impl CustomTransform {
     }
     /// according to `self.rotation` and `self.speed`, move one frame
     pub fn move_position(&mut self) {
-        self.position.0 += move_with_rotation(self.rotation, self.speed, 0.0).xy();
+        self.position.0 += move_with_rotation(self.rotation, self.speed).xy();
     }
     /// same as [`move_position`] but with bound checking, returns true if success
     pub fn move_position_checked(&mut self, world_size: &WorldSize, sprite_size: Vec2) -> bool {
         let mut target = self.position.0;
-        target += move_with_rotation(self.rotation, self.speed, 0.0).xy();
+        target += move_with_rotation(self.rotation, self.speed).xy();
+
         if out_of_bounds(
             world_size,
-            Mk48Rect {
-                center: target,
-                dimensions: sprite_size.to::<WidthHeight>(),
-            },
-            self.rotation.to_quat()
+            Mk48Rect::new(target, sprite_size),
+            self.rotation
         ) {
             false
         } else {
@@ -75,10 +73,11 @@ pub struct Mk48Rect {
     pub dimensions: WidthHeight,
 }
 
-#[allow(dead_code)]
 impl Mk48Rect {
     /// only left-upper and right-bottom for when 4 is not necessary
-    pub(crate) fn get_two_corners(&self) -> [Vec2; 2] {
+    /// 
+    /// ### DO NOT use for when rotation matter
+    pub(crate) fn two_corners(&self) -> [Vec2; 2] {
         [
             vec2(
                 self.center.x - self.dimensions.width / 2.0,
@@ -91,7 +90,8 @@ impl Mk48Rect {
         ]
     }
     /// all 4 corners
-    pub(crate) fn get_corners(&self) -> [Vec2; 4] {
+    #[allow(dead_code)]
+    pub(crate) fn corners(&self) -> [Vec2; 4] {
         [
             vec2(
                 self.center.x - self.dimensions.width / 2.0,
@@ -112,7 +112,7 @@ impl Mk48Rect {
         ]
     }
     /// all 4 relative corners
-    pub(crate) fn get_relative_corners(&self) -> impl Iterator<Item = Vec2> {
+    pub(crate) fn relative_corners(&self) -> impl Iterator<Item = Vec2> {
         [
             vec2(-self.dimensions.width / 2.0, self.dimensions.height / 2.0),
             vec2(self.dimensions.width / 2.0, self.dimensions.height / 2.0),
@@ -120,21 +120,26 @@ impl Mk48Rect {
             vec2(-self.dimensions.width / 2.0, -self.dimensions.height / 2.0),
         ].into_iter()
     }
-    pub(crate) fn width(&self) -> f32 {
-        self.dimensions.width
+    /// only left-upper and right-bottom for when 4 is not necessary
+    /// 
+    /// ### DO NOT use for when rotation matter
+    #[allow(dead_code)]
+    pub(crate) fn relative_two_corners(&self) -> impl Iterator<Item = Vec2> {
+        [
+            vec2(-self.dimensions.width / 2.0, self.dimensions.height / 2.0),
+            vec2(self.dimensions.width / 2.0, -self.dimensions.height / 2.0)
+        ].into_iter()
     }
-    pub(crate) fn height(&self) -> f32 {
-        self.dimensions.height
-    }
-    pub(crate) fn new(center: Vec2, width: f32, height: f32) -> Self {
+    pub fn new(center: Vec2, dimensions: impl Into<WidthHeight>) -> Self {
         Mk48Rect {
             center,
-            dimensions: WidthHeight { width, height },
+            dimensions: dimensions.into()
         }
     }
-    pub fn from_point(point: Vec2) -> Self {
+    /// makes `dimensions` zero
+    pub fn from_point(point: impl Into<Vec2>) -> Self {
         Mk48Rect {
-            center: point,
+            center: point.into(),
             dimensions: WidthHeight::ZERO
         }
     }
@@ -144,8 +149,9 @@ impl Mk48Rect {
     pub(crate) fn to_rect(self) -> Rect {
         Rect::from_center_size(self.center, self.dimensions.to_vec2())
     }
+    /// creates a large bounding box that is guaranteed to contain self no matter the rotation
     pub(crate) fn large_bounding_box(mut self) -> Self {
-        self.dimensions = self.dimensions.large_bounding_box();
+        self.dimensions = WidthHeight::splat(self.dimensions.max_side() * WidthHeight::LARGE_BOX_MULTIPLIER);
         self
     }
 }
@@ -253,7 +259,7 @@ impl Radian {
     pub fn rotate_local_z(&mut self, angle: Radian) {
         *self = Radian(self.0 + angle.0).normalize();
     }
-    // TODO test
+    // test
     /// normalizing and rotating
     pub fn rotate_local_z_ret(&self, angle: Radian) -> Self {
         Radian(self.0 + angle.0).normalize()
@@ -273,7 +279,7 @@ impl Radian {
 }
 
 impl Distribution<Radian> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, mut rng: &mut R) -> Radian {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Radian {
         Radian(rng.random())
     }
 }
@@ -331,25 +337,27 @@ impl WrapRadian for Radian {
     }
 }
 
-#[derive(
-    Component,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Deref,
-    PartialOrd,
-    Copy,
-    Clone,
-    Debug,
-    Reflect,
-    Default
-)]
+/// only used by the [`Boat`] entity to indicate the depth without bloating [`CustomTransform`] as a Component currently,  
+/// also tricky because [`CustomTransform`] is both locally predicted and remotely while [`ZIndex`] should be client-authoritive
+/// 
+/// ### Important
+/// only for the physics depth, NOT the rendering depth ([`Transform::translation`])
+/// 
+/// also used for strong typing
+#[derive(Component, Serialize, Deserialize, PartialEq, Deref, PartialOrd, Copy, Clone, Debug, Default)]
 pub struct ZIndex(pub f32);
 
 impl Sub for ZIndex {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         Self(self.0 - rhs.0)
+    }
+}
+
+impl Add for ZIndex {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
     }
 }
 impl Neg for ZIndex {
@@ -387,7 +395,7 @@ impl AddAssign for Position {
     }
 }
 impl Position {
-    /// making [`ZIndex`] Newtype work smoothly
+    /// ## NOT for rendering, only physics
     pub fn extend(self, z_index: ZIndex) -> Vec3 {
         self.0.extend(z_index.0)
     }
@@ -524,9 +532,6 @@ impl WidthHeight {
         width: 0.0,
         height: 0.0,
     };
-    pub(crate) fn to_rect(self, center_pos: Vec2) -> Rect {
-        Rect::from_center_size(center_pos, vec2(self.width, self.height))
-    }
     pub(crate) fn to_vec2(self) -> Vec2 {
         vec2(self.width, self.height)
     }
@@ -543,10 +548,6 @@ impl WidthHeight {
             self.height
         }
     }
-    /// creates a large bounding box that is guaranteed to contain self no matter the rotation
-    pub(crate) fn large_bounding_box(self) -> Self {
-        Self::splat(self.max_side() * Self::LARGE_BOX_MULTIPLIER)
-    }
 }
 
 impl From<Vec2> for WidthHeight {
@@ -557,44 +558,3 @@ impl From<Vec2> for WidthHeight {
         }
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use crate::{boat::CircleHud, util::eq};
-
-//     use super::*;
-//     #[test]
-//     fn test_flip() {
-//         let src = 80.0f32.to_radians();
-//         let expected = -100.0f32.to_radians();
-
-//         assert!(eq(src.flip(), expected, DecimalPoint::Three));
-//     }
-//     #[test]
-//     fn test_circle_hud() {
-//         let circle_hud = CircleHud {
-//             radius: 3.0,
-//             center: vec2(0., 0.),
-//         };
-
-//         let target = vec2(2.8, 0.0);
-
-//         assert!(circle_hud.contains(target))
-//     }
-//     #[test]
-//     fn test_mkrect() {
-//         let rect = MkRect {
-//             center: vec2(0.0, 0.0),
-//             dimensions: WidthHeight::splat(10.0),
-//         };
-
-//         let expected = [
-//             vec2(-5.0, 5.0),
-//             vec2(5.0, 5.0),
-//             vec2(5.0, -5.0),
-//             vec2(-5.0, -5.0),
-//         ];
-
-//         assert_eq!(rect.get_corners(), expected);
-//     }
-// }

@@ -194,4 +194,3 @@ fn get_multiplayer_by_player_num(player_num: u32) -> u32 {
         _ => 7,
     }
 }
-// TODO test this by setting smaller

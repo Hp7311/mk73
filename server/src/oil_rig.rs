@@ -1,5 +1,3 @@
-//! functions related to Oil Rigs
-
 use std::{f32::consts::PI, ops::Range};
 use std::sync::Arc;
 use bevy::prelude::*;
@@ -8,14 +6,18 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use lightyear::prelude::{NetworkTarget, Replicate};
 use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
-use common::{eq, print_num, OCEAN_SURFACE, OILRIG_SPRITE_SIZE, Boat};
+use common::{Boat, OCEAN_SURFACE, OILRIG_SPRITE_SIZE, eq};
 use common::collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects};
-use common::primitives::{in_range, CustomTransform, Mk48Rect, Radian, WidthHeight, ZIndex};
-use common::protocol::{NewZIndex, OilRigInfo, PlayerScore, PointInfo};
+use common::primitives::{in_range, CustomTransform, Mk48Rect, Radian, ZIndex};
+use common::protocol::{OilRigInfo, PlayerScore, PointInfo};
 use common::util::{point_in_square, tiles_around_point};
 use common::world::WorldSize;
 
-/// client
+/// Replicated for OilRig entity:
+/// - [`OilRigInfo`]
+/// 
+/// Replicated for Point entity:
+/// - [`PointInfo`]
 pub struct OilRigPlugin;
 
 impl Plugin for OilRigPlugin {
@@ -27,6 +29,14 @@ impl Plugin for OilRigPlugin {
             )
             .add_plugins(EguiPlugin::default())
             .add_plugins(WorldInspectorPlugin::default());
+        app.add_systems(Update, hi);
+    }
+}
+fn hi(query: Query<&PointInfo>) {
+    for PointInfo { depth, .. } in query {
+        if *depth != OCEAN_SURFACE {
+            info!("WOW, it's at {}", **depth);
+        }
     }
 }
 
@@ -45,7 +55,9 @@ const POINT_SPEED: f32 = 2.0;
 #[derive(Component, Debug, Copy, Clone)]
 struct OilRig;
 
-fn spawn_rigs(trigger: On<Add, WorldSize>, mut commands: Commands, world_size: Single<&WorldSize>) {
+// TODO use sets
+// TODO this doesn't account for worldsize fluctuations
+fn spawn_rigs(_: On<Add, WorldSize>, mut commands: Commands, world_size: Single<&WorldSize>) {
     let mut rng = rand::rng();
 
     let mut spawned_rigs = vec![];
@@ -90,11 +102,8 @@ fn spawn_random_rig(
         );
         if out_of_bounds(
             world_size,
-            Mk48Rect {
-                center,
-                dimensions: SPRITE_SIZE.into(),
-            },
-            Quat::from_rotation_z(rotation),
+            Mk48Rect::new(center, SPRITE_SIZE),
+            Radian(rotation),
         ) {
             continue;
         }
@@ -174,24 +183,23 @@ fn rig_spawn_points(
                     !out_of_bound_no_rotation(
                         // okay to not use with rotation outofbound because how small a point is
                         &world_size,
-                        Mk48Rect {
-                            center: tile,
-                            dimensions: WidthHeight::ZERO,
-                        },
+                        Mk48Rect::from_point(tile)
                     )
                 })
                 .copied()
                 .collect();
 
             let &chosen_type = Point::ALL.choose(&mut rng).unwrap();
-            let &chosen_tile = available_tiles.choose(&mut rng).unwrap();  // TODO not efficient
+            let &chosen_tile = available_tiles.choose(&mut rng).unwrap();  // TODO not efficient, vec2(rand, rand) instead
 
             commands.spawn((
                 chosen_type,
                 ParentRig(id),
 
                 PointInfo {
-                    position: chosen_tile.extend(OCEAN_SURFACE.0),
+                    position: chosen_tile,
+                    // default spawns on water surface
+                    depth: OCEAN_SURFACE,
                     file_name: Arc::from(chosen_type.file_name())
                 },
                 Replicate::to_clients(NetworkTarget::All)
@@ -203,18 +211,25 @@ fn rig_spawn_points(
 }
 
 /// move points toward ships that have a circle hud overlapping them
+/// 
+/// ignoring moving in the Z-axis
 fn move_points(
     mut points_transform: Query<&mut PointInfo, With<Point>>,
     boats: Query<(&Boat, &CustomTransform, &ZIndex), Without<Point>>,
 ) {
+    // TODO points should "lock in" to a boat once it starts to dive
     // TODO use systemsets for scheduling
     // TODO consider locally predicting the visible of map's points, 可見的lag在debug mode
     for (boats_in_range, mut point) in points_transform.iter_mut().filter_map(|point_info| {
         let boats_in_range = boats
             .iter()
-            .filter(|(boat, CustomTransform { position, ..}, z)| in_range(position.0, point_info.position.xy(), boat.circle_hud_radius()) && eq!(z.0, point_info.position.z))
-            .map(|(_, CustomTransform { position, ..}, z)| position.0.extend(**z))
+            .filter(|&(boat, CustomTransform { position: boat_pos, ..}, boat_depth)| {
+                in_range(boat_pos.0, point_info.position, boat.circle_hud_radius())
+                    && eq!(*boat_depth, point_info.depth)
+            })
+            .map(|(_, CustomTransform { position, ..}, _)| position.0)
             .collect::<Vec<_>>();
+
         if boats_in_range.is_empty() {
             None
         } else {
@@ -230,12 +245,10 @@ fn move_points(
             continue;
         }
 
-        // calculate the distance and make the point go to the nearest ship
-        let boat_position = boats_in_range.iter().min_by_key(|boat_position| {
-            Vec2::distance_squared(point.position.xy(), boat_position.xy()) as u32  // casts away the Z index
+        let boat_position = boats_in_range.iter().min_by_key(|&boat_position| {
+            Vec2::distance_squared(point.position, *boat_position) as u32
         }).unwrap();
 
-        // we care about the Z index when moving the point
         point.position = point.position
             .move_towards(*boat_position, POINT_SPEED);
     }
@@ -245,21 +258,22 @@ fn move_points(
 fn points_obsorbed_despawn(
     mut commands: Commands,
     points_transform: Query<(&PointInfo, &Point, &ParentRig, Entity)>,
-    mut boats: Query<(&Boat, &CustomTransform, &ZIndex, &mut PlayerScore)>,
+    mut boats: Query<(&CustomTransform, &ZIndex, &mut PlayerScore), With<Boat>>,
     mut point_amounts: Query<&mut PointAmount, With<OilRig>>,
 ) {
     for (point_transform, point, parent_rig, id) in points_transform.iter() {
         if let Some(mut player_score) = boats
             .iter_mut()
-            .find(|&(_, custom, z_index, _)| eq!(custom.position.extend(*z_index), point_transform.position, ?vec3))
-            .map(|(_boat, _custom, _z_index, score_counter)| score_counter)
+            .find(|&(custom, z_index, _)| eq!(custom.position.extend(*z_index), point_transform.to_actual_translation(), ?vec3))
+            .map(|(_, _, score)| score)
         {
             commands.get_entity(id).unwrap().despawn();
+
+            player_score.add_to_score(point.worth() as u32);
 
             let mut point_amount = point_amounts.get_mut(parent_rig.0).unwrap();
             point_amount.remove(point.worth());
 
-            player_score.add_to_score(point.worth() as u32);
         }
     }
 }
@@ -281,9 +295,6 @@ impl Point {
             Self::Coin => "coin.png",
             Self::Scrap => "scrap.png",
         }
-    }
-    fn custom_size() -> Vec2 {
-        vec2(5.0, 5.0)
     }
 }
 

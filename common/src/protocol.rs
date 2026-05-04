@@ -1,10 +1,8 @@
 //! defines structures to be sent between client and server
 
-use std::rc::Rc;
 use std::sync::Arc;
 use crate::{
-    boat::Boat,
-    primitives::{CustomTransform, Radian, Speed},
+    OCEAN_SURFACE, OIL_RIG_Z, OILRIG_SPRITE_SIZE, POINTS_Z, boat::Boat, primitives::{CustomTransform, Radian, Speed}
 };
 use bevy::{ecs::entity::MapEntities, prelude::*};
 use lightyear::{
@@ -52,22 +50,58 @@ pub struct OilRigInfo {
 }
 
 impl OilRigInfo {
-    pub fn file_name(&self) -> &'static str {
+    pub fn file_name() -> &'static str {
         "oil_platform.png"
+    }
+    pub fn z_index_transform() -> f32 {
+        *OCEAN_SURFACE + OIL_RIG_Z
+    }
+    pub fn custom_size() -> Vec2 {
+        OILRIG_SPRITE_SIZE
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Component)]
 pub struct PointInfo {
-    /// may be point depth fluctuations
-    pub position: Vec3,
+    /// Vec3.z is the theoretical, NOT necessarily rendering
+    pub position: Vec2,
+    pub depth: ZIndex,
     /// currently not doing prediction etc
     pub file_name: Arc<str>
 }
 
 impl PointInfo {
+    pub fn new(position: Vec2, depth: ZIndex, file_name: &str) -> Self {
+        Self {
+            position,
+            depth,
+            file_name: Arc::from(file_name)
+        }
+    }
     pub fn custom_size() -> Vec2 {
         vec2(5.0, 5.0)
+    }
+    /// ## use for [`Transform`]
+    /// don't use for physics
+    pub fn to_translation(&self) -> Vec3 {
+        self.position.extend(*self.depth + POINTS_Z)
+    }
+    /// ## DO NOT use this for [`Transform`],  
+    /// only for physics
+    pub fn to_actual_translation(&self) -> Vec3 {
+        self.position.extend(*self.depth)
+    }
+}
+
+impl Ease for PointInfo {
+    fn interpolating_curve_unbounded(start: Self, end: Self) -> impl Curve<Self> {
+        FunctionCurve::new(Interval::UNIT, move |t| {
+            Self {
+                position: Vec2::lerp(start.position, end.position, t),
+                depth: ZIndex(f32::lerp(start.depth.0, end.depth.0, t)),
+                file_name: end.file_name.clone()
+            }
+        })
     }
 }
 #[derive(Debug, Clone, Copy, /*Resource, */ Default, Component, Deserialize, Serialize, PartialEq)]
@@ -116,7 +150,7 @@ pub struct EntityOnClient(pub u64);
 #[derive(Debug, Deserialize, Serialize)]
 pub enum WeaponRollBack {
     Transform {
-        position: Vec2,
+        position: Vec3,
         rotation: Radian,
         entity: EntityOnClient
     },
@@ -125,22 +159,13 @@ pub enum WeaponRollBack {
     }
 }
 
-/// client sends updates to controlling boat's Z-index to the server as a Message
+/// client sends updates to controlling boat's Z-index(physical depth) to the server as a Message
 ///
 /// requires [`EntityOnServer`] to be given and correctly represent the boat's entity on the server world
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct NewZIndex {
     pub new_index: ZIndex,
     pub entity_on_server: EntityOnServer
-}
-
-/// not controlled
-///
-/// we update this when Transform of a weapon in server is updated, then replicated into other client's worlds
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Component, Copy)]
-pub struct WeaponCustomTransform {
-    pub position: Vec3,
-    pub rotation: Radian
 }
 
 /// message sender and manager are inserted on every [`ClientOf`] entity on server
@@ -152,6 +177,7 @@ impl Plugin for ProtocolPlugin {
         app.register_component::<WorldSize>().add_delta_compression::<u32>();
         app.register_component::<Boat>();
         app.register_component::<WeaponCounter>();
+        app.register_component::<Transform>();
         app.register_component::<CustomTransform>().add_prediction()
             .add_linear_interpolation();
         app.register_component::<ZIndex>();
@@ -161,7 +187,7 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<NewZIndex>().add_direction(NetworkDirection::ClientToServer);
 
         app.register_component::<OilRigInfo>();
-        app.register_component::<PointInfo>();
+        app.register_component::<PointInfo>().add_linear_interpolation();
 
         app.register_component::<PlayerScore>();
 
@@ -174,7 +200,6 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<SpawnWeapon>().add_direction(NetworkDirection::ClientToServer);
         app.register_message::<WeaponRollBack>().add_direction(NetworkDirection::ServerToClient);
 
-        app.register_component::<WeaponCustomTransform>();
         app.register_component::<Weapon>();
 
         app.add_channel::<SendToClient>(ChannelSettings {

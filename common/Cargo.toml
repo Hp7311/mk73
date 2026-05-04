@@ -9,3 +9,4 @@ lightyear = {workspace = true}
 rand = "0.10"
 getrandom = { version = "0.2.17", features = ["js"] }
 serde = { workspace = true }
+rustls-pemfile = "2"

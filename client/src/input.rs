@@ -14,7 +14,7 @@
 
 use bevy::prelude::*;
 use common::{Boat, eq, primitives::{
-    CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Radian, Speed,
+    CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Speed,
     WrapRadian as _,
 }, protocol::{Move, Rotate}, util::{add_circle_hud, calculate_from_proportion, get_rotate_radian}};
 use lightyear::{
@@ -39,7 +39,6 @@ impl Plugin for InputBufferPlugin {
             FixedPreUpdate,
             (buffer_rotate, buffer_move)
                 .in_set(InputSystems::WriteClientInputs)
-                // .run_if(resource_changed::<CursorPos>)  // TODO commenting this out fixes lag ish
                 .run_if(in_states_2(
                     BoatState::Moving { locked: true },
                     BoatState::Moving { locked: false }
@@ -50,8 +49,6 @@ impl Plugin for InputBufferPlugin {
     }
 }
 
-struct RotateToTarget(Radian);
-struct MoveToTarget(Speed);
 
 /// buffer the [`ActionState<Rotate>`] for the target rotation the client wants to go to
 /// i.e. not modifying ActionState outside [here](self)
@@ -128,13 +125,15 @@ fn buffer_move(
 }
 
 /// indicates whether ship is reversed.
-///
+/// 
 /// used to communicate between rotate input buffering and moving input buffering
 #[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut, Resource)]
 struct Reversed(pub bool);
 
 
 /// clear [`ActionState<Rotate>`] if reached
+/// 
+/// note that we're not clearing ActionSpeed<Move> because of moving issues
 fn check_reached(
     query: Single<(&CustomTransform, &mut ActionState<Rotate>), (With<Controlled>, Changed<CustomTransform>)>
 ) {

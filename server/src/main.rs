@@ -3,11 +3,7 @@ mod weapon;
 
 use std::time::Duration;
 
-use bevy::{
-    color::palettes::css::{GRAY, TEAL},
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    prelude::*,
-};
+use bevy::prelude::*;
 use common::{
     LOCAL_SERVER_ADDR, PROTOCOL_ID, Boat, MovementPlugin, OCEAN_SURFACE,
     primitives::{ZIndex, CustomTransform, OutOfBound, Position, WeaponCounter},
@@ -16,7 +12,6 @@ use common::{
 };
 use lightyear::{
     prelude::input::native::ActionState,
-    websocket::server::Identity,
 };
 use lightyear::{
     netcode::NetcodeServer,
@@ -25,7 +20,7 @@ use lightyear::{
         *,
     },
 };
-use common::protocol::{EntityOnServer, NewZIndex, OilRigInfo, PlayerScore};
+use common::protocol::{EntityOnServer, NewZIndex, PlayerScore};
 use crate::oil_rig::OilRigPlugin;
 use crate::weapon::WeaponPlugin;
 
@@ -139,41 +134,21 @@ fn handle_connected_client(
 }
 
 fn recv_new_z_index(
-    mut rx: Single<&mut MessageReceiver<NewZIndex>>,
+    rxs: Query<&mut MessageReceiver<NewZIndex>>,
     mut z_index: Query<&mut ZIndex>
 ) {
-    for msg in rx.receive() {
-        let Ok(mut z_index) = z_index.get_mut(Entity::from_bits(msg.entity_on_server.0)) else { unreachable!(); };
+    for mut rx in rxs {
+        for msg in rx.receive() {
+            let Ok(mut z_index) = z_index.get_mut(Entity::from_bits(msg.entity_on_server.0)) else { unreachable!(); };
 
-        *z_index = msg.new_index;
+            trace!("New Z-index: {}", msg.new_index.0);
+            *z_index = msg.new_index;
+        }
     }
 }
 
-
-/// webtransport certificate
-fn from_pem_file(
-    cert_path: impl AsRef<std::path::Path>,
-    key_path: impl AsRef<std::path::Path>,
-) -> Identity {
-    use std::fs;
-
-    let cert_chain_bytes = fs::read(cert_path).unwrap();
-    let key_bytes = fs::read(key_path).unwrap();
-
-    let mut cert_reader = std::io::Cursor::new(cert_chain_bytes);
-    let certs = rustls_pemfile::certs(&mut cert_reader)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-
-    let mut key_reader = std::io::Cursor::new(key_bytes);
-    let key = rustls_pemfile::private_key(&mut key_reader)
-        .unwrap()
-        .unwrap();
-
-    Identity::new(certs, key)
-}
-
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use bevy::log::LogPlugin;
