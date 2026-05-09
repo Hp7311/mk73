@@ -30,7 +30,6 @@ use crate::util::move_with_rotation;
 /// 
 /// also includes weapon moving, can be disabled via `move_weapon`, see [`WeaponMovementPlugin`]
 pub struct MovementPlugin {
-    pub is_server: bool,
     pub move_weapon: bool
 }
 
@@ -38,67 +37,58 @@ pub struct MovementPlugin {
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
         // `FixedUpdate` because inputs are tick-synced
-        if self.is_server  {
-            app.add_systems(FixedUpdate, (server::rotate, server::move_));
-        } else {
-            app.add_systems(FixedUpdate, (client::rotate, client::move_));
-        }
+        #[cfg(feature = "client")]
+        app.add_systems(FixedUpdate, (client::rotate, client::move_));
+        #[cfg(feature = "server")]
+        app.add_systems(FixedUpdate, (server::rotate, server::move_));
         
         if self.move_weapon {
             app.add_plugins(WeaponMovementPlugin);
         }
     }
 }
-
+#[cfg(feature = "server")]
 mod server {
-    use bevy::prelude::*;
-    use lightyear::prelude::input::native::ActionState;
-    use crate::boat::Boat;
-    use crate::primitives::*;
-    use crate::protocol::{Rotate, Move};
-    use crate::world::WorldSize;
+    use super::*;
 
     pub fn rotate(
         query: Query<(&ActionState<Rotate>, &mut CustomTransform, &Boat)>,
     ) {
         for (action, mut custom, boat) in query {
-            super::rotate(action, &mut custom, boat)
+            super::rotate_inner(action, &mut custom, boat)
         }
     }
     pub fn move_(query: Query<(&ActionState<Move>, &mut CustomTransform, &mut OutOfBound, &Boat)>, world_size: Single<&WorldSize>) {
         for (action, mut custom, mut out_of_bound, boat) in query {
-            super::move_(action, &mut custom, boat, &world_size, &mut out_of_bound);
+            super::move_inner(action, &mut custom, boat, &world_size, &mut out_of_bound);
         }
     }
 }
+
+#[cfg(feature = "client")]
 mod client {
-    use bevy::prelude::*;
+    use super::*;
     use lightyear::prelude::Controlled;
-    use lightyear::prelude::input::native::ActionState;
-    use crate::boat::Boat;
-    use crate::primitives::*;
-    use crate::protocol::{Rotate, Move};
-    use crate::world::WorldSize;
 
     pub fn rotate(
         query: Single<(&ActionState<Rotate>, &mut CustomTransform, &Boat), With<Controlled>>,
     ) {
         let (action, mut custom, boat) = query.into_inner();
-        super::rotate(action, &mut custom, boat)
+        super::rotate_inner(action, &mut custom, boat)
     }
     pub fn move_(query: Single<(&ActionState<Move>, &mut CustomTransform, &mut OutOfBound, &Boat), With<Controlled>>, world_size: Single<&WorldSize>) {
         let (action, mut custom, mut out_of_bound, boat) = query.into_inner();
-        super::move_(action, &mut custom, boat, world_size.into_inner(), &mut out_of_bound);
+        super::move_inner(action, &mut custom, boat, world_size.into_inner(), &mut out_of_bound);
     }
 }
 
-fn rotate(rotate: &ActionState<Rotate>, custom: &mut CustomTransform, boat: &Boat) {
-    let Some(mut target) = rotate.0.0 else { return; };
+fn rotate_inner(rotate_input: &ActionState<Rotate>, custom: &mut CustomTransform, boat: &Boat) {
+    let Some(mut target) = rotate_input.0.0 else { return; };
     validate_max_turn(&mut target, custom.rotation, boat.max_turn());
     custom.rotation = target;
 }
 
-fn move_(move_input: &ActionState<Move>, custom: &mut CustomTransform, boat: &Boat, world_size: &WorldSize, out_of_bound: &mut OutOfBound) {
+fn move_inner(move_input: &ActionState<Move>, custom: &mut CustomTransform, boat: &Boat, world_size: &WorldSize, out_of_bound: &mut OutOfBound) {
     let Some(mut target) = move_input.0.0 else { return; };
     validate_acceleration(&mut target, custom.speed, boat.acceleration());
 

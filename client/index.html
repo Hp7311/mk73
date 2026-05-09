@@ -23,8 +23,7 @@
     <canvas id="bevy_canvas" tabindex="0">Your browser does not support canvas.</canvas>
     <script>
       (function() {
-          // Create a Web Worker dynamically from a string
-          // Web Workers are not subjected to the same aggressive background throttling as the main thread.
+          // post 'tick' message to worker if receives 'start'
           const workerCode = `
               let timer = null;
               self.onmessage = (e) => {
@@ -40,15 +39,12 @@
           const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
           const worker = new Worker(URL.createObjectURL(workerBlob));
 
-          // Save references to the original browser functions
           const nativeRaf = window.requestAnimationFrame;
           const nativeCaf = window.cancelAnimationFrame;
 
-          // State to track pending animation frames
           let callbacks = new Map();
           let idCounter = 0;
 
-          // Override requestAnimationFrame
           window.requestAnimationFrame = (callback) => {
               const id = ++idCounter;
               callbacks.set(id, callback);
@@ -66,12 +62,10 @@
               return id;
           };
 
-          // 4. Override cancelAnimationFrame
           window.cancelAnimationFrame = (id) => {
               callbacks.delete(id);
           };
 
-          // 5. Listen to the Web Worker ticks when in the background
           worker.onmessage = () => {
               if (document.hidden) {
                   const now = performance.now();
@@ -82,7 +76,6 @@
                   
                   for (const [id, callback] of currentCallbacks) {
                       try {
-                          // console.log("Executing a callback stored from Worker");
                           callback(now);
                       } catch (e) {
                           console.error("Error in background rAF callback:", e);
@@ -91,18 +84,18 @@
               }
           };
 
-          // 6. Handle tab visibility changes
           document.addEventListener('visibilitychange', () => {
               if (document.hidden) {
-                  // Tab lost focus: Start the Web Worker metronome
                   worker.postMessage('start');
+                  console.info("Worker starting");
               } else {
-                  // Tab gained focus: Stop the worker and flush any pending frames immediately
                   worker.postMessage('stop');
+                  console.info("Worker stopping");
                   nativeRaf((timestamp) => {
                       const currentCallbacks = Array.from(callbacks.entries());
                       callbacks.clear();
                       for (const [id, callback] of currentCallbacks) {
+                          console.info("calling RAF with id " + id + "with callback " + callback)
                           callback(timestamp);
                       }
                   });
@@ -110,39 +103,5 @@
           });
       })();
   </script>
-  <!-- <script>
-  (function() {
-    const nativeRaf = window.requestAnimationFrame;
-    const workerCode = `
-        let timer = null;
-        self.onmessage = (e) => {
-            if (e.data === 'start') {
-                timer = setInterval(() => self.postMessage('tick'), 33);
-            } else {
-                clearInterval(timer);
-            }
-        };
-    `;
-    const worker = new Worker(URL.createObjectURL(new Blob([workerCode])));
-    
-    let backgroundCallback = null;
-
-    // We only override rAF to capture the callback Bevy is currently using
-    window.requestAnimationFrame = (cb) => {
-        backgroundCallback = cb; 
-        return nativeRaf(cb);
-    };
-
-    worker.onmessage = () => {
-        if (document.hidden && backgroundCallback) {
-            backgroundCallback(performance.now());
-        }
-    };
-
-    document.addEventListener('visibilitychange', () => {
-        worker.postMessage(document.hidden ? 'start' : 'stop');
-    });
-})();
-</script> -->
   </body>
 </html>

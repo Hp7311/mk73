@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 bevy = { workspace = true }
 lightyear = { workspace = true, features = ["udp"]}
-common = { path = "../common" }
+common = { path = "../common", features = ["server"]}
 rand = "0.10"
 bevy-inspector-egui = "0.36.0"
 serde = { version = "1.0.228", features = ["derive"] }

@@ -1,7 +1,7 @@
 use std::hint::black_box;
 use bevy::math::{Vec2, vec2};
 use criterion::{criterion_group, criterion_main, Criterion};
-use common::{collision::{out_of_bound_no_rotation, out_of_bound_point, out_of_bounds}, primitives::{Mk48Rect, Radian}, util::{avaliable_cords, tiles_around_point}, world::WorldSize};
+use common::{collision::{out_of_bound_no_rotation, out_of_bound_point, out_of_bounds}, primitives::{Mk48Rect, Radian}, util::{avaliable_cords, tiles_around_point}, WorldSize};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("Collisions");

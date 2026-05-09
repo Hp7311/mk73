@@ -92,6 +92,7 @@ impl Mk48Rect {
         ]
     }
     /// bottom-left and right-upper
+    #[cfg_attr(feature = "client", allow(dead_code))]
     pub(crate) fn clamp_corners(&self) -> [Vec2; 2] {
         [
             vec2(

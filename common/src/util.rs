@@ -1,12 +1,12 @@
 //! utility functions independent to game
 
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::ops::{Range, RangeInclusive};
 use std::sync::LazyLock;
 // remember high test coverage
-use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
-#[cfg(not(target_family = "wasm"))]
+use bevy::{math::ops::atan2, prelude::*};
+#[cfg(feature = "server")]
 use lightyear::websocket::server::Identity;
-use crate::MainCamera;
 use crate::primitives::{Radian, Speed};
 use crate::primitives::{Mk48Rect, WidthHeight, ZIndex};
 
@@ -49,11 +49,12 @@ pub fn get_rotate_radian(source: Vec2, destination: Vec2) -> f32 {
 }
 
 /// centre point at middle of window
+#[cfg(feature = "client")]
 pub(crate) fn get_cursor_pos(
-    window: &Single<&Window, With<PrimaryWindow>>,
-    camera: &Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+    window: &Window,
+    camera: (&Camera, &GlobalTransform),
 ) -> Option<Vec2> {
-    let (camera, camera_transform) = **camera;
+    let (camera, camera_transform) = camera;
     window
         .cursor_position()
         .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor).ok())
@@ -240,13 +241,13 @@ macro_rules! print_num {
 /// extract or return
 #[macro_export]
 macro_rules! extract {
-    ($in:expr, Option) => {
+    ($in:expr, ?Option) => {
         match $in {
             Some(x) => x,
             None => return,
         }
     };
-    ($in:expr, Result) => {
+    ($in:expr, ?Result) => {
         match $in {
             Ok(x) => x,
             Err(e) => {
@@ -257,9 +258,13 @@ macro_rules! extract {
     };
 }
 
+pub const fn ip_addr(hostname: Ipv4Addr, port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(hostname), port)
+}
+
 /// webtransport/websocket certificate, currently not used, using plain websockets
 #[cfg_attr(debug_assertions, allow(dead_code))]
-#[cfg(not(target_family = "wasm"))]
+#[cfg(feature = "server")]
 fn from_pem_file(
     cert_path: impl AsRef<std::path::Path>,
     key_path: impl AsRef<std::path::Path>,

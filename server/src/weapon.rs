@@ -7,7 +7,11 @@ use common::protocol::SpawnWeapon;
 ///
 /// Replicated to all but client "controlling" the weapon:
 /// - [`Transform`] directly
-/// - [`Weapon`]
+/// - [`Weapon`](common::Weapon)
+/// 
+/// Spawned locally for movement:
+/// - [`TargetRotation`]
+/// - [`LastSpeed`]
 pub(crate) struct WeaponPlugin;
 
 impl Plugin for WeaponPlugin {

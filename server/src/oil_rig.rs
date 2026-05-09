@@ -10,7 +10,7 @@ use common::collision::{out_of_bound_point, out_of_bounds, square_does_not_inter
 use common::primitives::{in_range, CustomTransform, Mk48Rect, Radian, ZIndex};
 use common::protocol::{OilRigTransform as OilRig, PlayerScore, PointTransform};
 use common::util::{avaliable_cords, point_in_square};
-use common::world::WorldSize;
+use common::WorldSize;
 
 /// Replicated for OilRig entity:
 /// - [`OilRigInfo`]

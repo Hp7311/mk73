@@ -3,6 +3,12 @@ name = "common"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# enable client-related plugin impls
+client = []
+# enable server-related plugin impls
+server = []
+
 [dependencies]
 bevy = { workspace = true }
 lightyear = {workspace = true}

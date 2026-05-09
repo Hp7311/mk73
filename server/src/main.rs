@@ -6,7 +6,9 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
 use common::{
-    Boat, LOCAL_SERVER_ADDR, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, primitives::{CustomTransform, OutOfBound, Position, WeaponCounter, ZIndex}, protocol::{Move, ProtocolPlugin, Rotate, SetupServer, SystemSetPlugin}, world::WorldPlugin
+    Boat, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, WorldPlugin,
+    primitives::{CustomTransform, OutOfBound, Position, WeaponCounter, ZIndex},
+    protocol::{Move, ProtocolPlugin, Rotate, SetupServer, SystemSetPlugin}
 };
 use lightyear::{
     prelude::input::native::ActionState,
@@ -39,9 +41,9 @@ fn main() {
         .add_plugins(OilRigPlugin)
         .add_plugins(WeaponPlugin)
         .add_systems(Startup, setup.in_set(SetupServer::Io))
-        .add_plugins(WorldPlugin { is_server: true })
+        .add_plugins(WorldPlugin)
         // handle client action
-        .add_plugins(MovementPlugin { is_server: true, move_weapon: true })
+        .add_plugins(MovementPlugin { move_weapon: true })
         .add_systems(FixedUpdate, recv_new_z_index)
 
         // handle client req
@@ -64,11 +66,11 @@ fn setup(mut commands: Commands) {
     let server = commands
         .spawn((
             NetcodeServer::new(netcode_config),
-            LocalAddr(LOCAL_SERVER_ADDR),
+            LocalAddr(SERVER_ADDR),
             WebSocketServerIo {
                 #[cfg(debug_assertions)]
                 config: ServerConfig::builder()
-                    .with_bind_address(LOCAL_SERVER_ADDR)
+                    .with_bind_address(SERVER_ADDR)
                     .with_no_encryption(),
             },
         ))

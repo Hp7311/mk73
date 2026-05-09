@@ -1,31 +1,49 @@
-use bevy::{prelude::*, window::PrimaryWindow};
-use lightyear::prelude::{Connected, DeltaManager, Disconnected, NetworkTarget, Replicate, Replicated, Server};
+use bevy::prelude::*;
+
 use serde::{Deserialize, Serialize};
 
-use crate::{Boat, MainCamera, collision::{out_of_bound_no_rotation, out_of_bounds}, primitives::{CursorPos, CustomTransform, Mk48Rect}, protocol::{OilRigTransform, SetupServer}, util::get_cursor_pos};
+#[cfg(feature = "server")]
+use crate::{
+    Boat,
+    collision::{out_of_bound_no_rotation, out_of_bounds},
+    primitives::{CustomTransform, Mk48Rect},
+    protocol::{OilRigTransform, SetupServer}
+};
+#[cfg(feature = "server")]
+use lightyear::prelude::{Connected, DeltaManager, Disconnected, NetworkTarget, Server};
 
+#[cfg(feature = "client")]
+use crate::{
+    MainCamera,
+    primitives::CursorPos,
+    util::get_cursor_pos,
+    shaders::WorldMaterial
+};
+
+
+#[allow(unused)]
 const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
 
 /// - server: worldsize replicated, server should update worldsize on new client
 /// - client: spawns map, spawns and updates cursorpos
-pub struct WorldPlugin {
-    pub is_server: bool
-}
+pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        if self.is_server {
-            app.add_systems(Startup, spawn_worldsize.in_set(SetupServer::WorldSize))
-                .add_observer(on_new_client)
-                .add_observer(on_client_disconnected);
-        } else {
-            app.init_resource::<CursorPos>()
-                // relies on replicated worldsize for determining size of sprite
-                .add_observer(spawn_sprite)
-                // not FixedUpdate due to small 誤差
-                .add_systems(Update, update_cursor_pos)
-                .add_systems(Update, update_sprite_size);
-        }
+        #[cfg(feature = "server")]
+        app.add_systems(Startup, spawn_worldsize.in_set(SetupServer::WorldSize))
+            .add_observer(on_new_client)
+            .add_observer(on_client_disconnected);
+
+        #[cfg(feature = "client")]
+        app.init_resource::<CursorPos>()
+            // relies on replicated worldsize for determining size of sprite
+            .add_observer(spawn_sprite)
+            // not FixedUpdate due to small 誤差
+            .add_systems(Update, update_cursor_pos)
+            .add_systems(Update, update_sprite_size);
+        #[cfg(feature = "client")]
+        app.add_plugins(crate::shaders::ShaderPlugin);
     }
 }
 
@@ -79,14 +97,24 @@ impl Default for WorldSize {
         Self::new()
     }
 }
-#[derive(Component, Debug, Copy, Clone)]
-pub struct Background;
 
-fn spawn_sprite(
+#[cfg(feature = "client")]
+#[derive(Component, Debug, Copy, Clone)]
+struct Background;
+
+#[cfg(feature = "client")]
+use client::*;
+#[cfg(feature = "client")]
+mod client {
+use super::*;
+use lightyear::prelude::Replicated;
+
+pub fn spawn_sprite(
     trigger: On<Add, WorldSize>,
     world_size: Query<&WorldSize, With<Replicated>>,
     mut commands: Commands,
-    asset_server: Res<AssetServer>
+    mut materials: ResMut<Assets<WorldMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>
 ) {
     if world_size.iter().len() != 1 {
         error!("Expected 1 worldsize");
@@ -102,33 +130,28 @@ fn spawn_sprite(
             },
             ..default()
         },
-        Sprite {
-            image: asset_server.load("waves.png"),
-            color: SPRITE_TINT,
-            custom_size: Some(world_size.get_size()),
-            image_mode: SpriteImageMode::Tiled {
-                tile_x: true,
-                tile_y: true,
-                stretch_value: 2.0,
-            },
-            ..default()
-        },
+        // TODO add graphics features to background. Right now a Sprite::from_color can replace it
+        Mesh2d(meshes.add(Rectangle::from_size(world_size.get_size()))),
+        MeshMaterial2d(materials.add(WorldMaterial { color: vec3(1.3 / 255.0, 14.0 / 255.0, 41.0 / 255.0)})),
         Name::new("Background"),
         Background,
     ));
 }
 
-fn update_sprite_size(mut sprite: Single<&mut Sprite, With<Background>>, world_size: Single<&WorldSize, Changed<WorldSize>>) {
-    sprite.custom_size = Some(world_size.get_size());
+pub fn update_sprite_size(mut meshes: ResMut<Assets<Mesh>>, sprite: Single<&Mesh2d, With<Background>>, world_size: Single<&WorldSize, Changed<WorldSize>>) {
+    // sprite.custom_size = Some(world_size.get_size());
+    if let Some(mesh) = meshes.get_mut(&sprite.0) {
+        *mesh = Rectangle::from_size(world_size.get_size()).into();
+    }
 }
 
-fn update_cursor_pos(
+pub fn update_cursor_pos(
     mut cursor_pos: ResMut<CursorPos>,
     // mut move_event: MessageReader<CursorMoved>
-    window: Single<&Window, With<PrimaryWindow>>,
+    window: Single<&Window>,
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>
 ) {
-    if let Some(pos) = get_cursor_pos(&window, &camera)
+    if let Some(pos) = get_cursor_pos(&window, *camera)
         && pos != cursor_pos.0
     {
         cursor_pos.0 = pos;
@@ -138,10 +161,17 @@ fn update_cursor_pos(
     // }
 }
 
-// -- server ---
+}
 
 
-fn spawn_worldsize(mut commands: Commands, server: Query<Entity, With<Server>>) {
+#[cfg(feature = "server")]
+use server::*;
+#[cfg(feature = "server")]
+mod server {
+use super::*;
+use lightyear::prelude::Replicate;
+
+pub fn spawn_worldsize(mut commands: Commands, server: Query<Entity, With<Server>>) {
     let server = server.single().unwrap();
     let world_size = WorldSize::new();
 
@@ -154,7 +184,7 @@ fn spawn_worldsize(mut commands: Commands, server: Query<Entity, With<Server>>) 
         .insert(DeltaManager::default());
 }
 
-fn on_new_client(
+pub fn on_new_client(
     _trigger: On<Add, Connected>,
     mut world_size: Query<&mut WorldSize>
 ) {
@@ -166,7 +196,7 @@ fn on_new_client(
 /// despawn oil rigs that are outofbound
 /// 
 /// clamp players back within the borders
-fn on_client_disconnected(
+pub fn on_client_disconnected(
     _trigger: On<Add, Disconnected>,
     mut world_size: Query<&mut WorldSize>,
     customs: Query<(&mut CustomTransform, &Boat, Entity)>,
@@ -193,6 +223,9 @@ fn on_client_disconnected(
         }
     }
 }
+
+}
+
 
 /// gets the size of the World from the `minimum_size` and provided expand by per multiple
 fn get_map_size(player_num: u32, minimum_size: Vec2, expand_per_multiple: Vec2) -> Vec2 {
