@@ -1,8 +1,8 @@
 //! defines structures to be sent between client and server
 
-use std::sync::Arc;
+use std::{f32::consts::{FRAC_PI_2, PI}, sync::Arc};
 use crate::{
-    OCEAN_SURFACE, OIL_RIG_Z, OILRIG_SPRITE_SIZE, POINTS_Z, boat::Boat, primitives::{CustomTransform, Radian, Speed}
+    OCEAN_SURFACE, OIL_RIG_Z, POINTS_Z, boat::Boat, primitives::{CustomTransform, LastSpeed, Radian, Speed, TargetRotation}
 };
 use bevy::{ecs::entity::MapEntities, prelude::*};
 use lightyear::{
@@ -32,11 +32,24 @@ impl MapEntities for Move {
 }
 
 impl Ease for CustomTransform {
+    /// when lerping over the negative X-axis in rotation, it will "snap" the boat by interpolating in the opposite direction if goes by default
+    /// 
+    /// assumes CustomTransform's rotation normalized
     fn interpolating_curve_unbounded(start: Self, end: Self) -> impl Curve<Self> {
         FunctionCurve::new(Interval::UNIT, move |t| {
+            let rotation = 
+            // if turning over the axis, adjust the starting rotation, using 90 degrees for clarity
+            if start.rotation.0 < -FRAC_PI_2 && end.rotation.0 > FRAC_PI_2{
+                f32::lerp(start.rotation.0 + 2.0 * PI, end.rotation.0, t)
+            } else if start.rotation.0 > FRAC_PI_2 && end.rotation.0 < -FRAC_PI_2 {
+                f32::lerp(start.rotation.0 - 2.0 * PI, end.rotation.0, t)
+            } else {
+                f32::lerp(start.rotation.0, end.rotation.0, t)
+            };
+
             Self {
                 position: Position(Vec2::lerp(start.position.0, end.position.0, t)),
-                rotation: Radian(f32::lerp(start.rotation.0, end.rotation.0, t)),
+                rotation: Radian(rotation),
                 speed: end.speed
             }
         })
@@ -44,25 +57,27 @@ impl Ease for CustomTransform {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Component)] // component to store it in server
-pub struct OilRigInfo {
+pub struct OilRigTransform {
     pub position: Vec2,
     pub rotation: Radian
 }
 
-impl OilRigInfo {
+impl OilRigTransform {
+    pub const SPRITE_SIZE: f32 = 1024.0 * 0.3;
     pub fn file_name() -> &'static str {
         "oil_platform.png"
     }
+    /// ### For [`Transform`] only
     pub fn z_index_transform() -> f32 {
         *OCEAN_SURFACE + OIL_RIG_Z
     }
     pub fn custom_size() -> Vec2 {
-        OILRIG_SPRITE_SIZE
+        Vec2::splat(Self::SPRITE_SIZE)
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Component)]
-pub struct PointInfo {
+pub struct PointTransform {
     /// Vec3.z is the theoretical, NOT necessarily rendering
     pub position: Vec2,
     pub depth: ZIndex,
@@ -70,7 +85,7 @@ pub struct PointInfo {
     pub file_name: Arc<str>
 }
 
-impl PointInfo {
+impl PointTransform {
     pub fn new(position: Vec2, depth: ZIndex, file_name: &str) -> Self {
         Self {
             position,
@@ -93,7 +108,7 @@ impl PointInfo {
     }
 }
 
-impl Ease for PointInfo {
+impl Ease for PointTransform {
     fn interpolating_curve_unbounded(start: Self, end: Self) -> impl Curve<Self> {
         FunctionCurve::new(Interval::UNIT, move |t| {
             Self {
@@ -129,24 +144,20 @@ pub struct SpawnWeapon {
     pub end_rotation: Radian,
     /// to identify the weapon on client-side if server doesn't approve
     pub entity_on_client: EntityOnClient,
-    /// identifing the Boat
-    ///
-    /// replicated by server on spawning the main boat entity
-    pub entity_on_server: EntityOnServer,
-    /// required to replicate weapon to other clients
+    /// required to replicate weapon to other clients and identifying the [`Boat`] entity on the server
     pub client_id: PeerId
 }
 
 /// replicated by server on spawning the main boat entity
+/// 
+/// quick updating [`NewZIndex`]
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Component, Copy, Reflect)]
 pub struct EntityOnServer(pub u64);
+/// specifying Weapon to rollback on client for now
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Component, Copy, Reflect)]
 pub struct EntityOnClient(pub u64);
 
 /// if server doesn't approve
-///
-/// some thoughts:
-///
 #[derive(Debug, Deserialize, Serialize)]
 pub enum WeaponRollBack {
     Transform {
@@ -174,11 +185,11 @@ pub struct ProtocolPlugin;
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
         // replication
-        app.register_component::<WorldSize>().add_delta_compression::<u32>();
+        app.register_component::<WorldSize>();
         app.register_component::<Boat>();
         app.register_component::<WeaponCounter>();
-        app.register_component::<Transform>();
-        app.register_component::<CustomTransform>().add_prediction()
+        app.register_component::<CustomTransform>()
+            .add_prediction()
             .add_linear_interpolation();
         app.register_component::<ZIndex>();
         app.register_component::<OutOfBound>();
@@ -186,8 +197,8 @@ impl Plugin for ProtocolPlugin {
         app.register_component::<EntityOnServer>();
         app.register_message::<NewZIndex>().add_direction(NetworkDirection::ClientToServer);
 
-        app.register_component::<OilRigInfo>();
-        app.register_component::<PointInfo>().add_linear_interpolation();
+        app.register_component::<OilRigTransform>();
+        app.register_component::<PointTransform>().add_linear_interpolation();
 
         app.register_component::<PlayerScore>();
 
@@ -201,6 +212,9 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<WeaponRollBack>().add_direction(NetworkDirection::ServerToClient);
 
         app.register_component::<Weapon>();
+        app.register_component::<Transform>();
+        app.register_component::<LastSpeed>();
+        app.register_component::<TargetRotation>();
 
         app.add_channel::<SendToClient>(ChannelSettings {
             mode: ChannelMode::UnorderedReliable(ReliableSettings::default()),
@@ -212,5 +226,27 @@ impl Plugin for ProtocolPlugin {
             ..default()
         })
             .add_direction(NetworkDirection::ClientToServer);
+    }
+}
+
+#[derive(SystemSet, Hash, Debug, PartialEq, Eq, Clone)]
+pub enum SetupServer {
+    /// spawn main `Server` entity
+    Io,
+    /// spawn [`WorldSize`]
+    WorldSize,
+}
+
+pub struct SystemSetPlugin {
+    pub is_server: bool
+}
+impl Plugin for SystemSetPlugin {
+    fn build(&self, app: &mut App) {
+        if self.is_server {
+            app.configure_sets(Startup, (
+                SetupServer::Io,
+                SetupServer::WorldSize
+            ).chain());
+        }
     }
 }

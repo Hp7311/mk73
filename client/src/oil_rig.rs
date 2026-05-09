@@ -1,6 +1,5 @@
 use bevy::prelude::*;
-use common::protocol::{OilRigInfo, PointInfo};
-// use lightyear::prelude::*;
+use common::protocol::{OilRigTransform, PointTransform as Point};
 
 pub(crate) struct OilRigPlugin;
 
@@ -13,8 +12,9 @@ impl Plugin for OilRigPlugin {
 }
 
 fn spawn_rig(
-    trigger: On<Add, OilRigInfo>,
-    rigs: Query<&OilRigInfo>,
+    trigger: On<Add, OilRigTransform>,
+    rigs: Query<&OilRigTransform>,
+
     assert_server: Res<AssetServer>,
     mut commands: Commands
 ) {
@@ -23,13 +23,13 @@ fn spawn_rig(
 
     commands.get_entity(trigger.entity).unwrap().insert((
         Transform {
-            translation: rig_info.position.extend(OilRigInfo::z_index_transform()),
+            translation: rig_info.position.extend(OilRigTransform::z_index_transform()),
             rotation: rig_info.rotation.to_quat(),
             ..default()
         },
         Sprite {
-            image: assert_server.load(OilRigInfo::file_name()),
-            custom_size: Some(OilRigInfo::custom_size()),
+            image: assert_server.load(OilRigTransform::file_name()),
+            custom_size: Some(OilRigTransform::custom_size()),
             ..default()
         },
         Name::new("Oil rig")
@@ -37,8 +37,8 @@ fn spawn_rig(
 }
 
 fn spawn_point(
-    trigger: On<Add, PointInfo>,
-    points: Query<&PointInfo>,
+    trigger: On<Add, Point>,
+    points: Query<&Point>,
     asset_server: Res<AssetServer>,
     mut commands: Commands
 ) {
@@ -48,7 +48,7 @@ fn spawn_point(
         .insert((
             Sprite {
                 image: asset_server.load((*point_info.file_name).to_owned()),
-                custom_size: Some(PointInfo::custom_size()),
+                custom_size: Some(Point::custom_size()),
                 ..default()
             },
             Transform::from_translation(point_info.to_translation()),
@@ -57,10 +57,10 @@ fn spawn_point(
 }
 
 fn sync_point_transform(
-    points: Query<(&PointInfo, &mut Transform), Changed<PointInfo>>,
+    points: Query<(&Point, &mut Transform), Changed<Point>>,
 ) {
-    for (info, mut transform) in points {
+    for (tf, mut transform) in points {
         // important
-        transform.translation = info.to_translation();
+        transform.translation = tf.to_translation();
     }
 }

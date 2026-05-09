@@ -50,7 +50,6 @@ fn spawn_boat(
         .get_entity(trigger.entity).unwrap()
         .insert_if_new(BoatBundle {
             boat,
-            // TODO WeaponCounter, OutOfBound etc not needed for not controlling boat
             weapon_counter: WeaponCounter {
                 weapons: boat.get_armanents(),
                 selected_weapon: boat.default_weapon(),
@@ -65,7 +64,7 @@ fn spawn_boat(
                 rotation: custom.rotation.to_quat(),
                 ..default()
             },
-            custom_transform: custom,
+            // custom_transform: custom,
             ..BoatBundle::default()
         })
         .with_children(|parent| {
@@ -116,7 +115,7 @@ fn spawn_boat(
 }
 
 
-// TODO is it better to directly manipulate Transform
+// is it better to directly manipulate Transform
 /// for all boats regardless of control
 fn sync_transform_from_custom(
     mut query: Query<(&mut Transform, &CustomTransform), (With<Boat>, Changed<CustomTransform>)>,
@@ -136,7 +135,7 @@ struct BoatBundle {
     /// ship's sprite
     sprite: Sprite, // cannot
     /// whether reversed, speed etc
-    custom_transform: CustomTransform, // check
+    // custom_transform: CustomTransform, // check
     // /// where the user's mouse was facing
     // mouse_target: TargetRotation,
     // /// the target speed of the Boat
@@ -163,7 +162,7 @@ impl Default for BoatBundle {
         BoatBundle {
             transform: Transform::default(),
             sprite: Sprite::default(),
-            custom_transform: CustomTransform::default(),
+            // custom_transform: CustomTransform::default(),
             out_of_bound: OutOfBound(false),
             // mouse_target: TargetRotation::default(),
             // target_speed: TargetSpeed::default(),

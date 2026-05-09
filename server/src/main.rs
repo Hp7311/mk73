@@ -4,11 +4,9 @@ mod weapon;
 use std::time::Duration;
 
 use bevy::prelude::*;
+use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
 use common::{
-    LOCAL_SERVER_ADDR, PROTOCOL_ID, Boat, MovementPlugin, OCEAN_SURFACE,
-    primitives::{ZIndex, CustomTransform, OutOfBound, Position, WeaponCounter},
-    protocol::{Move, ProtocolPlugin, Rotate},
-    world::WorldPlugin
+    Boat, LOCAL_SERVER_ADDR, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, primitives::{CustomTransform, OutOfBound, Position, WeaponCounter, ZIndex}, protocol::{Move, ProtocolPlugin, Rotate, SetupServer, SystemSetPlugin}, world::WorldPlugin
 };
 use lightyear::{
     prelude::input::native::ActionState,
@@ -37,9 +35,10 @@ fn main() {
         )
         .add_plugins(ServerPlugins::default())
         .add_plugins(ProtocolPlugin)
+        .add_plugins(SystemSetPlugin { is_server: true })
         .add_plugins(OilRigPlugin)
         .add_plugins(WeaponPlugin)
-        .add_systems(Startup, setup)
+        .add_systems(Startup, setup.in_set(SetupServer::Io))
         .add_plugins(WorldPlugin { is_server: true })
         // handle client action
         .add_plugins(MovementPlugin { is_server: true, move_weapon: true })
@@ -48,16 +47,23 @@ fn main() {
         // handle client req
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client)
+        .add_plugins(EguiPlugin::default())
+        .add_plugins(WorldInspectorPlugin::default())
 
         .run();
 }
 
-
 /// starts the server
 fn setup(mut commands: Commands) {
+    let netcode_config = NetcodeConfig {
+        protocol_id: PROTOCOL_ID,
+        num_disconnect_packets: 50,
+        // client_timeout_secs: -1,
+        ..Default::default()
+    };
     let server = commands
         .spawn((
-            NetcodeServer::new(NetcodeConfig::default().with_protocol_id(PROTOCOL_ID)),
+            NetcodeServer::new(netcode_config),
             LocalAddr(LOCAL_SERVER_ADDR),
             WebSocketServerIo {
                 #[cfg(debug_assertions)]
@@ -82,7 +88,7 @@ fn handle_new_client(connecting_client: On<Add, LinkOf>, mut commands: Commands)
         ));
 }
 
-// TODO seperate CUstomTransform?
+// TODO seperate CustomTransform?
 
 /// connected client. spawns the main boat entity
 fn handle_connected_client(
@@ -100,7 +106,7 @@ fn handle_connected_client(
     let position = vec2(
         rand::random_range(-200.0..200.0),
         rand::random_range(-200.0..200.0),
-    ); // TODO
+    );
 
     let mut entity_commands = commands.spawn((
         CustomTransform {
@@ -116,7 +122,7 @@ fn handle_connected_client(
         OutOfBound(false),
         PlayerScore::new(0),
         
-        // BoatClientId(client_id),
+        BoatClientId(client_id),
         
         Replicate::to_clients(NetworkTarget::All),
         PredictionTarget::to_clients(NetworkTarget::Single(client_id)),
@@ -139,13 +145,18 @@ fn recv_new_z_index(
 ) {
     for mut rx in rxs {
         for msg in rx.receive() {
-            let Ok(mut z_index) = z_index.get_mut(Entity::from_bits(msg.entity_on_server.0)) else { unreachable!(); };
-
-            trace!("New Z-index: {}", msg.new_index.0);
+            let Ok(mut z_index) = z_index.get_mut(Entity::from_bits(msg.entity_on_server.0)) else {
+                error!("Client sent a non-existent Boat ID");
+                return;
+            };
             *z_index = msg.new_index;
         }
     }
 }
+
+/// identifying the perticular [`Boat`]
+#[derive(Debug, Component)]
+struct BoatClientId(#[allow(dead_code)] PeerId);
 
 #[cfg(test)]
 #[allow(dead_code)]

@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-// TODO feature client/server
 mod boat;
 pub mod collision;
 mod movement;
@@ -38,8 +37,6 @@ pub const CIRCLE_HUD: ZIndex = ZIndex(30.0);
 const SERVER_PORT: u16 = 8000;
 const CLIENT_PORT: u16 = 8001;
 
-/// unified `custom_size` on the Sprite of an oil rig. may be upgrades
-pub const OILRIG_SPRITE_SIZE: Vec2 = Vec2::splat(1024.0 * 0.3);
 
 const DEFAULT_MAX_TURN_DEG: crate::primitives::Radian = crate::primitives::Radian::from_deg(0.5);
 

@@ -38,18 +38,16 @@ use crate::input::InputBufferPlugin;
 use crate::oil_rig::OilRigPlugin;
 use crate::weapon::WeaponPlugin;
 
+// note that web builds are noticably laggier than native builds
+
 #[cfg(all(not(target_family = "wasm"), not(debug_assertions)))]
 compile_error! {"Should compile by trunk serve on production"}
 
-// FIXME client disconnects on switching tabs
 
 const DEFAULT_MAX_ZOOM: f32 = 2.0;
 const TIME_TO_LAUNCH_WEAPON: Duration = Duration::from_millis(100);
 /// absolute value of minimum radians that must be reached to reverse the Boat
 const MINIMUM_REVERSE: f32 = PI * (2. / 3.);
-
-#[cfg(all(not(debug_assertions), target_family = "wasm"))]
-compile_error!("Web app");
 
 fn main() {
     let mut app = App::new();
@@ -67,7 +65,8 @@ fn main() {
             .set(AssetPlugin {
                 meta_check: bevy::asset::AssetMetaCheck::Never,
                 ..default()
-            }),
+            })
+            .set(ImagePlugin::default_nearest()),
     )
     .add_plugins(ClientPlugins::default())
     .add_plugins(ProtocolPlugin)
@@ -108,36 +107,6 @@ fn main() {
     app.run();
 }
 
-/// using hack to achieve system to be only triggered when both
-/// [`ActionState<T>`] and [`Controlled`] added
-#[deny(unused)]
-fn on_added_actionstate<T>(
-    trigger: On<Add, ActionState<T>>,
-    controlled_action_states: Query<(), (With<ActionState<T>>, With<Controlled>)>,
-    mut commands: Commands,
-) where
-    T: Default + Send + Sync + 'static,
-{
-    if controlled_action_states.get(trigger.entity).is_err() {
-        // other client's
-        return;
-    }
-
-    let id = commands
-        .get_entity(trigger.entity)
-        .unwrap()
-        .insert(InputMarker::<T>::default())
-        .id();
-    info!(
-        "Added InputMarker for this client (only once): {}, ID: {}",
-        std::any::type_name::<T>()
-            .split("::")
-            .last()
-            .unwrap_or_default(),
-        id
-    );
-}
-
 fn setup(mut commands: Commands) {
     let client_id = rand::random_range(0..100);
     let auth = Authentication::Manual {
@@ -145,6 +114,13 @@ fn setup(mut commands: Commands) {
         client_id,
         private_key: Key::default(),
         protocol_id: PROTOCOL_ID,
+    };
+    let netcode_config = NetcodeConfig {
+        // client_timeout_secs: -1,
+        num_disconnect_packets: 50,
+        client_timeout_secs: 3,
+        token_expire_secs: -1,
+        ..default()
     };
 
 
@@ -154,9 +130,8 @@ fn setup(mut commands: Commands) {
             LocalAddr(CLIENT_ADDR),
             PeerAddr(SERVER_ADDR),
             Link::default(),
-            NetcodeClient::new(auth, NetcodeConfig::default()).unwrap(),
+            NetcodeClient::new(auth, netcode_config).unwrap(),
             WebSocketClientIo {
-                // https://github.com/cBournhonesque/lightyear/blob/main/examples/common/src/client.rs#L102
                 config: ClientConfig::default(),
                 #[cfg(debug_assertions)]
                 target: WebSocketTarget::Addr(WebSocketScheme::Plain),
@@ -200,7 +175,6 @@ enum BoatState {
     Released,
 }
 
-// potential bug: NextState lagging
 fn update_state(
     current_state: Res<State<BoatState>>,
     mut setter: ResMut<NextState<BoatState>>,
@@ -237,6 +211,37 @@ fn update_state(
             }
         }
     }
+}
+
+
+/// using hack to achieve system to be only triggered when both
+/// [`ActionState<T>`] and [`Controlled`] added
+#[deny(unused)]
+fn on_added_actionstate<T>(
+    trigger: On<Add, ActionState<T>>,
+    controlled_action_states: Query<(), (With<ActionState<T>>, With<Controlled>)>,
+    mut commands: Commands,
+) where
+    T: Default + Send + Sync + 'static,
+{
+    if controlled_action_states.get(trigger.entity).is_err() {
+        // other client's
+        return;
+    }
+
+    let id = commands
+        .get_entity(trigger.entity)
+        .unwrap()
+        .insert(InputMarker::<T>::default())
+        .id();
+    info!(
+        "Added InputMarker for this client (only once): {}, ID: {}",
+        std::any::type_name::<T>()
+            .split("::")
+            .last()
+            .unwrap_or_default(),
+        id
+    );
 }
 
 #[derive(Event)]

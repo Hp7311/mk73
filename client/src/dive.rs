@@ -1,4 +1,5 @@
 use crate::BoatType;
+use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
@@ -22,7 +23,7 @@ impl Plugin for DivingPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                update_diving_status.run_if(resource_changed::<ButtonInput<KeyCode>>),
+                update_diving_status.run_if(input_just_pressed(KeyCode::KeyR)),
                 act_on_state.run_if(in_states_2(DivingStatus::Diving, DivingStatus::Surfacing)),
             )
                 .chain()
@@ -86,10 +87,9 @@ enum DivingStatus {
 fn update_diving_status(
     mut setter: ResMut<NextState<DivingStatus>>,
     getter: Res<State<DivingStatus>>,
-    buttons: Res<ButtonInput<KeyCode>>,
     transform: Single<&Transform, (With<Controlled>, With<Boat>)>,
 ) {
-    if buttons.just_pressed(KeyCode::KeyR) {
+    // if buttons.just_pressed(KeyCode::KeyR) {  already set in .run_if
         let mut target = *getter.get();
         match target {
             DivingStatus::None => {
@@ -104,7 +104,6 @@ fn update_diving_status(
         }
 
         setter.set(target);
-    }
 }
 
 fn act_on_state(
@@ -115,6 +114,7 @@ fn act_on_state(
 ) {
     let (mut transform, mut z_index, boat, &entity_on_server) = ships.into_inner();
 
+    #[cfg(debug_assertions)]
     if boat.sub_kind() != SubKind::Submarine {
         warn!("Should .run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))));")
     }
@@ -135,7 +135,7 @@ fn act_on_state(
             }
         }
         DivingStatus::None => {
-            error!(
+            warn!(
                 "Should only act_on_state if in DivingStatus::Diving or DivingStatus::Surfacing"
             );
             return;

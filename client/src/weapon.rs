@@ -1,12 +1,10 @@
 use bevy::color::palettes::css::LIME;
 use bevy::prelude::*;
 use lightyear::prelude::*;
-use common::primitives::{CursorPos, LastSpeed, MeshBundle, Mk48Rect, Speed, TargetRotation, WeaponCounter, WrapRadian as _};
-use common::protocol::{SpawnWeapon, SendToServer, WeaponRollBack, EntityOnServer, EntityOnClient};
+use common::primitives::{CursorPos, LastSpeed, MeshBundle, Speed, TargetRotation, WeaponCounter, WrapRadian as _};
+use common::protocol::{SpawnWeapon, SendToServer, WeaponRollBack, EntityOnClient};
 use common::util::get_rotate_radian;
 use common::{Boat, CIRCLE_HUD, Weapon};
-use common::collision::out_of_bound_no_rotation;
-use common::world::WorldSize;
 use crate::FiresWeapon;
 
 pub(crate) struct WeaponPlugin;
@@ -18,7 +16,6 @@ impl Plugin for WeaponPlugin {
             .add_observer(spawn_others_weapon)
 
             .add_systems(Update, rollback)
-            .add_systems(FixedUpdate, despawn_on_out_of_bound)
             .add_systems(Update, sync_weapon_marker);
     }
 }
@@ -27,7 +24,7 @@ fn fire_weapon(
     _: On<FiresWeapon>,
     cursor_pos: Res<CursorPos>,
     mut sender: Single<&mut MessageSender<SpawnWeapon>>,
-    boat: Single<(&Transform, &WeaponCounter, &EntityOnServer), (With<Controlled>, With<Boat>)>,
+    boat: Single<(&Transform, &WeaponCounter), (With<Controlled>, With<Boat>)>,
     client_id: Single<&LocalId>,
 
     mut commands: Commands,
@@ -35,14 +32,13 @@ fn fire_weapon(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>
 ) {
-    let (transform, weapon_counter, &entity_on_server) = boat.into_inner();
+    let (transform, weapon_counter) = boat.into_inner();
     let mut msg = SpawnWeapon {
         weapon: weapon_counter.selected_weapon.unwrap(),
         position: transform.translation,  // currently starts at centre of boat
         starting_rotation: transform.rotation.wrap_radian(),
         end_rotation: get_rotate_radian(transform.translation.xy(), cursor_pos.0).wrap_radian(),
         entity_on_client: EntityOnClient(u64::MAX),
-        entity_on_server,
         client_id: client_id.0
     };
 
@@ -110,26 +106,15 @@ fn rollback(mut reader: Single<&mut MessageReceiver<WeaponRollBack>>, mut comman
                 transform.translation = position;
                 transform.rotation = rotation.to_quat();
             }
-            WeaponRollBack::Despawn { entity} => if let Ok(mut weapon) = commands.get_entity(Entity::from_bits(entity.0)) {
-                weapon.despawn();
+            WeaponRollBack::Despawn { entity} => {
+                if let Ok(mut weapon) = commands.get_entity(Entity::from_bits(entity.0)) {
+                    weapon.despawn();
+                }
             }
         }
     }
 }
 
-
-fn despawn_on_out_of_bound(
-    mut commands: Commands,
-    weapons: Query<(&Transform, Entity), (With<Weapon>, Changed<Transform>)>,
-    world_size: Single<&WorldSize>
-) {
-    for (transform, id) in weapons {
-        if out_of_bound_no_rotation(&world_size, Mk48Rect::from_point(transform.translation.xy())) {
-            trace!("Despawned {id} due to outofbounds: {}", transform.translation);
-            commands.get_entity(id).unwrap().despawn();
-        }
-    }
-}
 
 const MARKER_OFFSET: Vec2 = vec2(0.0, 40.0);
 const MARKER_BOTTOM: Vec2 = vec2(0.0, -17.32);

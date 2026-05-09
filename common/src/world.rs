@@ -1,8 +1,8 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use lightyear::prelude::{Connected, DeltaManager, Diffable, Disconnected, NetworkTarget, Replicate, Replicated, Server};
+use lightyear::prelude::{Connected, DeltaManager, Disconnected, NetworkTarget, Replicate, Replicated, Server};
 use serde::{Deserialize, Serialize};
 
-use crate::{primitives::CursorPos, util::get_cursor_pos, MainCamera};
+use crate::{Boat, MainCamera, collision::{out_of_bound_no_rotation, out_of_bounds}, primitives::{CursorPos, CustomTransform, Mk48Rect}, protocol::{OilRigTransform, SetupServer}, util::get_cursor_pos};
 
 const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
 
@@ -15,7 +15,7 @@ pub struct WorldPlugin {
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         if self.is_server {
-            app.add_observer(spawn_worldsize)
+            app.add_systems(Startup, spawn_worldsize.in_set(SetupServer::WorldSize))
                 .add_observer(on_new_client)
                 .add_observer(on_client_disconnected);
         } else {
@@ -38,23 +38,6 @@ pub struct WorldSize {
     computed: Vec2
 }
 
-impl Diffable<u32> for WorldSize {
-    fn base_value() -> Self {
-        Self::new()
-    }
-
-    fn diff(&self, new: &Self) -> u32 {
-        new.player_num
-    }
-
-    fn apply_diff(&mut self, delta: &u32) {
-        self.player_num = *delta;
-
-        self.computed = get_map_size(self.player_num, Self::WORLD_MIN, Self::WORLD_EXPAND);
-        self.current_expand = get_multiplayer_by_player_num(self.player_num);
-    }
-}
-
 impl WorldSize {
     const WORLD_MIN: Vec2 = vec2(3000.0, 1500.0);
     const WORLD_EXPAND: Vec2 = Vec2::splat(500.0);
@@ -70,12 +53,14 @@ impl WorldSize {
 
     pub fn add_player(&mut self) {
         self.player_num += 1;
-        self.computed += Self::WORLD_EXPAND * (get_multiplayer_by_player_num(self.player_num) - self.current_expand) as f32;
+        self.current_expand = get_multiplayer_by_player_num(self.player_num);
+        self.computed = get_map_size(self.player_num, Self::WORLD_MIN, Self::WORLD_EXPAND)
     }
     pub fn remove_player(&mut self) {
         assert_ne!(self.player_num, 0, "0 player left");
         self.player_num -= 1;
-        self.computed -= Self::WORLD_EXPAND * (get_multiplayer_by_player_num(self.player_num) - self.current_expand) as f32;
+        self.current_expand = get_multiplayer_by_player_num(self.player_num);
+        self.computed = get_map_size(self.player_num, Self::WORLD_MIN, Self::WORLD_EXPAND);
     }
     pub fn player_num(&self) -> u32 {
         self.player_num
@@ -89,6 +74,11 @@ impl WorldSize {
     }
 }
 
+impl Default for WorldSize {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 #[derive(Component, Debug, Copy, Clone)]
 pub struct Background;
 
@@ -151,7 +141,8 @@ fn update_cursor_pos(
 // -- server ---
 
 
-fn spawn_worldsize(server: On<Add, Server>, mut commands: Commands) {
+fn spawn_worldsize(mut commands: Commands, server: Query<Entity, With<Server>>) {
+    let server = server.single().unwrap();
     let world_size = WorldSize::new();
 
     commands.spawn((
@@ -159,7 +150,7 @@ fn spawn_worldsize(server: On<Add, Server>, mut commands: Commands) {
         Replicate::to_clients(NetworkTarget::All)
     ));
 
-    commands.get_entity(server.entity).unwrap()
+    commands.get_entity(server).unwrap()
         .insert(DeltaManager::default());
 }
 
@@ -170,12 +161,37 @@ fn on_new_client(
     let Ok(mut world_size) = world_size.single_mut().inspect_err(|e| error!("expected only one worldsize: {e:?}")) else { return; };
     world_size.add_player();
 }
+/// shrink world
+/// 
+/// despawn oil rigs that are outofbound
+/// 
+/// clamp players back within the borders
 fn on_client_disconnected(
     _trigger: On<Add, Disconnected>,
-    mut world_size: Query<&mut WorldSize>
+    mut world_size: Query<&mut WorldSize>,
+    customs: Query<(&mut CustomTransform, &Boat, Entity)>,
+    rigs: Query<(&OilRigTransform, Entity)>,
+    mut commands: Commands
 ) {
     let Ok(mut world_size) = world_size.single_mut().inspect_err(|e| error!("expected only one worldsize: {e:?}")) else { return; };
     world_size.remove_player();
+
+    // push players back
+    for (mut custom, boat, id) in customs {
+        if commands.get_spawned_entity(id).is_err() {
+            continue;
+        }
+        if out_of_bounds(&world_size, Mk48Rect::new(custom.position.0, boat.sprite_size()), custom.rotation) {
+            let [min, max] = Mk48Rect::new(Vec2::ZERO, world_size.get_size()).clamp_corners();
+            custom.position = custom.position.clamp_with_padding(min, max, boat.sprite_size().max_element());
+        }
+    }
+    for (transform, entity) in rigs {
+        if out_of_bound_no_rotation(&world_size, Mk48Rect::new(transform.position, OilRigTransform::custom_size())) {
+            commands.get_entity(entity).unwrap()
+                .despawn();
+        }
+    }
 }
 
 /// gets the size of the World from the `minimum_size` and provided expand by per multiple

@@ -1,47 +1,38 @@
+use std::time::Duration;
 use std::{f32::consts::PI, ops::Range};
 use std::sync::Arc;
 use bevy::prelude::*;
-use bevy_inspector_egui::bevy_egui::EguiPlugin;
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use lightyear::prelude::{NetworkTarget, Replicate};
+use lightyear::prelude::{InterpolationTarget, NetworkTarget, Replicate};
 use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
-use common::{Boat, OCEAN_SURFACE, OILRIG_SPRITE_SIZE, eq};
-use common::collision::{out_of_bound_no_rotation, out_of_bounds, square_does_not_intersects};
+use common::{Boat, OCEAN_SURFACE, eq};
+use common::collision::{out_of_bound_point, out_of_bounds, square_does_not_intersects};
 use common::primitives::{in_range, CustomTransform, Mk48Rect, Radian, ZIndex};
-use common::protocol::{OilRigInfo, PlayerScore, PointInfo};
-use common::util::{point_in_square, tiles_around_point};
+use common::protocol::{OilRigTransform as OilRig, PlayerScore, PointTransform};
+use common::util::{avaliable_cords, point_in_square};
 use common::world::WorldSize;
 
 /// Replicated for OilRig entity:
 /// - [`OilRigInfo`]
 /// 
 /// Replicated for Point entity:
-/// - [`PointInfo`]
+/// - [`PointTransform`]
 pub struct OilRigPlugin;
+
+// TODO randomly despawning rigs
 
 impl Plugin for OilRigPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(spawn_rigs)  // TODO use system sets
+        app
+            .insert_resource(RigTimer::new_rand(&mut rand::rng()))
+            .add_systems(Update, spawn_rigs)
             .add_systems(
                 Update,
                 (rig_spawn_points, move_points, points_obsorbed_despawn)
-            )
-            .add_plugins(EguiPlugin::default())
-            .add_plugins(WorldInspectorPlugin::default());
-        app.add_systems(Update, hi);
-    }
-}
-fn hi(query: Query<&PointInfo>) {
-    for PointInfo { depth, .. } in query {
-        if *depth != OCEAN_SURFACE {
-            info!("WOW, it's at {}", **depth);
-        }
+            );
     }
 }
 
-/// maximum amount of points a rig can spawn
-const SPAWN_POINT_AMOUNT_MAX: Range<u16> = 30..40;
 /// spawns a point around a rig every x-y seconds
 #[cfg(debug_assertions)]
 const SPAWN_POINT_SPRITE_P: Range<usize> = 0..2;
@@ -52,38 +43,49 @@ const SPAWN_POINT_RADIUS_MAX: f32 = 100.0;
 /// speed at which a point moves toward a ship's HUD center
 const POINT_SPEED: f32 = 2.0;
 
-#[derive(Component, Debug, Copy, Clone)]
-struct OilRig;
 
-// TODO use sets
-// TODO this doesn't account for worldsize fluctuations
-fn spawn_rigs(_: On<Add, WorldSize>, mut commands: Commands, world_size: Single<&WorldSize>) {
-    let mut rng = rand::rng();
+#[derive(Resource, Deref, DerefMut)]
+struct RigTimer(Timer);
 
-    let mut spawned_rigs = vec![];
-    for _ in 0..10 {
-        // temporary 10 rigs
-        spawned_rigs.push(spawn_random_rig(
+/// spawns rig if the timer is reached, then setting the timer to a random val
+fn spawn_rigs(
+    mut timer: ResMut<RigTimer>,
+    time: Res<Time>,
+
+    mut commands: Commands,
+    world_size: Single<&WorldSize>,
+    spawned_rigs: Query<&PointTransform>
+) {
+    timer.tick(time.delta());
+
+    if timer.is_finished() {
+        let mut rng = rand::rng();
+
+        spawn_random_rig(
             &mut commands,
             &mut rng,
             &world_size,
-            &spawned_rigs
-        ));
+            &spawned_rigs.iter().map(|i| i.position).collect::<Vec<Vec2>>()
+        );
+
+        *timer = RigTimer::new_rand(&mut rng);
     }
 }
 
-const SPRITE_SIZE: Vec2 = OILRIG_SPRITE_SIZE;
-
-struct RigInfo {
-    center: Vec2,
-    width: f32,
-}
-/// spawns a must-valid rig at [`WATER_SURFACE`], returns the position of the spawned rig
-/// ### Panics
-/// assumes that the rig is a square
+/// spawns a must-valid rig at [`OCEAN_SURFACE`], returns the center of the spawned rig
+/// 
 /// ### Hangs
 /// if there aren't space
-///
+/// 
+/// ### Params
+/// - `world_size`: the [`Single<WorldSize>`]
+/// - `other_rigs`: all other rigs' centers
+/// 
+/// ### Spawns
+/// - [`OilRigTransform`](OilRig) (consider changing name)
+/// - [`PointAmount`]
+/// - Replicated to all
+/// 
 /// uses [`SPRITE_SIZE`]
 fn spawn_random_rig(
     commands: &mut Commands,
@@ -102,24 +104,15 @@ fn spawn_random_rig(
         );
         if out_of_bounds(
             world_size,
-            Mk48Rect::new(center, SPRITE_SIZE),
+            Mk48Rect::new(center, Vec2::splat(OilRig::SPRITE_SIZE)),
             Radian(rotation),
         ) {
             continue;
         }
-        let rig = RigInfo {
-            center,
-            width: SPRITE_SIZE.x,
-        };
 
-        for &center in other_rigs {
-            let other = RigInfo {
-                center,
-                width: SPRITE_SIZE.x
-            };
-
+        for &other_center in other_rigs {
             // roughly filter out those that may intersect
-            if !square_does_not_intersects(rig.center, rig.width, other.center, other.width) {
+            if !square_does_not_intersects(center, OilRig::SPRITE_SIZE, other_center, OilRig::SPRITE_SIZE) {
                 continue 'outer;
             }
         }
@@ -128,39 +121,31 @@ fn spawn_random_rig(
     }
 
     commands.spawn((
-        PointAmount::new(rng),
-        OilRig,
-        OilRigInfo {
+        OilRig {
             position: center,
             rotation: Radian(rotation)
         },
+        PointAmount::new(rng),
         Replicate::to_clients(NetworkTarget::All)
     ));
 
     center
 }
 
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// an entity that provide an amount of points
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Point {
     Barrel,
     Coin,
     Scrap,
 }
 
-#[derive(Component, Debug, Clone)]
-struct ParentRig(Entity);
-
-/// holding the amount of points
-#[derive(Component, Debug, Clone, Copy)]
-struct PointAmount {
-    points: u16,
-    max_point: u16,
-}
-
+/// replicate [`PointTransform`]s to client which is equivalent of `CustomTransform` for Points
+/// 
+/// interpolation enabled
 fn rig_spawn_points(
     mut commands: Commands,
-    rigs: Query<(&mut PointAmount, &OilRigInfo, Entity), With<OilRig>>,
+    rigs: Query<(&mut PointAmount, &OilRig, Entity)>,
     world_size: Single<&WorldSize>,
 ) {
     let mut rng = rand::rng();
@@ -173,36 +158,33 @@ fn rig_spawn_points(
         }
 
         if *spawn_p.choose(&mut rng).unwrap() {
-            let available_tiles: Vec<_> = tiles_around_point(
-                    rig.position,
-                    SPRITE_SIZE.x + SPAWN_POINT_RADIUS_MAX,
-                )
-                .iter()
-                .filter(|&&tile| !point_in_square(tile, SPRITE_SIZE.x, rig.position))
-                .filter(|&&tile| {
-                    !out_of_bound_no_rotation(
-                        // okay to not use with rotation outofbound because how small a point is
-                        &world_size,
-                        Mk48Rect::from_point(tile)
-                    )
-                })
-                .copied()
-                .collect();
+            let cords = avaliable_cords(rig.position, OilRig::SPRITE_SIZE + SPAWN_POINT_RADIUS_MAX);
+
+            let chosen_tile =  loop {
+                let chosen = vec2(rng.random_range(cords.0.clone()), rng.random_range(cords.1.clone()));
+
+                if point_in_square(chosen, OilRig::SPRITE_SIZE, rig.position)
+                    || out_of_bound_point(&world_size, chosen)
+                {
+                    continue;
+                }
+                break chosen;
+            };
 
             let &chosen_type = Point::ALL.choose(&mut rng).unwrap();
-            let &chosen_tile = available_tiles.choose(&mut rng).unwrap();  // TODO not efficient, vec2(rand, rand) instead
 
             commands.spawn((
                 chosen_type,
                 ParentRig(id),
 
-                PointInfo {
+                PointTransform {
                     position: chosen_tile,
                     // default spawns on water surface
                     depth: OCEAN_SURFACE,
                     file_name: Arc::from(chosen_type.file_name())
                 },
-                Replicate::to_clients(NetworkTarget::All)
+                Replicate::to_clients(NetworkTarget::All),
+                InterpolationTarget::to_clients(NetworkTarget::All)
             ));
 
             point_amount.add(chosen_type.worth());
@@ -213,21 +195,20 @@ fn rig_spawn_points(
 /// move points toward ships that have a circle hud overlapping them
 /// 
 /// ignoring moving in the Z-axis
+/// 
+/// takes ~0.01 milliseconds to run once in a small map with 1 boat
 fn move_points(
-    mut points_transform: Query<&mut PointInfo, With<Point>>,
-    boats: Query<(&Boat, &CustomTransform, &ZIndex), Without<Point>>,
+    mut points_transform: Query<&mut PointTransform, With<Point>>,
+    boats: Query<(&CustomTransform, &Boat, &ZIndex)>,
 ) {
-    // TODO points should "lock in" to a boat once it starts to dive
-    // TODO use systemsets for scheduling
-    // TODO consider locally predicting the visible of map's points, 可見的lag在debug mode
     for (boats_in_range, mut point) in points_transform.iter_mut().filter_map(|point_info| {
-        let boats_in_range = boats
-            .iter()
-            .filter(|&(boat, CustomTransform { position: boat_pos, ..}, boat_depth)| {
+        let boats_in_range = boats.iter()
+            .filter(|&(CustomTransform { position: boat_pos, ..}, boat, boat_depth)| {
                 in_range(boat_pos.0, point_info.position, boat.circle_hud_radius())
+                    // TODO points should "lock in" to a boat once it starts to dive
                     && eq!(*boat_depth, point_info.depth)
             })
-            .map(|(_, CustomTransform { position, ..}, _)| position.0)
+            .map(|(CustomTransform { position, ..}, ..)| position.0)
             .collect::<Vec<_>>();
 
         if boats_in_range.is_empty() {
@@ -239,25 +220,26 @@ fn move_points(
         // move the point toward player for those in 1 player's circle hud
         if boats_in_range.len() == 1 {
             point.position = point.position.move_towards(
-                boats_in_range[0],
+                // safety: we know from the len check above
+                *unsafe { boats_in_range.get_unchecked(0) },
                 POINT_SPEED,
             );
             continue;
         }
 
-        let boat_position = boats_in_range.iter().min_by_key(|&boat_position| {
+        // safety: iterator won't run if boats empty
+        let boat_position = unsafe { boats_in_range.iter().min_by_key(|&boat_position| {
             Vec2::distance_squared(point.position, *boat_position) as u32
-        }).unwrap();
+        }).unwrap_unchecked() };
 
-        point.position = point.position
-            .move_towards(*boat_position, POINT_SPEED);
+        point.position = point.position.move_towards(*boat_position, POINT_SPEED);
     }
 }
 
 /// increment player's score and despawning the Point if absorbed
 fn points_obsorbed_despawn(
     mut commands: Commands,
-    points_transform: Query<(&PointInfo, &Point, &ParentRig, Entity)>,
+    points_transform: Query<(&PointTransform, &Point, &ParentRig, Entity)>,
     mut boats: Query<(&CustomTransform, &ZIndex, &mut PlayerScore), With<Boat>>,
     mut point_amounts: Query<&mut PointAmount, With<OilRig>>,
 ) {
@@ -279,6 +261,16 @@ fn points_obsorbed_despawn(
 }
 
 
+#[derive(Component, Debug, Clone)]
+struct ParentRig(Entity);
+
+/// holding the amount of points
+#[derive(Component, Debug, Clone, Copy)]
+struct PointAmount {
+    points: u16,
+    max_point: u16,
+}
+
 impl Point {
     const ALL: [Self; 3] = [Self::Barrel, Self::Coin, Self::Scrap];
 
@@ -299,9 +291,11 @@ impl Point {
 }
 
 impl PointAmount {
+    /// maximum amount of points a rig can spawn
+    const SPAWN_POINT_AMOUNT_MAX: Range<u16> = 30..40;
     /// generates a max point from default
     fn new(rng: &mut ThreadRng) -> Self {
-        let max_point = rng.random_range(SPAWN_POINT_AMOUNT_MAX);
+        let max_point = rng.random_range(Self::SPAWN_POINT_AMOUNT_MAX);
 
         PointAmount {
             points: 0,
@@ -319,5 +313,13 @@ impl PointAmount {
     /// if exceeds max range
     fn is_max(&self) -> bool {
         self.points >= self.max_point
+    }
+}
+
+impl RigTimer {
+    const DURATION_RANGE: Range<Duration> = Duration::from_secs(10)..Duration::from_secs(120);
+    /// random duration with [`TimerMode::Once`]
+    fn new_rand(rng: &mut ThreadRng) -> Self {
+        Self(Timer::new(rng.random_range(Self::DURATION_RANGE), TimerMode::Once))
     }
 }

@@ -1,13 +1,16 @@
 //! utility functions independent to game
 
+use std::ops::{Range, RangeInclusive};
+use std::sync::LazyLock;
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*, window::PrimaryWindow};
+#[cfg(not(target_family = "wasm"))]
 use lightyear::websocket::server::Identity;
 use crate::MainCamera;
 use crate::primitives::{Radian, Speed};
-use crate::primitives::{Mk48Rect, WidthHeight};
+use crate::primitives::{Mk48Rect, WidthHeight, ZIndex};
 
-
+/// can just chain [`run_if`](IntoScheduleConfigs::run_if)s..
 pub fn in_states_2<T: States>(first: T, second: T)  -> impl Fn(Res<State<T>>) -> bool {
     move |state| *state.get() == first || *state.get() == second
 }
@@ -68,6 +71,7 @@ pub fn move_with_rotation(rotation: Radian, speed: Speed) -> Vec3 {
 /// gets a approximately round area of tiles around a point
 /// # Unexpected behavior
 /// the `radius` will be rounded, therefore only reeturning integer points
+#[inline]
 pub fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
     let radius = radius.round() as i32;
     let mut ret = vec![];
@@ -84,7 +88,28 @@ pub fn tiles_around_point(position: Vec2, radius: f32) -> Vec<Vec2> {
     ret
 }
 
-use crate::primitives::ZIndex;
+const MUL_RANGE: Range<f32> = 0.8..1.2;
+static X_MULTIPLIER: LazyLock<f32> = LazyLock::new(|| rand::random_range(MUL_RANGE));
+static Y_MULTIPLIER: LazyLock<f32> = LazyLock::new(|| rand::random_range(MUL_RANGE));
+
+/// similar to [`tiles_around_point`] but returns a square with radius randomnized
+#[inline]
+pub fn avaliable_cords(position: Vec2, radius: f32) -> (RangeInclusive<f32>, RangeInclusive<f32>) {
+    let x = {
+        let adjusted_radius = radius * *X_MULTIPLIER;
+        let left = position.x - adjusted_radius;
+        let right = position.x + adjusted_radius;
+        left..=right
+    };
+    let y = {
+        let adjusted_radius = radius * *Y_MULTIPLIER;
+        let down = position.y - adjusted_radius;
+        let up = position.y + adjusted_radius;
+        down..=up
+    };
+    (x, y)
+}
+
 /// returns the (radius, darkness (0..1)) to be passed into shaders
 ///
 /// the closer to the surface(0.0), the bigger the radius, smaller the darkness and vice versa
@@ -117,6 +142,7 @@ pub fn calculate_diving_overlay(
     }
 }
 
+#[inline]
 pub fn point_in_square(point: Vec2, square_len: f32, square_center: Vec2) -> bool {
     let square = Mk48Rect::new(square_center, WidthHeight::splat(square_len));
 
@@ -233,6 +259,7 @@ macro_rules! extract {
 
 /// webtransport/websocket certificate, currently not used, using plain websockets
 #[cfg_attr(debug_assertions, allow(dead_code))]
+#[cfg(not(target_family = "wasm"))]
 fn from_pem_file(
     cert_path: impl AsRef<std::path::Path>,
     key_path: impl AsRef<std::path::Path>,

@@ -10,6 +10,8 @@ lightyear = { workspace = true }
 rand = "0.10"
 getrandom = {version = "0.4.2", features = ["wasm_js"]}  # align with rand
 bevy-inspector-egui = "0.36.0"
+# using JS script to keep alive
+# bevy_web_keepalive = { git = "https://github.com/Nul-led/bevy_web_keepalive" }
 
 [target.'cfg(target_family = "wasm")'.dependencies.bevy]
 workspace = true

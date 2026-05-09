@@ -6,9 +6,11 @@
 //! for server: confirmation of input and prediction
 //!
 //! extremely modular :)
+#![allow(clippy::type_complexity)]
 
 // note that we're passing owned vals everywhere which doesn't matter for types smaller than 64 bits
 use crate::boat::Boat;
+use crate::collision::out_of_bound_point;
 use crate::primitives::{CustomTransform, LastSpeed, NormalizeRadian, Radian, Speed, TargetRotation, WrapRadian};
 use crate::protocol::{Move, Rotate};
 use crate::primitives::OutOfBound;
@@ -123,9 +125,8 @@ fn validate_max_turn(target: &mut Radian, current_rotation: Radian, max_turn: Ra
     }
 }
 
-// TODO should we clear to None after applying? if we don't we can use it for moving to target but maybe bandwidth
+// should we clear to None after applying? if we don't we can use it for moving to target but maybe bandwidth
 
-// TODO consider putting these bounds in InputBufferPlugin too for bandwidth, will be easy due to non-bevy funcs
 /// check if intended speed greater than acceleration
 fn validate_acceleration(target: &mut Speed, current_speed: Speed, acceleration: Speed) {
     let diff = *target - current_speed;
@@ -144,8 +145,8 @@ enum PlayerValidity {
 
 /// sanity check: speed upper + lower bound
 /// should be run after validating acceleration
-/// - `reverse_max_speed` assumes positive
-#[must_use]
+/// - `reverse_max_speed` assumes positive from [`Boat`]
+#[must_use = "Result may be a err value which should be handled"]
 fn validate_speed_cheating(target: &Speed, max_speed: Speed, reverse_max_speed: Speed) -> PlayerValidity {
     if *target > max_speed {
         error!(
@@ -180,9 +181,9 @@ struct WeaponMovementPlugin;
 impl Plugin for WeaponMovementPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(FixedUpdate, (rotate_weapon, move_weapon).chain());  // chain and FixedUpdate for minimal diff between server and cient
+        app.add_systems(FixedUpdate, despawn_weapon_out_of_bound);
     }
 }
-
 
 fn rotate_weapon(q: Query<(&mut Transform, &TargetRotation, &Weapon)>) {
     for (mut transform, target, weapon) in q {
@@ -226,5 +227,18 @@ fn move_weapon(query: Query<(&mut Transform, &Weapon, &mut LastSpeed)>) {
         // update transform
         let move_by = move_with_rotation(transform.rotation.wrap_radian(), speed);
         transform.translation += move_by;
+    }
+}
+
+fn despawn_weapon_out_of_bound(
+    mut commands: Commands,
+    weapons: Query<(&Transform, Entity), (With<Weapon>, Changed<Transform>)>,
+    world_size: Single<&WorldSize>
+) {
+    for (transform, id) in weapons {
+        if out_of_bound_point(&world_size, transform.translation.xy()) {
+            commands.get_entity(id).unwrap()
+                .despawn();
+        }
     }
 }

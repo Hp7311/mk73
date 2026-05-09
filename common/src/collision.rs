@@ -17,6 +17,7 @@ use crate::primitives::{Mk48Rect, Radian};
 /// `pos` has center point at the center.
 /// ### Performance
 /// slow if close to the border
+#[inline]
 pub fn out_of_bounds(bound: &WorldSize, rect: Mk48Rect, rotation: Radian) -> bool {
     // if not near the border, return without redundant operations
     if !out_of_bound_no_rotation(
@@ -45,6 +46,10 @@ pub fn out_of_bound_no_rotation(bound: &WorldSize, rect: Mk48Rect) -> bool {
         .any(|corner| !bound.to_rect().contains(*corner))
 }
 
+#[inline]
+pub fn out_of_bound_point(bound: &WorldSize, point: Vec2) -> bool {
+    !bound.to_rect().contains(point)
+}
 /// returns false if may intersect
 /// ### length is added half
 pub fn square_does_not_intersects(

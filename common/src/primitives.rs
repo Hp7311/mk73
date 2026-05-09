@@ -10,6 +10,8 @@ use bevy::math::FloatPow;
 use rand::distr::StandardUniform;
 use rand::prelude::Distribution;
 use rand::{Rng, RngExt};
+use crate::eq;
+use crate::protocol::{OilRigTransform, PointTransform};
 use crate::weapon::Weapon;
 use crate::collision::out_of_bounds;
 use crate::util::move_with_rotation;
@@ -65,7 +67,7 @@ pub struct WeaponCounter {
     pub selected_weapon: Option<Weapon> // potential terry fox
 }
 
-// TODO maybe Trait on Rect
+// maybe Trait on Rect？
 /// useful helpers like getting corners and large bounding box
 #[derive(Debug, Clone, Copy)]
 pub struct Mk48Rect {
@@ -86,6 +88,19 @@ impl Mk48Rect {
             vec2(
                 self.center.x + self.dimensions.width / 2.0,
                 self.center.y - self.dimensions.height / 2.0,
+            )
+        ]
+    }
+    /// bottom-left and right-upper
+    pub(crate) fn clamp_corners(&self) -> [Vec2; 2] {
+        [
+            vec2(
+                self.center.x - self.dimensions.width / 2.0,
+                self.center.y - self.dimensions.height / 2.0,
+            ),
+            vec2(
+                self.center.x + self.dimensions.width / 2.0,
+                self.center.y + self.dimensions.height / 2.0,
             )
         ]
     }
@@ -226,13 +241,13 @@ impl PartialOrd for Speed {
     }
 }
 
-/// the direction by which the ship should aim to turn towards
-#[derive(Component, Debug, Clone, Copy, Default, Deref)]
+/// the direction by which the weapon should aim to turn towards
+#[derive(Component, Debug, Clone, Copy, Default, Deref, PartialEq, Serialize, Deserialize)]
 pub struct TargetRotation(pub Radian);
 
 
 /// used by weapons to find accleration
-#[derive(Component, Copy, Clone)]
+#[derive(Component, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LastSpeed(pub Speed);
 
 /// the target speed by which the ships should aim to accelerate towards
@@ -399,6 +414,14 @@ impl Position {
     pub fn extend(self, z_index: ZIndex) -> Vec3 {
         self.0.extend(z_index.0)
     }
+    /// clamp with a padding
+    /// 
+    /// ### `max` should be bigger than `min` on every element
+    /// e.g. [`Mk48Rect::clamp_corners`]
+    pub fn clamp_with_padding(mut self, min: Vec2, max: Vec2, padding: f32) -> Self {
+        self.0 = self.clamp(min + Vec2::splat(padding), max - Vec2::splat(padding));
+        self
+    }
 }
 impl From<Vec2> for Position {
     fn from(value: Vec2) -> Self {
@@ -556,5 +579,52 @@ impl From<Vec2> for WidthHeight {
             width: value.x,
             height: value.y,
         }
+    }
+}
+
+pub trait RoughEq<Rhs = Self> {
+    /// returns true if two vals are roughly equal (counting floats to be equal if difference below 0.001
+    fn rough_eq(&self, rhs: &Rhs) -> bool;
+}
+
+impl RoughEq for f32 {
+    fn rough_eq(&self, rhs: &Self) -> bool {
+        eq!(self, rhs)
+    }
+}
+impl RoughEq for Radian {
+    fn rough_eq(&self, rhs: &Self) -> bool {
+        self.0.rough_eq(&rhs.0)
+    }
+}
+impl RoughEq for Speed {
+    fn rough_eq(&self, rhs: &Self) -> bool {
+        self.0.rough_eq(&rhs.0)
+    }
+}
+impl RoughEq for Vec2 {
+    fn rough_eq(&self, rhs: &Self) -> bool {
+        self.x.rough_eq(&rhs.x)
+            && self.y.rough_eq(&rhs.y)
+    }
+}
+impl RoughEq for CustomTransform {
+    fn rough_eq(&self, rhs: &Self) -> bool {
+        self.speed.rough_eq(&rhs.speed)
+            && self.rotation.rough_eq(&rhs.rotation)
+            && self.position.rough_eq(&rhs.position.0)
+    }
+}
+impl RoughEq for OilRigTransform {
+    fn rough_eq(&self, rhs: &Self) -> bool {
+        self.position.rough_eq(&rhs.position)
+            && self.rotation.rough_eq(&rhs.rotation)
+    }
+}
+impl RoughEq for PointTransform {
+    fn rough_eq(&self, rhs: &Self) -> bool {
+        self.position.rough_eq(&rhs.position)
+            && self.depth == rhs.depth
+            && self.file_name == rhs.file_name
     }
 }
