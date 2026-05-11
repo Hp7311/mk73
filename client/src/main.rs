@@ -6,6 +6,7 @@ mod dive;
 mod weapon;
 mod boat;
 mod oil_rig;
+mod ui;
 
 use std::time::Duration;
 
@@ -14,9 +15,10 @@ use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::egui::emath::GuiRounding;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use common::primitives::{DisplayScore, PlayerStats};
 use common::{
     Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, SubKind, WorldPlugin,
-    protocol::{Move, PlayerScore, ProtocolPlugin, Rotate},
+    protocol::{Move, ProtocolPlugin, Rotate},
     primitives::{CustomTransform, Radian, ZIndex}
 };
 
@@ -33,6 +35,7 @@ use crate::boat::BoatPlugin;
 use crate::dive::DivingPlugin;
 use crate::input::InputBufferPlugin;
 use crate::oil_rig::OilRigPlugin;
+use crate::ui::UiPlugin;
 use crate::weapon::WeaponPlugin;
 
 // note that web builds are noticably laggier than native builds
@@ -42,7 +45,7 @@ compile_error! {"Should compile by trunk serve on production"}
 
 
 const DEFAULT_MAX_ZOOM: f32 = 2.0;
-const TIME_TO_LAUNCH_WEAPON: Duration = Duration::from_millis(100);
+const TIME_TO_LAUNCH_WEAPON: Duration = Duration::from_millis(200);
 /// absolute value of minimum radians that must be reached to reverse the Boat
 const MINIMUM_REVERSE: f32 = Radian::from_deg(180.0 - 45.0).0;
 
@@ -78,6 +81,7 @@ fn main() {
     .add_plugins(MovementPlugin { move_weapon: true })
     .add_plugins(DivingPlugin)
     .add_plugins(WeaponPlugin)
+    .add_plugins(UiPlugin)
 
     // init
     .add_systems(Startup, setup)
@@ -96,9 +100,6 @@ fn main() {
 
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect);
-
-    app.add_systems(Startup, spawn_gui.after(setup));
-    app.add_systems(Update, update_gui);
 
     app.run();
 }
@@ -240,6 +241,7 @@ fn on_added_actionstate<T>(
     );
 }
 
+/// ejected by [`update_state`]
 #[derive(Event)]
 struct FiresWeapon;
 
@@ -275,42 +277,4 @@ fn on_disconnect(trigger: On<Add, Disconnected>, query: Query<&Disconnected>) {
 
 fn on_remove_disconnect(_: On<Remove, Disconnected>) {
     info!("Client re-connected")
-}
-
-fn spawn_gui(mut commands: Commands, camera: Single<Entity, With<MainCamera>>) {
-    commands.get_entity(camera.into_inner()).unwrap().insert(children![(
-        Text2d::new("RotateInput: None\nSpeedInput: None\nState: Stopped\nPosition: None\nAltitude: None\nRotation: None\nSpeed: None\nScore: None"),
-        TextFont {
-            font_size: 15.0,
-            ..default()
-        },
-        Transform::from_xyz(0.0, 280.0, common::OIL_RIG_Z + common::OCEAN_SURFACE.0 + 1.0),
-    )]);
-}
-fn update_gui(
-    mut text: Single<&mut Text2d>,
-    rotate: Single<&ActionState<Rotate>, With<InputMarker<Rotate>>>,
-    moves: Single<&ActionState<Move>, With<InputMarker<Move>>>,
-    state: Res<State<BoatState>>,
-    custom: Single<&CustomTransform, With<Controlled>>,
-    transform: Single<&Transform, With<Controlled>>,
-    player_score: Single<&PlayerScore, With<Controlled>>
-) {
-    let state = format!("{:?}", state.into_inner()).split("State(").last().unwrap().to_owned();
-
-    let new_text = format!(
-        "RotateInput: {}\nSpeedInput: {}\nState: {}\nPosition: {}\nAltitude: {}\nRotation: {}\nSpeed: {}\nScore: {}",
-        rotate.0.0.map(|r| r.to_degrees().round()).unwrap_or(0.0),
-        moves.0.0.map(|r| r.get_knots().round()).unwrap_or(0.0),
-        state.chars().take(state.len() - 1).collect::<String>(),
-        custom.position.0.round(),
-        transform.translation.z.round_to_pixels(10.0),
-        custom.rotation.to_degrees().round(),
-        custom.speed.get_knots().round(),
-        player_score.get_score()
-    );
-
-    if new_text != text.0 {
-        text.0 = new_text;
-    }
 }

@@ -51,7 +51,7 @@ fn spawn_boat(
         .insert_if_new(BoatBundle {
             boat,
             weapon_counter: WeaponCounter {
-                weapons: boat.get_armanents(),
+                weapons: boat.armanents(),
                 selected_weapon: boat.default_weapon(),
             },
             sprite: Sprite {

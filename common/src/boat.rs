@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::primitives::Radian;
+use crate::primitives::{Level, Radian};
 use crate::{
     DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK,
     primitives::Speed,
@@ -21,9 +21,15 @@ pub enum SubKind {
 }
 
 impl Boat {
+    pub const ALL: [Self; 1] = [Self::Yasen];
     pub fn sub_kind(&self) -> SubKind {
         match self {
             Self::Yasen => SubKind::Submarine,
+        }
+    }
+    pub fn level(&self) -> Level {
+        match self {
+            Self::Yasen => Level::Eight
         }
     }
     pub fn file_name(&self) -> &'static str {
@@ -31,7 +37,7 @@ impl Boat {
             Self::Yasen => "yasen.png",
         }
     }
-    pub fn get_armanents(&self) -> HashMap<Weapon, u8> {
+    pub fn armanents(&self) -> HashMap<Weapon, u8> {
         HashMap::from(match self {
             Self::Yasen => [(Weapon::Set65, 4),]
         })
@@ -61,7 +67,7 @@ impl Boat {
             Self::Yasen => 1.0,
         })
     }
-    /// raw file size * [`DEFAULT_SPRITE_SHRINK`]
+    /// vec2(width, height)
     pub fn sprite_size(&self) -> Vec2 {
         (match self {
             Self::Yasen => vec2(1024.0, 156.0),

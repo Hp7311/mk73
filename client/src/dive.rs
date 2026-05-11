@@ -47,7 +47,7 @@ fn spawn_diving_overlay(
                     mesh: Mesh2d(meshes.add(DIVING_OVERLAY_SHAPE)),
                     materials: MeshMaterial2d(diving_overlay_material.add(DivingOverlayShader {
                         radius: DIVING_OVERLAY_MAX_RADIUS,
-                        player_pos: vec2(0.0, 0.0), // hm
+                        player_pos: vec2(0.0, 0.0),
                         darkness: 0.0,
                         ..default()
                     })),
@@ -60,15 +60,18 @@ fn spawn_diving_overlay(
 }
 
 fn update_diving_overlay(
-    ship: Single<&CustomTransform, (With<Boat>, With<Controlled>, Changed<CustomTransform>)>,
-    transform: Single<&Transform, (With<Boat>, With<Controlled>)>,
+    boat: Single<(&CustomTransform, &Transform), (With<Boat>, With<Controlled>, Changed<CustomTransform>)>,
     mut diving_overlay_material: ResMut<Assets<DivingOverlayShader>>,
-    id: Single<&MeshMaterial2d<DivingOverlayShader>>,
+    overlay: Single<(&MeshMaterial2d<DivingOverlayShader>, &mut Transform), (With<DivingOverlay>, Without<Boat>)>,
 ) {
-    if let Some(diving_material) = diving_overlay_material.get_mut(*id) {
-        diving_material.player_pos = ship.position.0;
+    let (material_handle, mut transform) = overlay.into_inner();
+    if let Some(diving_material) = diving_overlay_material.get_mut(material_handle) {
+        let (custom, boat_tf) = *boat;
+        diving_material.player_pos = custom.position.0;
+        transform.translation.x = boat_tf.translation.x;
+        transform.translation.y = boat_tf.translation.y;
         (diving_material.radius, diving_material.darkness) = calculate_diving_overlay(
-            transform.translation.z_index(),
+            boat_tf.translation.z_index(),
             OCEAN_FLOOR,
             DIVING_OVERLAY_MIN_RADIUS,
             DIVING_OVERLAY_MAX_RADIUS,
@@ -167,7 +170,8 @@ struct DivingOverlayShader {
 }
 
 const DIVING_OVERLAY_MIN_RADIUS: f32 = 800.0;
-const DIVING_OVERLAY_SHAPE: Rectangle = Rectangle::from_length(2000.0);
+/// must cover the whole screen. 4000 * 2000 is pretty big
+const DIVING_OVERLAY_SHAPE: Rectangle = Rectangle::new(4000.0, 2000.0);
 const DIVING_OVERLAY_MAX_RADIUS: f32 = 1000.0;
 const DIVING_OVERLAY_MAX_DARKNESS: f32 = 0.6;
 const DIVING_OVERLAY_Z: f32 = 35.0;

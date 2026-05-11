@@ -1,16 +1,19 @@
 use std::time::Duration;
 use std::{f32::consts::PI, ops::Range};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use bevy::prelude::*;
-use lightyear::prelude::{InterpolationTarget, NetworkTarget, Replicate};
+use lightyear::link::server::Server;
+use lightyear::prelude::{InterpolationTarget, NetworkTarget, Replicate, ServerMultiMessageSender};
 use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
 use common::{Boat, OCEAN_SURFACE, eq};
 use common::collision::{out_of_bound_point, out_of_bounds, square_does_not_intersects};
-use common::primitives::{in_range, CustomTransform, Mk48Rect, Radian, ZIndex};
-use common::protocol::{OilRigTransform as OilRig, PlayerScore, PointTransform};
+use common::primitives::{CustomTransform, Mk48Rect, PlayerStats, Radian, ZIndex, in_range};
+use common::protocol::{OilRigTransform as OilRig, PointTransform, SendToClient};
 use common::util::{avaliable_cords, point_in_square};
 use common::WorldSize;
+
+use crate::BoatClientId;
 
 /// Replicated for OilRig entity:
 /// - [`OilRigInfo`]
@@ -32,10 +35,14 @@ impl Plugin for OilRigPlugin {
             );
     }
 }
-
-/// spawns a point around a rig every x-y seconds
-#[cfg(debug_assertions)]
-const SPAWN_POINT_SPRITE_P: Range<usize> = 0..2;
+/// use [`rand::rng`] to determine whether to spawn a new [`Point`]
+static SPAWN_POINT_VEC: LazyLock<Vec<bool>> = LazyLock::new(|| {
+    #[cfg(debug_assertions)]
+    let false_vec = [false; 4];
+    #[cfg(not(debug_assertions))]
+    let false_vec = [false; 40];
+    false_vec.into_iter().chain([true]).collect::<Vec<bool>>()
+});
 
 /// the maximum radius around a rig which a point can spawn
 const SPAWN_POINT_RADIUS_MAX: f32 = 100.0;
@@ -149,15 +156,13 @@ fn rig_spawn_points(
     world_size: Single<&WorldSize>,
 ) {
     let mut rng = rand::rng();
-    let mut spawn_p = vec![false; rng.random_range(SPAWN_POINT_SPRITE_P)];
-    spawn_p.push(true);
 
     for (mut point_amount, rig, id) in rigs {
         if point_amount.is_max() {
             continue;
         }
 
-        if *spawn_p.choose(&mut rng).unwrap() {
+        if *SPAWN_POINT_VEC.choose(&mut rng).unwrap() {
             let cords = avaliable_cords(rig.position, OilRig::SPRITE_SIZE + SPAWN_POINT_RADIUS_MAX);
 
             let chosen_tile =  loop {
@@ -240,22 +245,31 @@ fn move_points(
 fn points_obsorbed_despawn(
     mut commands: Commands,
     points_transform: Query<(&PointTransform, &Point, &ParentRig, Entity)>,
-    mut boats: Query<(&CustomTransform, &ZIndex, &mut PlayerScore), With<Boat>>,
+    mut boats: Query<(&CustomTransform, &ZIndex, &mut PlayerStats, &BoatClientId), With<Boat>>,
     mut point_amounts: Query<&mut PointAmount, With<OilRig>>,
+
+    mut sender: ServerMultiMessageSender,
+    server: Single<&Server>
 ) {
     for (point_transform, point, parent_rig, id) in points_transform.iter() {
-        if let Some(mut player_score) = boats
+        if let Some((mut player_stats, client_id)) = boats
             .iter_mut()
-            .find(|&(custom, z_index, _)| eq!(custom.position.extend(*z_index), point_transform.to_actual_translation(), ?vec3))
-            .map(|(_, _, score)| score)
+            .find(|&(custom, z_index, ..)| eq!(custom.position.extend(*z_index), point_transform.to_actual_translation(), ?vec3))
+            .map(|(_, _, stats, client_id)| (stats, client_id))
         {
             commands.get_entity(id).unwrap().despawn();
 
-            player_score.add_to_score(point.worth() as u32);
+            player_stats.add_to_score(point.worth().into());
+            
+            // client spawns UI and collects user input
+            sender.send::<_, SendToClient>(
+                &player_stats.display(),
+                &server,
+                &NetworkTarget::Single(client_id.0)
+            ).unwrap();
 
             let mut point_amount = point_amounts.get_mut(parent_rig.0).unwrap();
             point_amount.remove(point.worth());
-
         }
     }
 }

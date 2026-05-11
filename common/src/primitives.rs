@@ -10,7 +10,7 @@ use bevy::math::FloatPow;
 use rand::distr::StandardUniform;
 use rand::prelude::Distribution;
 use rand::{Rng, RngExt};
-use crate::eq;
+use crate::{Boat, eq};
 use crate::protocol::{OilRigTransform, PointTransform};
 use crate::weapon::Weapon;
 use crate::collision::out_of_bounds;
@@ -429,6 +429,164 @@ impl From<Vec2> for Position {
         Self(value)
     }
 }
+
+// TODO level system etc
+#[derive(Debug, Clone, Copy, Default, Component, Deserialize, Serialize, PartialEq)]
+pub struct PlayerStats {
+    score: u32,
+    level: Level
+}
+
+impl PlayerStats {
+    pub fn new(score: u32) -> Self {
+        Self {
+            score,
+            // no matter the score
+            level: Level::One
+        }
+    }
+    pub fn score(&self) -> u32 {
+        self.score
+    }
+    pub fn level(&self) -> Level {
+        self.level
+    }
+    /// use this when user selects upgrade
+    pub fn level_mut(&mut self) -> &mut Level {
+        &mut self.level
+    }
+}
+
+/// not responsible for not calling [`display`](Self::display)
+impl PlayerStats {
+    /// adding to score
+    pub fn add_to_score(&mut self, points: u32) {
+        self.score += points;
+        let _ = self.display();
+    }
+    /// either display the percentage to the next level or a new level
+    #[must_use]
+    pub fn display(&mut self) -> DisplayScore {
+        // we're re-calculating every time calling this
+        let max_possible = Level::max_from_score(self.score);
+        if max_possible > self.level {
+            return DisplayScore::NewLevel(max_possible);
+        }
+        let min = self.level.required_score();
+        let next_level = self.level + 1;
+        let diff = self.score - min;
+
+        let percent = diff as f32 / (next_level.required_score() - min) as f32;
+        let percent = percent * 100.0;
+
+        // equivalent of removing anything after decimal point
+        DisplayScore::Percent(percent as u8)
+    }
+}
+
+/// represents the current boat's level 
+/// 
+/// ### Note
+/// this doesn't represent maximum possible level see [`DisplayScore::NewLevel`]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, PartialOrd)]
+#[rustfmt::skip]
+pub enum Level {
+    #[default]
+    One,
+    Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten
+}
+
+impl Level {
+    pub const ALL: [Self; 10] = {
+        use Level::*;
+        [One, Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten]
+    };
+    pub const MAX: Self = Self::Ten;
+    
+    /// all avaliable boats for a level
+    pub fn avaliable_boats(&self) -> impl Iterator<Item = Boat> {
+        Boat::ALL.into_iter().filter(|boat| boat.level() == *self)
+    }
+    pub const fn required_score(&self) -> u32 {
+        use Level as L;
+        match self {
+            L::One => 0,
+            L::Two => 30,
+            L::Three => 80,
+            L::Four => 160,
+            L::Five => 270,
+            L::Six => 420,
+            L::Seven => 630,
+            L::Eight => 940,
+            L::Nine => 1430,
+            L::Ten => 2260
+        }
+    }
+    /// maximum [`Level`] from given `score`
+    pub fn max_from_score(score: u32) -> Self {
+        Level::ALL.into_iter()
+            .rev()
+            .find(|l| l.required_score() <= score)
+            .unwrap()  // u32 cannot be negative
+    }
+    /// prettier conversion to u8
+    pub fn to_u8(self) -> u8 {
+        self as u8
+    }
+}
+
+impl From<u32> for Level {
+    fn from(score: u32) -> Self {
+        Self::max_from_score(score)
+    }
+}
+
+impl From<Level> for u8 {
+    fn from(level: Level) -> u8 {
+        use Level as L;
+        match level {
+            L::One => 1,
+            L::Two => 2,
+            L::Three => 3,
+            L::Four => 4,
+            L::Five => 5,
+            L::Six => 6,
+            L::Seven => 7,
+            L::Eight => 8,
+            L::Nine => 9,
+            L::Ten => 10
+        }
+    }
+}
+
+impl Add<u8> for Level {
+    type Output = Self;
+    /// # Panics
+    /// if resulting level bigger than max
+    fn add(self, rhs: u8) -> Self::Output {
+        let level = self.to_u8() + rhs;
+        assert!(level <= Level::MAX.to_u8(), "Exceeds max level");
+
+        Level::ALL.into_iter().find(|l| l.to_u8() == level).unwrap()
+    }
+}
+
+/// sent to client on score change by [`PlayerStats::display`]
+#[derive(Debug, Deserialize, Serialize)]
+pub enum DisplayScore {
+    /// update to the percentage to the next level
+    /// 
+    /// with range 0..=100
+    Percent(u8),
+    /// emitted if current level is not maximum possible
+    /// 
+    /// remember to modify [`PlayerStats::level`] after user selects a new level
+    NewLevel(Level)
+}
+
+const _: () = {
+    assert!(Level::required_score(&Level::One) == 0)
+};
 
 #[derive(Debug, Resource, Clone, Copy, Default)]
 pub struct CursorPos(pub Vec2);

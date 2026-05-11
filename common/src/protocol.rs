@@ -2,7 +2,7 @@
 
 use std::{f32::consts::{FRAC_PI_2, PI}, sync::Arc};
 use crate::{
-    OCEAN_SURFACE, OIL_RIG_Z, POINTS_Z, boat::Boat, primitives::{CustomTransform, LastSpeed, Radian, Speed, TargetRotation}
+    OCEAN_SURFACE, OIL_RIG_Z, POINTS_Z, boat::Boat, primitives::{CustomTransform, DisplayScore, LastSpeed, PlayerStats, Radian, Speed, TargetRotation}
 };
 use bevy::{ecs::entity::MapEntities, prelude::*};
 use lightyear::{
@@ -14,6 +14,7 @@ use crate::primitives::{OutOfBound, Position, WeaponCounter, ZIndex};
 use crate::weapon::Weapon;
 use crate::world::WorldSize;
 
+/// unordered reliable
 pub struct SendToClient;
 pub struct SendToServer;
 
@@ -119,20 +120,6 @@ impl Ease for PointTransform {
         })
     }
 }
-#[derive(Debug, Clone, Copy, /*Resource, */ Default, Component, Deserialize, Serialize, PartialEq)]
-pub struct PlayerScore(u32);
-
-impl PlayerScore {
-    pub fn new(score: u32) -> Self {
-        Self(score)
-    }
-    pub fn add_to_score(&mut self, points: u32) {
-        self.0 += points;
-    }
-    pub fn get_score(&self) -> u32 {
-        self.0
-    }
-}
 
 /// currently implemented as a message, to-server
 #[derive(Debug, Deserialize, Serialize)]
@@ -200,7 +187,8 @@ impl Plugin for ProtocolPlugin {
         app.register_component::<OilRigTransform>();
         app.register_component::<PointTransform>().add_linear_interpolation();
 
-        app.register_component::<PlayerScore>();
+        app.register_component::<PlayerStats>();
+        app.register_message::<DisplayScore>().add_direction(NetworkDirection::ServerToClient);
 
         // MUST register these two for every input
         app.add_plugins(InputPlugin::<Rotate>::default());

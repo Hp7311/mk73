@@ -263,9 +263,8 @@ pub const fn ip_addr(hostname: Ipv4Addr, port: u16) -> SocketAddr {
 }
 
 /// webtransport/websocket certificate, currently not used, using plain websockets
-#[cfg_attr(debug_assertions, allow(dead_code))]
 #[cfg(feature = "server")]
-fn from_pem_file(
+pub fn from_pem_file(
     cert_path: impl AsRef<std::path::Path>,
     key_path: impl AsRef<std::path::Path>,
 ) -> Identity {
@@ -310,6 +309,34 @@ impl<T> InputExt for T {
         U: From<Self>,
     {
         From::from(self)
+    }
+}
+
+pub trait ResultExt {
+    fn log(self) -> Self;
+    fn log_err(self) -> Self;
+}
+
+impl<T: std::fmt::Debug, E: std::fmt::Debug> ResultExt for Result<T, E> {
+    /// similar to [`Result::inspect`]
+    /// 
+    /// ### Output:
+    /// INFO Val: {[`Ok`] variant's [`Debug`] impl}
+    fn log(self) -> Self {
+        if let Ok(ref t) = self {
+            info!("Val: {:?}", t);
+        }
+        self
+    }
+    /// similar to [`Result::inspect_err`]
+    /// 
+    /// ### Output:
+    /// ERROR Err: {[`Err`] variant's [`Debug`] impl}
+    fn log_err(self) -> Self {
+        if let Err(ref e) = self {
+            error!("Err: {:?}", e);
+        }
+        self
     }
 }
 

@@ -10,7 +10,7 @@ use crate::{
     protocol::{OilRigTransform, SetupServer}
 };
 #[cfg(feature = "server")]
-use lightyear::prelude::{Connected, DeltaManager, Disconnected, NetworkTarget, Server};
+use lightyear::prelude::{Connected, Disconnected, NetworkTarget};
 
 #[cfg(feature = "client")]
 use crate::{
@@ -19,7 +19,6 @@ use crate::{
     util::get_cursor_pos,
     shaders::WorldMaterial
 };
-
 
 #[allow(unused)]
 const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
@@ -140,7 +139,7 @@ pub fn spawn_sprite(
 
 pub fn update_sprite_size(mut meshes: ResMut<Assets<Mesh>>, sprite: Single<&Mesh2d, With<Background>>, world_size: Single<&WorldSize, Changed<WorldSize>>) {
     // sprite.custom_size = Some(world_size.get_size());
-    if let Some(mesh) = meshes.get_mut(&sprite.0) {
+    if let Some(mesh) = meshes.get_mut(*sprite) {
         *mesh = Rectangle::from_size(world_size.get_size()).into();
     }
 }
@@ -171,17 +170,11 @@ mod server {
 use super::*;
 use lightyear::prelude::Replicate;
 
-pub fn spawn_worldsize(mut commands: Commands, server: Query<Entity, With<Server>>) {
-    let server = server.single().unwrap();
-    let world_size = WorldSize::new();
-
+pub fn spawn_worldsize(mut commands: Commands) {
     commands.spawn((
-        world_size,
+        WorldSize::new(),
         Replicate::to_clients(NetworkTarget::All)
     ));
-
-    commands.get_entity(server).unwrap()
-        .insert(DeltaManager::default());
 }
 
 pub fn on_new_client(

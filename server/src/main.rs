@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
 use common::{
     Boat, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, WorldPlugin,
-    primitives::{CustomTransform, OutOfBound, Position, WeaponCounter, ZIndex},
+    primitives::{CustomTransform, OutOfBound, PlayerStats, Position, WeaponCounter, ZIndex},
     protocol::{Move, ProtocolPlugin, Rotate, SetupServer, SystemSetPlugin}
 };
 use lightyear::{
@@ -20,7 +20,7 @@ use lightyear::{
         *,
     },
 };
-use common::protocol::{EntityOnServer, NewZIndex, PlayerScore};
+use common::protocol::{EntityOnServer, NewZIndex};
 use crate::oil_rig::OilRigPlugin;
 use crate::weapon::WeaponPlugin;
 
@@ -118,11 +118,11 @@ fn handle_connected_client(
         OCEAN_SURFACE,
         boat,
         WeaponCounter {
-            weapons: boat.get_armanents(),
+            weapons: boat.armanents(),
             selected_weapon: boat.default_weapon()
         },
         OutOfBound(false),
-        PlayerScore::new(0),
+        PlayerStats::new(0),
         
         BoatClientId(client_id),
         
