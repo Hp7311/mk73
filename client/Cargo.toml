@@ -15,3 +15,9 @@ bevy-inspector-egui = "0.36.0"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 bevy = { workspace = true, features = ["webgpu"] }
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Text",
+    "HtmlElement"
+]}
+anyhow = "1"

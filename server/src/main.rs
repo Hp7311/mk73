@@ -3,8 +3,7 @@ mod weapon;
 
 use std::time::Duration;
 
-use bevy::prelude::*;
-use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
+use bevy::{diagnostic::{DiagnosticsPlugin, LogDiagnosticsPlugin}, log::LogPlugin, prelude::*, state::app::StatesPlugin};
 use common::{
     Boat, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, WorldPlugin,
     primitives::{CustomTransform, OutOfBound, PlayerStats, Position, WeaponCounter, ZIndex},
@@ -26,15 +25,14 @@ use crate::weapon::WeaponPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(
+        .add_plugins((
             // headless plugins
-            DefaultPlugins
-                .set(WindowPlugin {
-                primary_window: None,
-                exit_condition: bevy::window::ExitCondition::DontExit,
-                ..default()
-            }),
-        )
+            MinimalPlugins,
+            DiagnosticsPlugin,
+            LogDiagnosticsPlugin::default(),
+            LogPlugin::default(),
+            StatesPlugin,
+        ))
         .add_plugins(ServerPlugins::default())
         .add_plugins(ProtocolPlugin)
         .add_plugins(SystemSetPlugin { is_server: true })
@@ -49,8 +47,6 @@ fn main() {
         // handle client req
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client)
-        .add_plugins(EguiPlugin::default())
-        .add_plugins(WorldInspectorPlugin::default())
 
         .run();
 }

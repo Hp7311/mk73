@@ -7,19 +7,19 @@ mod weapon;
 mod boat;
 mod oil_rig;
 mod ui;
+#[cfg(target_family = "wasm")]
+mod web_utils;
 
 use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
-use bevy_inspector_egui::egui::emath::GuiRounding;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use common::primitives::{DisplayScore, PlayerStats};
 use common::{
     Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, SubKind, WorldPlugin,
     protocol::{Move, ProtocolPlugin, Rotate},
-    primitives::{CustomTransform, Radian, ZIndex}
+    primitives::{Radian, ZIndex}
 };
 
 use lightyear::netcode::{auth::Authentication, Key, NetcodeClient};
@@ -57,8 +57,10 @@ fn main() {
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     canvas: Some("#bevy_canvas".to_owned()),
+                    fit_canvas_to_parent: true,
                     ..default()
                 }),
+                
                 ..default()
             })
             .set(AssetPlugin {
@@ -70,7 +72,7 @@ fn main() {
     .add_plugins(ClientPlugins::default())
     .add_plugins(ProtocolPlugin)
     .add_plugins(PanCameraPlugin)
-    // .insert_resource(ClearColor(TEAL.into()))
+    .insert_resource(ClearColor(bevy::color::palettes::css::TEAL.into()))
         
     // plugins
     .init_state::<BoatState>()

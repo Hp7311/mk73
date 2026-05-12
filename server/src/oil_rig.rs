@@ -30,7 +30,7 @@ impl Plugin for OilRigPlugin {
             .insert_resource(RigTimer::new_rand(&mut rand::rng()))
             .add_systems(Update, spawn_rigs)
             .add_systems(
-                Update,
+                FixedUpdate,
                 (rig_spawn_points, move_points, points_obsorbed_despawn)
             );
     }

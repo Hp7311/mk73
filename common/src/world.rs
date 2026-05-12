@@ -137,6 +137,8 @@ pub fn spawn_sprite(
     ));
 }
 
+// TODO wave effect around controlling player's ocean (will take a lot of time)
+
 pub fn update_sprite_size(mut meshes: ResMut<Assets<Mesh>>, sprite: Single<&Mesh2d, With<Background>>, world_size: Single<&WorldSize, Changed<WorldSize>>) {
     // sprite.custom_size = Some(world_size.get_size());
     if let Some(mesh) = meshes.get_mut(*sprite) {

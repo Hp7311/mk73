@@ -61,6 +61,13 @@ fn sync_point_transform(
 ) {
     for (tf, mut transform) in points {
         // important
+        let old_pos = transform.translation.xy();
         transform.translation = tf.to_translation();
+        let new_pos = tf.to_translation().xy();
+
+        let diff = (new_pos - old_pos).abs();
+        if diff.x > 3.0 || diff.y > 3.0 {
+            error!(?diff);
+        }
     }
 }
