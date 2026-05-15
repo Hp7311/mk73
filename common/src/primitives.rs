@@ -1,5 +1,6 @@
 use bevy::{prelude::*, sprite_render::Material2d};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::ops::Mul;
 use std::{
     f32::consts::PI,
@@ -529,33 +530,17 @@ impl Level {
             .find(|l| l.required_score() <= score)
             .unwrap()  // u32 cannot be negative
     }
-    /// prettier conversion to u8
+    /// conversion to its numerical repr
+    /// 
+    /// e.g. `Level::Two` -> 2
     pub fn to_u8(self) -> u8 {
-        self as u8
+        self as u8 + 1
     }
 }
 
-impl From<u32> for Level {
-    fn from(score: u32) -> Self {
-        Self::max_from_score(score)
-    }
-}
-
-impl From<Level> for u8 {
-    fn from(level: Level) -> u8 {
-        use Level as L;
-        match level {
-            L::One => 1,
-            L::Two => 2,
-            L::Three => 3,
-            L::Four => 4,
-            L::Five => 5,
-            L::Six => 6,
-            L::Seven => 7,
-            L::Eight => 8,
-            L::Nine => 9,
-            L::Ten => 10
-        }
+impl fmt::Display for Level {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_u8())
     }
 }
 
@@ -564,10 +549,10 @@ impl Add<u8> for Level {
     /// # Panics
     /// if resulting level bigger than max
     fn add(self, rhs: u8) -> Self::Output {
-        let level = self.to_u8() + rhs;
-        assert!(level <= Level::MAX.to_u8(), "Exceeds max level");
+        let target = self.to_u8() + rhs;
+        assert!(target <= Level::MAX.to_u8(), "Exceeds max level");
 
-        Level::ALL.into_iter().find(|l| l.to_u8() == level).unwrap()
+        Level::ALL.into_iter().find(|l| l.to_u8() == target).unwrap()
     }
 }
 
@@ -583,6 +568,9 @@ pub enum DisplayScore {
     /// remember to modify [`PlayerStats::level`] after user selects a new level
     NewLevel(Level)
 }
+
+/// Represents a [`u8`] from receiving [`DisplayScore::Percent`]
+pub type Percent = u8;
 
 const _: () = {
     assert!(Level::required_score(&Level::One) == 0)
