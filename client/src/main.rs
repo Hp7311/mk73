@@ -215,7 +215,7 @@ fn update_state(
 
 /// using hack to achieve system to be only triggered when both
 /// [`ActionState<T>`] and [`Controlled`] added
-#[deny(unused)]
+#[deny(unused)]     
 fn on_added_actionstate<T>(
     trigger: On<Add, ActionState<T>>,
     controlled_action_states: Query<(), (With<ActionState<T>>, With<Controlled>)>,

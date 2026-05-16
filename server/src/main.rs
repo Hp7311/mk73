@@ -23,6 +23,7 @@ use common::protocol::{EntityOnServer, NewZIndex};
 use crate::oil_rig::OilRigPlugin;
 use crate::weapon::WeaponPlugin;
 
+// FIXME server disconnects after few minutes
 fn main() {
     App::new()
         .add_plugins((

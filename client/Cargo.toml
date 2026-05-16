@@ -3,6 +3,10 @@ name = "client"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# breaks in certain browsers like firefox
+webgpu = ["bevy/webgpu"]
+
 [dependencies]
 common = { path = "../common", features = ["client"]}
 bevy = { workspace = true }
@@ -10,11 +14,9 @@ lightyear = { workspace = true }
 rand = "0.10"
 getrandom = {version = "0.4.2", features = ["wasm_js"]}  # align with rand
 bevy-inspector-egui = "0.36.0"
-# using JS script to keep alive
 # bevy_web_keepalive = { git = "https://github.com/Nul-led/bevy_web_keepalive" }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-bevy = { workspace = true, features = ["webgpu"] }
 web-sys = { version = "0.3", features = [
     "Document",
     "Text",

@@ -131,7 +131,7 @@ pub fn spawn_sprite(
         },
         // TODO add graphics features to background. Right now a Sprite::from_color can replace it
         Mesh2d(meshes.add(Rectangle::from_size(world_size.get_size()))),
-        MeshMaterial2d(materials.add(WorldMaterial { color: vec3(1.3 / 255.0, 14.0 / 255.0, 41.0 / 255.0)})),
+        MeshMaterial2d(materials.add(WorldMaterial::from_srgb_u8(1, 14, 41))),
         Name::new("Background"),
         Background,
     ));

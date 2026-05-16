@@ -6,27 +6,27 @@
     border-top-right-radius: 0 !important;
     border-top-width: 0 !important;
     border-style: solid;
-    border-radius: 0.5rem;
+    border-radius: 0.5rem;  /* done */
     box-sizing: border-box;
     color: white;
     font-weight: bold;
-    height: min-content;
-    min-height: 1.1rem;
-    overflow: hidden;
-    padding: 0.2rem;
-    text-align: center;
+    height: min-content;  /* done no */
+    min-height: 1.1rem;  /* done */
+    overflow: hidden;  /* done */
+    padding: 0.2rem; /* done */
+    text-align: center;  /* done */
     transition: background-size 0.5s;
     user-select: none;
-    background: linear-gradient(90deg, #0084b1 0%, #0084b1 1%, #3e3333 1%, #3e3333 100%);
+    background: linear-gradient(90deg /* --- dir */, #0084b1 0%, #0084b1 1%, #3e3333 1%, #3e3333 100%);
     background-origin: border-box;
-    border-width: 1px;
+    border-width: 1px;  /* done */
     border-color: #686868;
-    min-width: 30%;
-    position: absolute;
-    left: 50%;
+    min-width: 30%;  /* done */
+    position: absolute;  /* done ?*/
+    left: 50%;  /* done */
     transform: translate(-50%, 0%);
     /* size for 0% */
-    background-size: 100%;
+    background-size: 100%;                                  
 }
 
 html,
