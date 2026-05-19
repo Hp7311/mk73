@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::primitives::Radian;
+use crate::primitives::{FileName, Radian};
 use crate::{DEFAULT_MAX_TURN_DEG, primitives::Speed};
 
 
@@ -15,10 +15,10 @@ pub enum WeaponType {
 }
 
 impl Weapon {
-    pub fn file_name(&self) -> &'static str {
-        match self {
+    pub fn file_name(&self) -> FileName {
+        FileName(match self {
             Weapon::Set65 => "Set65.png",
-        }
+        })
     }
     pub fn custom_size(&self) -> Vec2 {
         match self {

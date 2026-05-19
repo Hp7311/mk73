@@ -4,7 +4,7 @@ use bevy::{color::palettes::css::GRAY, prelude::*};
 use common::{Boat, CIRCLE_HUD, OCEAN_SURFACE, primitives::{CustomTransform, MeshBundle, OutOfBound, WeaponCounter, WrapRadian as _}};
 use lightyear::prelude::*;
 
-use crate::{BoatType, MINIMUM_REVERSE};
+use crate::{BoatType, MINIMUM_REVERSE, asset::SpriteMap};
 
 pub(crate) struct BoatPlugin;
 
@@ -14,6 +14,7 @@ impl Plugin for BoatPlugin {
             .add_systems(FixedUpdate, sync_transform_from_custom);
     }
 }
+
 /// spawn controlled/not controlled boat
 #[allow(clippy::too_many_arguments)]
 fn spawn_boat(
@@ -22,7 +23,7 @@ fn spawn_boat(
     controlled: Query<(), (With<Boat>, With<Controlled>)>,
 
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    sprites: Res<SpriteMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
@@ -38,7 +39,8 @@ fn spawn_boat(
                     ..default()
                 },
                 sprite: Sprite {
-                    image: asset_server.load(boat.file_name()),
+                    // no need to keep the Handle
+                    image: sprites.get_long_lived(boat.file_name()),
                     custom_size: Some(boat.sprite_size()),
                     ..default()
                 }
@@ -55,7 +57,7 @@ fn spawn_boat(
                 selected_weapon: boat.default_weapon(),
             },
             sprite: Sprite {
-                image: asset_server.load(boat.file_name()), // preload assets
+                image: sprites.get_long_lived(boat.file_name()), // preload assets
                 custom_size: Some(boat.sprite_size()),
                 ..default()
             },

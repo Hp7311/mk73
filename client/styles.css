@@ -17,7 +17,13 @@
     text-align: center;  /* done */
     transition: background-size 0.5s;
     user-select: none;
-    background: linear-gradient(90deg /* --- dir */, #0084b1 0%, #0084b1 1%, #3e3333 1%, #3e3333 100%);
+    background: linear-gradient( /* done */
+        90deg /* --- dir */,
+        #0084b1 0%,
+        #0084b1 1%,
+        #3e3333 1%,
+        #3e3333 100%
+    );
     background-origin: border-box;
     border-width: 1px;  /* done */
     border-color: #686868;
@@ -26,7 +32,7 @@
     left: 50%;  /* done */
     transform: translate(-50%, 0%);
     /* size for 0% */
-    background-size: 100%;                                  
+    background-size: 100%;
 }
 
 html,

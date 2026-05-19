@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use common::protocol::{OilRigTransform, PointTransform as Point};
 
+use crate::asset::SpriteMap;
+
 pub(crate) struct OilRigPlugin;
 
 impl Plugin for OilRigPlugin {
@@ -39,7 +41,7 @@ fn spawn_rig(
 fn spawn_point(
     trigger: On<Add, Point>,
     points: Query<&Point>,
-    asset_server: Res<AssetServer>,
+    sprites: Res<SpriteMap>,
     mut commands: Commands
 ) {
     let point_info = points.get(trigger.entity).unwrap();
@@ -47,7 +49,8 @@ fn spawn_point(
     commands.get_entity(trigger.entity).unwrap()
         .insert((
             Sprite {
-                image: asset_server.load((*point_info.file_name).to_owned()),
+                // points get spawned VERY frequently
+                image: sprites.get_long_lived(point_info.point.file_name()),
                 custom_size: Some(Point::custom_size()),
                 ..default()
             },

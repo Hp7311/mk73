@@ -1,8 +1,8 @@
 //! defines structures to be sent between client and server
 
-use std::{f32::consts::{FRAC_PI_2, PI}, sync::Arc};
+use std::f32::consts::{FRAC_PI_2, PI};
 use crate::{
-    OCEAN_SURFACE, OIL_RIG_Z, POINTS_Z, boat::Boat, primitives::{CustomTransform, DisplayScore, LastSpeed, PlayerStats, Radian, Speed, TargetRotation}
+    OCEAN_SURFACE, OIL_RIG_Z, POINTS_Z, boat::Boat, primitives::{CustomTransform, DisplayScore, LastSpeed, PlayerStats, Point, Radian, Speed, TargetRotation}
 };
 use bevy::{ecs::entity::MapEntities, prelude::*};
 use lightyear::{
@@ -83,15 +83,15 @@ pub struct PointTransform {
     pub position: Vec2,
     pub depth: ZIndex,
     /// currently not doing prediction etc
-    pub file_name: Arc<str>
+    pub point: Point
 }
 
 impl PointTransform {
-    pub fn new(position: Vec2, depth: ZIndex, file_name: &str) -> Self {
+    pub fn new(position: Vec2, depth: ZIndex, point: Point) -> Self {
         Self {
             position,
             depth,
-            file_name: Arc::from(file_name)
+            point
         }
     }
     pub fn custom_size() -> Vec2 {
@@ -115,7 +115,7 @@ impl Ease for PointTransform {
             Self {
                 position: Vec2::lerp(start.position, end.position, t),
                 depth: ZIndex(f32::lerp(start.depth.0, end.depth.0, t)),
-                file_name: end.file_name.clone()
+                point: end.point
             }
         })
     }

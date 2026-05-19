@@ -1,6 +1,6 @@
 use std::time::Duration;
 use std::{f32::consts::PI, ops::Range};
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 use bevy::prelude::*;
 use lightyear::link::server::Server;
 use lightyear::prelude::{InterpolationTarget, NetworkTarget, Replicate, ServerMultiMessageSender};
@@ -8,7 +8,7 @@ use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
 use common::{Boat, OCEAN_SURFACE, eq};
 use common::collision::{out_of_bound_point, out_of_bounds, square_does_not_intersects};
-use common::primitives::{CustomTransform, Mk48Rect, PlayerStats, Radian, ZIndex, in_range};
+use common::primitives::{CustomTransform, Mk48Rect, PlayerStats, Point, Radian, ZIndex, in_range};
 use common::protocol::{OilRigTransform as OilRig, PointTransform, SendToClient};
 use common::util::{avaliable_cords, point_in_square};
 use common::WorldSize;
@@ -54,6 +54,9 @@ const POINT_SPEED: f32 = 2.0;
 #[derive(Resource, Deref, DerefMut)]
 struct RigTimer(Timer);
 
+#[cfg(debug_assertions)]
+static mut DEBUG_SPAWN: bool = true;
+
 /// spawns rig if the timer is reached, then setting the timer to a random val
 fn spawn_rigs(
     mut timer: ResMut<RigTimer>,
@@ -76,6 +79,19 @@ fn spawn_rigs(
         );
 
         *timer = RigTimer::new_rand(&mut rng);
+    }
+
+    if unsafe { DEBUG_SPAWN } {
+        commands.spawn((
+            OilRig {
+                position: vec2(0.0, 0.0),
+                rotation: Radian::ZERO
+            },
+            PointAmount::new(&mut rand::rng()),
+            Replicate::to_clients(NetworkTarget::All)
+        ));
+
+        unsafe { DEBUG_SPAWN = false; }
     }
 }
 
@@ -139,14 +155,6 @@ fn spawn_random_rig(
     center
 }
 
-/// an entity that provide an amount of points
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum Point {
-    Barrel,
-    Coin,
-    Scrap,
-}
-
 /// replicate [`PointTransform`]s to client which is equivalent of `CustomTransform` for Points
 /// 
 /// interpolation enabled
@@ -186,7 +194,7 @@ fn rig_spawn_points(
                     position: chosen_tile,
                     // default spawns on water surface
                     depth: OCEAN_SURFACE,
-                    file_name: Arc::from(chosen_type.file_name())
+                    point: chosen_type
                 },
                 Replicate::to_clients(NetworkTarget::All),
                 InterpolationTarget::to_clients(NetworkTarget::All)
@@ -285,24 +293,6 @@ struct PointAmount {
     max_point: u16,
 }
 
-impl Point {
-    const ALL: [Self; 3] = [Self::Barrel, Self::Coin, Self::Scrap];
-
-    fn worth(&self) -> u16 {
-        match self {
-            Self::Barrel => 2,
-            Self::Coin => 3,
-            Self::Scrap => 1,
-        }
-    }
-    fn file_name(&self) -> &'static str {
-        match self {
-            Self::Barrel => "barrel.png",
-            Self::Coin => "coin.png",
-            Self::Scrap => "scrap.png",
-        }
-    }
-}
 
 impl PointAmount {
     /// maximum amount of points a rig can spawn

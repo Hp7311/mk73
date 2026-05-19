@@ -18,14 +18,21 @@ impl Plugin for UiPlugin {
         // app.add_plugins(DbgPlugin);
         app.add_systems(Startup, spawn_progress_bar.after(crate::setup));
         app.add_systems(Update, recv_stats_update);
+
+        app.add_observer(draw_upgrade);
     }
 }
+
+/// defaults currently to draw one level above current
+#[derive(Debug, Event)]
+struct DrawUpgrade;
 
 fn recv_stats_update(
     mut rx: Single<&mut MessageReceiver<DisplayScore>>,
     current: Single<&PlayerStats>,
     #[cfg(not(target_family = "wasm"))]
-    bar: Single<(&mut Text, &mut BackgroundGradient), With<normal::ProgressBar>>
+    bar: Single<(&mut Text, &mut BackgroundGradient), With<normal::ProgressBar>>,
+    mut commands: Commands
 ) {
     #[cfg(not(target_family = "wasm"))]
     let (mut text, mut background) = bar.into_inner();
@@ -34,11 +41,19 @@ fn recv_stats_update(
         match msg {
             DisplayScore::NewLevel(level) => {
                 info!("New level: {:?}", level);
+                
+                commands.trigger(DrawUpgrade);
                 // draw upgrade box if doesn't already exist
                 // draw boats if not already drawed
             },
             DisplayScore::Percent(p) => {
+                // #[cfg(debug_assertions)]
+
+                // commands.trigger(DrawUpgrade);
+                #[cfg(not(target_family = "wasm"))]
                 update_percent(p, current.level(), &mut text, &mut background);
+                #[cfg(target_family = "wasm")]
+                update_percent(p, current.level());
             }
         }
     }
@@ -50,102 +65,95 @@ use wasm::{spawn_progress_bar, update_percent};
 mod wasm {
     use super::*;
     pub(super) fn spawn_progress_bar() {
-        let div = new_elem("div").unwrap();
-        div.set_id(ProgressBar::html_id());
+        let progress_bar = ProgressBar::new_element();
+        // x% to level Y
         div.insert_adjacent_text("afterBegin", &ProgressText::new().to_string()).unwrap();
+
         insert_to_body(div).unwrap();
     }
 
     pub(super) fn update_percent(new_percent: Percent, current_level: Level) {
         let next_level = current_level + 1;
-        let progress_bar = ProgressBar::get_element().unwrap();
-        let progress_bar = element_to_html_element(progress_bar).unwrap();
+        let progress_bar = element_to_html_element(ProgressBar::get_element().unwrap()).unwrap();
 
         ProgressText::set(&progress_bar, new_percent, next_level);
 
-        ProgressBar::set_percentage(&progress_bar.style(), new_percent);
+        ProgressBar::set_linear_gradient(&progress_bar.style(), new_percent);
     }
 
-    pub(super) fn draw_upgrade(upgrading_level: Level) -> anyhow::Result<()> {
-        todo!()
+    pub(super) fn draw_upgrade(upgrading_level: Level) {
+        ProgressBar::get_element()
     }
 }
 
 
 #[cfg(not(target_family = "wasm"))]
-use normal::{spawn_progress_bar, update_percent};
+use normal::{spawn_progress_bar, update_percent, draw_upgrade};
 #[cfg(not(target_family = "wasm"))]
 mod normal {
     use common::util::InputExt as _;
+    use crate::asset::{FontMap, SpriteMap};
     use super::*;
 
     #[derive(Debug, Component)]
     pub struct ProgressBar;
+    #[derive(Debug, Component)]
+    pub struct UpgradeBar;
 
-    pub fn spawn_progress_bar(
+    pub(super) fn spawn_progress_bar(
         mut commands: Commands,
-        camera: Single<Entity, With<MainCamera>>,
-        asset_server: Res<AssetServer>
+        fonts: Res<FontMap>,
+        current_level: Option<Single<&PlayerStats>>
     ) {
-        commands.get_entity(camera.into_inner()).unwrap()
-            .insert(Node {
-                position_type: PositionType::Absolute,
-                left: Val::ZERO,
-                right: Val::ZERO,
-                top: Val::ZERO,
+        let next_level = current_level.map(|c| c.level() + 1).unwrap_or(Level::Two);
+
+        commands.spawn((
+            Node {
+                margin: UiRect {
+                    left: Val::Auto,
+                    right: Val::Auto,
+                    ..default()
+                },
+
                 height: Val::Auto,
-                justify_content: JustifyContent::Center,
+                width: Val::Percent(30.),
+
+                // smaller = less rounding
+                border_radius: BorderRadius {
+                    bottom_left: Val::Px(8.0),
+                    bottom_right: Val::Px(8.0),
+                    ..default()
+                },
                 ..default()
-            })
-            .with_child((
-                Node {
-                    overflow: Overflow::hidden(),
-                    position_type: PositionType::Absolute,
-                    // left: Val::Percent(50.),  // parent centers all children
-                    // height: min-content
-                    height: Val::Px(20.4),  // min-content
-                    min_width: Val::Percent(30.),
-                    min_height: Val::Px(18.), // 1.1rem
-                    padding: UiRect::all(Val::Px(3.2)), // 0.2rem
-                    border: UiRect {
-                        top: Val::ZERO,
-                        ..UiRect::all(Val::Px(1.0))
-                    },
-                    // smaller = less rounding
-                    border_radius: BorderRadius {
-                        top_left: Val::ZERO,
-                        top_right: Val::ZERO,
-                        bottom_left: Val::Px(8.0),
-                        bottom_right: Val::Px(8.0)
-                    },
-                    ..default()
-                },
-                Outline::new(Val::Px(1.0), Val::ZERO, Color::srgb_u8(102, 136, 102)),
-                TextLayout {
-                    justify: Justify::Center,
-                    ..default()
-                },
-                TextFont {
-                    font: asset_server.load("regular.otf"),
-                    font_size: 15.0,
-                    weight: FontWeight::BOLD,
-                    ..default()
-                },
-                Text("0% to level 2".to_owned()),
-                BackgroundGradient(vec![
-                    LinearGradient::to_right(vec![
-                        // blue
-                        ColorStop::percent(Color::srgb_u8(0, 132, 177), 0.),
-                        ColorStop::percent(Color::srgb_u8(0, 132, 177), 1.),
-                        // brown
-                        ColorStop::percent(Color::srgb_u8(62, 51, 51), 1.)
-                    ]).into()
-                ]),
-                ProgressBar
-            ));
+            },
+            TextLayout {
+                justify: Justify::Center,  // crucial
+                ..default()
+            },
+            TextFont {
+                font: fonts.get_long_lived("regular.otf").unwrap(),
+                font_size: 15.0,
+                weight: FontWeight::BOLD,
+                ..default()
+            },
+            Text(format!("0% to level {}", next_level)),
+
+            Outline::new(Val::Px(1.0), Val::ZERO, Color::srgb_u8(102, 136, 102)),
+            BackgroundGradient(vec![
+                LinearGradient::to_right(vec![
+                    // blue
+                    ColorStop::percent(Color::srgb_u8(0, 132, 177), 0.),
+                    ColorStop::percent(Color::srgb_u8(0, 132, 177), 1.),
+                    // brown
+                    ColorStop::percent(Color::srgb_u8(62, 51, 51), 1.)
+                ]).into()
+            ]),
+
+            ProgressBar,
+        ));
     }
 
-    pub fn update_percent(
+    pub(super) fn update_percent(
         new_percent: Percent,
         current_level: Level,
         text: &mut Text,
@@ -165,8 +173,115 @@ mod normal {
             error_once!("Unexpected background configuration");
         }
     }
+ 
+    pub(super) fn draw_upgrade(
+        _trigger: On<DrawUpgrade>,
+        current_level: Single<&PlayerStats>,
+        fonts: Res<FontMap>,
+        sprites: Res<SpriteMap>,
+        mut commands: Commands,
+        progress_bar: Single<Entity, With<ProgressBar>>,
+        upgrade_bar: Option<Single<(), With<UpgradeBar>>>
+    ) {
+        if upgrade_bar.is_some() {
+            return;
+        }
+        // TODO reset bar to 0%
+        commands.get_entity(*progress_bar).unwrap()
+            .insert(Visibility::Hidden);
+
+        let next_level = current_level.level() + 1;
+
+        commands
+            .spawn((
+                Node {
+                    // pushes first boat down
+                    padding: UiRect::top(Val::Px(50.0)),
+                    margin: UiRect {
+                        // center by X-axis
+                        left: Val::Auto,
+                        right: Val::Auto,
+                        ..default()
+                    },
+                    // 20px gap between boats, assume all vertically placed
+                    row_gap: Val::Px(20.),
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                #[cfg(debug_assertions)]
+                Outline::new(Val::Px(1.0), Val::ZERO, Color::BLACK),
+                TextLayout {
+                    justify: Justify::Center,
+                    ..default()
+                },
+                TextFont {
+                    font: fonts.get_long_lived("regular.otf").unwrap(),
+                    font_size: 15.0,
+                    weight: FontWeight::BOLD,
+                    ..default()
+                },
+                Text(format!("Upgrade to level {}", next_level)),
+                Name::new("UpgradeBar"),
+                UpgradeBar
+            ))
+            .with_children(|parent| {
+                for boat in next_level.avaliable_boats() {
+                    parent.spawn((
+                        Node {
+                            // boats pile up
+                            position_type: PositionType::Relative,
+
+                            // render them 1/2 of actual size
+                            width: Val::Px(boat.sprite_size().x / 2.0),
+                            height: Val::Px(boat.sprite_size().y / 2.0),
+
+                            // center of box
+                            align_self: AlignSelf::Center,
+
+                            ..default()
+                        },
+                        #[cfg(debug_assertions)]
+                        Outline::new(Val::Px(1.0), Val::ZERO, Color::BLACK),
+                        ImageNode {
+                            image: sprites.get_long_lived(boat.file_name()),
+                            ..default()
+                        },
+                    ));
+                }
+            });
+    }
 }
 
+/* translated into CSS:
+
+#box {
+  height: 300.0px;
+  width: 500.0px;
+  border: 2px dotted rgb(96 139 168);
+
+  display: flex;
+  flex-direction: column;
+
+  align-content: center;
+
+  /* make first text 50px away from top */
+  padding-top: 50px;
+}
+
+#box > div {
+  position: relative;
+  border: 2px solid rgb(96 139 168);
+  border-radius: 5px;
+  background-color: rgb(96 139 168 / 0.2);
+  padding: 20px;
+  text-align: center;
+
+  /* otherwise flex boxes cover whole width */
+  align-self: center;
+}
+
+works!!!
+*/
 
 #[allow(dead_code)]
 struct DbgPlugin;

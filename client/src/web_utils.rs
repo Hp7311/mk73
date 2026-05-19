@@ -62,38 +62,26 @@ pub fn percent_to_linear_gradient(percent: Percent) -> u32 {
 pub struct ProgressBar;
 
 impl ProgressBar {
-    const PERCENTAGE_STYLE_NAME: &'static str = "background-size";
+    const LINEAR_GRADIENT_CONTROLLER_CSS: &'static str = "background-size";
+    const ELEMENT_ID: &'static str = "progress_bar";
 
+    pub fn new_element() -> Element {
+        assert_eq!(get_element(), None, "creating a new progress bar when one's already presesnt");
+
+        let elem = new_elem("div").unwrap();
+        // style managed by styles.css
+        elem.set_id(Self::ELEMENT_ID);
+
+        elem
+    }
     pub fn get_element() -> Option<Element> {
         document()?
-            .get_element_by_id(Self::html_id())
-    }
-    pub fn html_id() -> &'static str {
-        "progress_bar"
+            .get_element_by_id(Self::ELEMENT_ID)
     }
     // interior mutability xD
     /// conversion to CSS-compatible val and setting it
-    pub fn set_percentage(styling: &CssStyleDeclaration, percent: Percent) {
-        styling.set_property(Self::PERCENTAGE_STYLE_NAME, &format!("{}%", percent_to_linear_gradient(percent))).unwrap();
-    }
-
-    #[deprecated]
-    fn mk48_outer_style() -> &'static str {
-        "
-            font-family: Arial,
-            sans-serif;
-            font-size: calc(7px + 0.8vmin);
-            pointer-events: none;
-            user-select: none;
-            color: white;
-            min-width: 30%;
-            position: absolute;
-            left: 50%;
-            text-align: center;
-            top: 0;
-            margin-top: 0;
-            transform: translate(-50%, 0%);
-        "
+    pub fn set_linear_gradient(styling: &CssStyleDeclaration, percent: Percent) {
+        styling.set_property(Self::LINEAR_GRADIENT_CONTROLLER_CSS, &format!("{}%", percent_to_linear_gradient(percent))).unwrap();
     }
 }
 

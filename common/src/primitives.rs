@@ -261,6 +261,7 @@ pub struct TargetSpeed(pub Speed);
 pub struct Radian(pub f32);
 
 impl Radian {
+    pub const ZERO: Self = Self(0.0);
     /// multiply return type by the length to find the coordinates of a point
     /// ### Example
     /// ```ignore
@@ -556,6 +557,12 @@ impl Add<u8> for Level {
     }
 }
 
+/// strongly typed
+/// 
+/// used for `client::asset::SpriteMap`, returned by file_name methods
+#[derive(Debug)]
+pub struct FileName(pub &'static str);
+
 /// sent to client on score change by [`PlayerStats::display`]
 #[derive(Debug, Deserialize, Serialize)]
 pub enum DisplayScore {
@@ -579,6 +586,33 @@ const _: () = {
 #[derive(Debug, Resource, Clone, Copy, Default)]
 pub struct CursorPos(pub Vec2);
 
+
+/// an entity that provide an amount of points
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Point {
+    Barrel,
+    Coin,
+    Scrap,
+}
+
+impl Point {
+    pub const ALL: [Self; 3] = [Self::Barrel, Self::Coin, Self::Scrap];
+
+    pub fn worth(&self) -> u16 {
+        match self {
+            Self::Barrel => 2,
+            Self::Coin => 3,
+            Self::Scrap => 1,
+        }
+    }
+    pub fn file_name(&self) -> FileName {
+        FileName(match self {
+            Self::Barrel => "barrel.png",
+            Self::Coin => "coin.png",
+            Self::Scrap => "scrap.png",
+        })
+    }
+}
 /// the altitude of an entity
 pub trait Altitude {
     /// returns Z-index after diving
@@ -772,6 +806,6 @@ impl RoughEq for PointTransform {
     fn rough_eq(&self, rhs: &Self) -> bool {
         self.position.rough_eq(&rhs.position)
             && self.depth == rhs.depth
-            && self.file_name == rhs.file_name
+            && self.point == rhs.point
     }
 }

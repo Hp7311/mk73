@@ -12,12 +12,8 @@ impl Plugin for ShaderPlugin {
 #[derive(TypePath, Asset, AsBindGroup, Clone)]
 pub struct WorldMaterial {
     /// within range `0.0..1.0`, specifies colour of the material
-    #[cfg(not(target_family = "wasm"))]
     #[uniform(0)]
-    pub color: Vec3,
-    #[cfg(target_family = "wasm")]
-    #[uniform(0)]
-    pub color: Vec4
+    color: Vec4
 }
 
 impl WorldMaterial {
@@ -33,9 +29,6 @@ impl WorldMaterial {
     /// - `color` represents a color with each variant of `[0..1]`
     pub fn new(color: Vec3) -> Self {
         Self {
-            #[cfg(not(target_family = "wasm"))]
-            color,
-            #[cfg(target_family = "wasm")]
             color: color.extend(0.0)
         }
     }

@@ -9,6 +9,7 @@ mod oil_rig;
 mod ui;
 #[cfg(target_family = "wasm")]
 mod web_utils;
+mod asset;
 
 use std::time::Duration;
 
@@ -31,6 +32,7 @@ use lightyear::prelude::{
     *
 };
 use lightyear::websocket::client::WebSocketTarget;
+use crate::asset::AssetPreloadPlugin;
 use crate::boat::BoatPlugin;
 use crate::dive::DivingPlugin;
 use crate::input::InputBufferPlugin;
@@ -86,6 +88,7 @@ fn main() {
     .add_plugins(UiPlugin)
 
     // init
+    .add_plugins(AssetPreloadPlugin)
     .add_systems(Startup, setup)
     .add_observer(on_added_actionstate::<Rotate>)
     .add_observer(on_added_actionstate::<Move>)

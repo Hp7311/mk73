@@ -6,6 +6,7 @@ use common::protocol::{SpawnWeapon, SendToServer, WeaponRollBack, EntityOnClient
 use common::util::get_rotate_radian;
 use common::{Boat, CIRCLE_HUD, Weapon};
 use crate::FiresWeapon;
+use crate::asset::SpriteMap;
 
 pub(crate) struct WeaponPlugin;
 
@@ -28,7 +29,7 @@ fn fire_weapon(
     client_id: Single<&LocalId>,
 
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    sprites: Res<SpriteMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>
 ) {
@@ -44,7 +45,8 @@ fn fire_weapon(
 
     msg.entity_on_client.0 = commands.spawn((
         Sprite {
-            image: asset_server.load(msg.weapon.file_name()),
+            // weapons get spawned frequently
+            image: sprites.get_long_lived(msg.weapon.file_name()),
             custom_size: Some(msg.weapon.custom_size()),
             ..default()
         },
@@ -72,7 +74,7 @@ fn spawn_others_weapon(
     weapons: Query<(&Weapon, &Transform), With<Replicated>>,
     mut commands: Commands,
 
-    asset_server: Res<AssetServer>,
+    sprites: Res<SpriteMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>
 ) {
@@ -84,7 +86,8 @@ fn spawn_others_weapon(
     commands.get_entity(trigger.entity).unwrap()
         .insert((
             Sprite {
-                image: asset_server.load(weapon.file_name()),
+                // weapons get spawned frequently
+                image: sprites.get_long_lived(weapon.file_name()),
                 custom_size: Some(weapon.custom_size()),
                 ..default()
             },

@@ -67,18 +67,6 @@ impl WorldSize {
             computed: get_map_size(0, Self::WORLD_MIN, Self::WORLD_EXPAND),
         }
     }
-
-    pub fn add_player(&mut self) {
-        self.player_num += 1;
-        self.current_expand = get_multiplayer_by_player_num(self.player_num);
-        self.computed = get_map_size(self.player_num, Self::WORLD_MIN, Self::WORLD_EXPAND)
-    }
-    pub fn remove_player(&mut self) {
-        assert_ne!(self.player_num, 0, "0 player left");
-        self.player_num -= 1;
-        self.current_expand = get_multiplayer_by_player_num(self.player_num);
-        self.computed = get_map_size(self.player_num, Self::WORLD_MIN, Self::WORLD_EXPAND);
-    }
     pub fn player_num(&self) -> u32 {
         self.player_num
     }
@@ -172,6 +160,27 @@ mod server {
 use super::*;
 use lightyear::prelude::Replicate;
 
+#[derive(Debug)]
+struct ZeroPlayerLeft;
+
+impl WorldSize {
+fn add_player(&mut self) {
+    self.player_num += 1;
+    self.current_expand = get_multiplayer_by_player_num(self.player_num);
+    self.computed = get_map_size(self.player_num, Self::WORLD_MIN, Self::WORLD_EXPAND)
+}
+fn remove_player(&mut self) -> Result<(), ZeroPlayerLeft> {
+    if self.player_num == 0 {
+        return Err(ZeroPlayerLeft)
+    }
+    self.player_num -= 1;
+    self.current_expand = get_multiplayer_by_player_num(self.player_num);
+    self.computed = get_map_size(self.player_num, Self::WORLD_MIN, Self::WORLD_EXPAND);
+
+    Ok(())
+}
+}
+
 pub fn spawn_worldsize(mut commands: Commands) {
     commands.spawn((
         WorldSize::new(),
@@ -199,7 +208,9 @@ pub fn on_client_disconnected(
     mut commands: Commands
 ) {
     let Ok(mut world_size) = world_size.single_mut().inspect_err(|e| error!("expected only one worldsize: {e:?}")) else { return; };
-    world_size.remove_player();
+    if world_size.remove_player().is_err() {
+        warn!("Trying to remove player when no more players left, potentially from initiating non-authorized WS");
+    }
 
     // push players back
     for (mut custom, boat, id) in customs {
