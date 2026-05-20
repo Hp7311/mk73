@@ -13,7 +13,6 @@ use crate::boat::Boat;
 use crate::collision::out_of_bound_point;
 use crate::primitives::{CustomTransform, LastSpeed, NormalizeRadian, Radian, Speed, TargetRotation, WrapRadian};
 use crate::protocol::{Move, Rotate};
-use crate::primitives::OutOfBound;
 use crate::world::WorldSize;
 
 use bevy::prelude::*;
@@ -21,9 +20,10 @@ use lightyear::prelude::input::native::ActionState;
 use crate::{eq, Weapon};
 use crate::util::move_with_rotation;
 
-/// plugin to verify inputs and apply them to [`CustomTransform`] only
+/// plugin to verify inputs and apply them to [`CustomTransform::rotation`] for `rotate`
+/// [`CustomTransform::speed`] and [`CustomTransform::position`] for `move`
 ///
-/// note that the client is responsible for translating angle + speed to Euclidean coordinates in [`CustomTransform::position`] and [`Transform`]
+/// note that the client is responsible for updating [`Transform`]
 ///
 /// for client: local prediction
 /// for server: confirmation of input and prediction
@@ -59,9 +59,9 @@ mod server {
             super::rotate_inner(action, &mut custom, boat)
         }
     }
-    pub fn move_(query: Query<(&ActionState<Move>, &mut CustomTransform, &mut OutOfBound, &Boat)>, world_size: Single<&WorldSize>) {
-        for (action, mut custom, mut out_of_bound, boat) in query {
-            super::move_inner(action, &mut custom, boat, &world_size, &mut out_of_bound);
+    pub fn move_(query: Query<(&ActionState<Move>, &mut CustomTransform, &Boat)>, world_size: Single<&WorldSize>) {
+        for (action, mut custom, boat) in query {
+            super::move_inner(action, &mut custom, boat, &world_size);
         }
     }
 }
@@ -77,9 +77,9 @@ mod client {
         let (action, mut custom, boat) = query.into_inner();
         super::rotate_inner(action, &mut custom, boat)
     }
-    pub fn move_(query: Single<(&ActionState<Move>, &mut CustomTransform, &mut OutOfBound, &Boat), With<Controlled>>, world_size: Single<&WorldSize>) {
-        let (action, mut custom, mut out_of_bound, boat) = query.into_inner();
-        super::move_inner(action, &mut custom, boat, world_size.into_inner(), &mut out_of_bound);
+    pub fn move_(query: Single<(&ActionState<Move>, &mut CustomTransform, &Boat), With<Controlled>>, world_size: Single<&WorldSize>) {
+        let (action, mut custom, boat) = query.into_inner();
+        super::move_inner(action, &mut custom, boat, world_size.into_inner());
     }
 }
 
@@ -89,17 +89,18 @@ fn rotate_inner(rotate_input: &ActionState<Rotate>, custom: &mut CustomTransform
     custom.rotation = target;
 }
 
-fn move_inner(move_input: &ActionState<Move>, custom: &mut CustomTransform, boat: &Boat, world_size: &WorldSize, out_of_bound: &mut OutOfBound) {
+fn move_inner(move_input: &ActionState<Move>, custom: &mut CustomTransform, boat: &Boat, world_size: &WorldSize) {
     let Some(mut target) = move_input.0.0 else { return; };
     validate_acceleration(&mut target, custom.speed, boat.acceleration());
 
-    if validate_speed_cheating(&target, boat.max_speed(), boat.rev_max_speed()) == PlayerValidity::PotentialCheating {
+    if validate_speed_cheating(&target, boat.max_speed(), boat.rev_max_speed()) == SpeedValidity::Error {
+        warn!(?boat);
         return;
     }
     custom.speed = target;
 
     if !custom.move_position_checked(world_size, boat.sprite_size()) {
-        out_of_bound.0 = true;
+        // maybe UI pop-up
     }
 }
 
@@ -129,8 +130,8 @@ fn validate_acceleration(target: &mut Speed, current_speed: Speed, acceleration:
 }
 
 #[derive(PartialEq)]
-enum PlayerValidity {
-    PotentialCheating,
+enum SpeedValidity {
+    Error,
     Normal
 }
 
@@ -138,23 +139,23 @@ enum PlayerValidity {
 /// should be run after validating acceleration
 /// - `reverse_max_speed` assumes positive from [`Boat`]
 #[must_use = "Result may be a err value which should be handled"]
-fn validate_speed_cheating(target: &Speed, max_speed: Speed, reverse_max_speed: Speed) -> PlayerValidity {
+fn validate_speed_cheating(target: &Speed, max_speed: Speed, reverse_max_speed: Speed) -> SpeedValidity {
     if *target > max_speed {
         error!(
             "Got speed {} greater than max speed {}",
             target.get_knots(),
             max_speed.get_knots()
         );
-        PlayerValidity::PotentialCheating
+        SpeedValidity::Error
     } else if *target < - reverse_max_speed {
         error!(
             "Got speed {} lesser than reverse max speed {}",
             target.get_knots(),
             - reverse_max_speed.get_knots()
         );
-        PlayerValidity::PotentialCheating
+        SpeedValidity::Error
     } else {
-        PlayerValidity::Normal
+        SpeedValidity::Normal
     }
 }
 

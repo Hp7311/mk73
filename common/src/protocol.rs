@@ -10,7 +10,7 @@ use lightyear::{
     prelude::{input::native::ActionState, *},
 };
 use serde::{Deserialize, Serialize};
-use crate::primitives::{OutOfBound, Position, WeaponCounter, ZIndex};
+use crate::primitives::{Position, WeaponCounter, ZIndex};
 use crate::weapon::Weapon;
 use crate::world::WorldSize;
 
@@ -137,7 +137,7 @@ pub struct SpawnWeapon {
 
 /// replicated by server on spawning the main boat entity
 /// 
-/// quick updating [`NewZIndex`]
+/// mainly used by client to specify the [`Boat`] entity targeting on server in a message
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Component, Copy, Reflect)]
 pub struct EntityOnServer(pub u64);
 /// specifying Weapon to rollback on client for now
@@ -157,6 +157,15 @@ pub enum WeaponRollBack {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct UpgradeMessage {
+    pub target: Boat,
+    pub entity_on_server: EntityOnServer
+}
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct UpgradeRollback {
+    pub target: Boat
+}
 /// client sends updates to controlling boat's Z-index(physical depth) to the server as a Message
 ///
 /// requires [`EntityOnServer`] to be given and correctly represent the boat's entity on the server world
@@ -179,7 +188,6 @@ impl Plugin for ProtocolPlugin {
             .add_prediction()
             .add_linear_interpolation();
         app.register_component::<ZIndex>();
-        app.register_component::<OutOfBound>();
 
         app.register_component::<EntityOnServer>();
         app.register_message::<NewZIndex>().add_direction(NetworkDirection::ClientToServer);
@@ -198,6 +206,9 @@ impl Plugin for ProtocolPlugin {
 
         app.register_message::<SpawnWeapon>().add_direction(NetworkDirection::ClientToServer);
         app.register_message::<WeaponRollBack>().add_direction(NetworkDirection::ServerToClient);
+
+        app.register_message::<UpgradeMessage>().add_direction(NetworkDirection::ClientToServer);
+        app.register_message::<UpgradeRollback>().add_direction(NetworkDirection::ServerToClient);
 
         app.register_component::<Weapon>();
         app.register_component::<Transform>();

@@ -24,7 +24,7 @@ use crate::{
 const SPRITE_TINT: Color = Color::srgb(0.0, 0.65, 1.03);
 
 /// - server: worldsize replicated, server should update worldsize on new client
-/// - client: spawns map, spawns and updates cursorpos
+/// - client: spawns map, spawns and updates cursorpos and shaders
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {

@@ -5,9 +5,7 @@ use std::time::Duration;
 
 use bevy::{diagnostic::{DiagnosticsPlugin, LogDiagnosticsPlugin}, log::LogPlugin, prelude::*, state::app::StatesPlugin};
 use common::{
-    Boat, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, WorldPlugin,
-    primitives::{CustomTransform, OutOfBound, PlayerStats, Position, WeaponCounter, ZIndex},
-    protocol::{Move, ProtocolPlugin, Rotate, SetupServer, SystemSetPlugin}
+    Boat, BoatClientId, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, UpgradePlugin, WorldPlugin, primitives::{CustomTransform, PlayerStats, Position, WeaponCounter, ZIndex}, protocol::{Move, ProtocolPlugin, Rotate, SetupServer, SystemSetPlugin}
 };
 use lightyear::{
     prelude::input::native::ActionState,
@@ -39,6 +37,7 @@ fn main() {
         .add_plugins(SystemSetPlugin { is_server: true })
         .add_plugins(OilRigPlugin)
         .add_plugins(WeaponPlugin)
+        .add_plugins(UpgradePlugin)
         .add_systems(Startup, setup.in_set(SetupServer::Io))
         .add_plugins(WorldPlugin)
         // handle client action
@@ -118,7 +117,6 @@ fn handle_connected_client(
             weapons: boat.armanents(),
             selected_weapon: boat.default_weapon()
         },
-        OutOfBound(false),
         PlayerStats::new(0),
         
         BoatClientId(client_id),
@@ -152,10 +150,6 @@ fn recv_new_z_index(
         }
     }
 }
-
-/// identifying the perticular [`Boat`]
-#[derive(Debug, Component)]
-struct BoatClientId(#[allow(dead_code)] PeerId);
 
 #[cfg(test)]
 #[allow(dead_code)]

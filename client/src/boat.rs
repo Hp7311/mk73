@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bevy::{color::palettes::css::GRAY, prelude::*};
-use common::{Boat, CIRCLE_HUD, OCEAN_SURFACE, primitives::{CustomTransform, MeshBundle, OutOfBound, WeaponCounter, WrapRadian as _}};
+use common::{Boat, CIRCLE_HUD, OCEAN_SURFACE, primitives::{CustomTransform, MeshBundle, WeaponCounter, WrapRadian as _}};
 use lightyear::prelude::*;
 
 use crate::{BoatType, MINIMUM_REVERSE, asset::SpriteMap};
@@ -50,7 +50,7 @@ fn spawn_boat(
 
     commands
         .get_entity(trigger.entity).unwrap()
-        .insert_if_new(BoatBundle {
+        .insert(BoatBundle {
             boat,
             weapon_counter: WeaponCounter {
                 weapons: boat.armanents(),
@@ -65,9 +65,7 @@ fn spawn_boat(
                 translation: custom.position.extend(OCEAN_SURFACE),
                 rotation: custom.rotation.to_quat(),
                 ..default()
-            },
-            // custom_transform: custom,
-            ..BoatBundle::default()
+            }
         })
         .with_children(|parent| {
             let circle_hud_radius = boat.circle_hud_radius();
@@ -142,7 +140,7 @@ struct BoatBundle {
     // mouse_target: TargetRotation,
     // /// the target speed of the Boat
     // target_speed: TargetSpeed,
-    out_of_bound: OutOfBound,
+    // out_of_bound: OutOfBound,
     weapon_counter: WeaponCounter,
     boat: Boat, // check
 }
@@ -165,7 +163,7 @@ impl Default for BoatBundle {
             transform: Transform::default(),
             sprite: Sprite::default(),
             // custom_transform: CustomTransform::default(),
-            out_of_bound: OutOfBound(false),
+            // out_of_bound: OutOfBound(false),
             // mouse_target: TargetRotation::default(),
             // target_speed: TargetSpeed::default(),
             weapon_counter: WeaponCounter {

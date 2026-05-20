@@ -7,6 +7,7 @@ mod boat;
 mod movement;
 mod weapon;
 mod world;
+mod upgrade;
 #[cfg(feature = "client")]
 mod shaders;
 
@@ -15,10 +16,12 @@ pub mod primitives;
 pub mod protocol;
 pub mod util;
 pub use movement::MovementPlugin;
+pub use upgrade::UpgradePlugin;
 pub use weapon::Weapon;
 pub use weapon::WeaponType;
 pub use boat::Boat;
 pub use boat::SubKind;
+pub use boat::BoatClientId;
 pub use world::WorldPlugin;
 pub use world::WorldSize;
 

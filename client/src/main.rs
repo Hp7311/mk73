@@ -17,6 +17,7 @@ use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use common::UpgradePlugin;
 use common::{
     Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, SubKind, WorldPlugin,
     protocol::{Move, ProtocolPlugin, Rotate},
@@ -86,6 +87,7 @@ fn main() {
     .add_plugins(DivingPlugin)
     .add_plugins(WeaponPlugin)
     .add_plugins(UiPlugin)
+    .add_plugins(UpgradePlugin)
 
     // init
     .add_plugins(AssetPreloadPlugin)

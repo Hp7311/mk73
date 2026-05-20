@@ -29,15 +29,18 @@ pub struct CustomTransform {
 }
 
 impl CustomTransform {
+    /// see [`Transform::rotate_local_z`]
     pub fn rotate_local_z(&mut self, angle: Radian) {
         let rotation = angle.to_quat();
         self.rotation = (rotation * self.rotation.to_quat()).wrap_radian();
     }
-    /// according to `self.rotation` and `self.speed`, move one frame
+    /// according to `self.rotation` and `self.speed`, move `position` by one frame
     pub fn move_position(&mut self) {
         self.position.0 += move_with_rotation(self.rotation, self.speed).xy();
     }
     /// same as [`move_position`] but with bound checking, returns true if success
+    /// 
+    /// will not move `position` if out-of-bounds
     pub fn move_position_checked(&mut self, world_size: &WorldSize, sprite_size: Vec2) -> bool {
         let mut target = self.position.0;
         target += move_with_rotation(self.rotation, self.speed).xy();
@@ -52,7 +55,7 @@ impl CustomTransform {
             self.position.0 = target;
             true
         }
-        // consider slowing speed if out of bounds and decreasing health
+        // TODO consider slowing speed if out of bounds and decreasing health
     }
 }
 
@@ -66,6 +69,15 @@ pub fn in_range(first: Vec2, second: Vec2, by: f32) -> bool {
 pub struct WeaponCounter {
     pub weapons: HashMap<Weapon, u8>,
     pub selected_weapon: Option<Weapon> // potential terry fox
+}
+
+impl WeaponCounter {
+    pub fn from_boat(boat: &Boat) -> Self {
+        Self {
+            weapons: boat.armanents(),
+            selected_weapon: boat.default_weapon()
+        }
+    }
 }
 
 // maybe Trait on Rect？
@@ -440,7 +452,7 @@ pub struct PlayerStats {
 }
 
 impl PlayerStats {
-    pub fn new(score: u32) -> Self {
+    pub fn  new(score: u32) -> Self {
         Self {
             score,
             // no matter the score
@@ -457,6 +469,13 @@ impl PlayerStats {
     pub fn level_mut(&mut self) -> &mut Level {
         &mut self.level
     }
+    pub fn can_upgrade(&self, target: Boat) -> bool {
+        if let DisplayScore::NewLevel(max) = self.display() {
+            target.level() <= max
+        } else {
+            false
+        }
+    }
 }
 
 /// not responsible for not calling [`display`](Self::display)
@@ -468,7 +487,7 @@ impl PlayerStats {
     }
     /// either display the percentage to the next level or a new level
     #[must_use]
-    pub fn display(&mut self) -> DisplayScore {
+    pub fn display(&self) -> DisplayScore {
         // we're re-calculating every time calling this
         let max_possible = Level::max_from_score(self.score);
         if max_possible > self.level {
@@ -640,8 +659,6 @@ impl Altitude for Transform {
     }
 }
 
-#[derive(Debug, Component, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct OutOfBound(pub bool);
 
 /// ### Example
 /// ```rs,no_run
@@ -763,6 +780,12 @@ impl From<Vec2> for WidthHeight {
     }
 }
 
+/// emmited by client
+#[derive(Debug, Event)]
+#[cfg(feature = "client")]
+pub struct UpgradeEvent {
+    pub target: Boat
+}
 pub trait RoughEq<Rhs = Self> {
     /// returns true if two vals are roughly equal (counting floats to be equal if difference below 0.001
     fn rough_eq(&self, rhs: &Rhs) -> bool;

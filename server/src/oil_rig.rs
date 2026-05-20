@@ -13,7 +13,7 @@ use common::protocol::{OilRigTransform as OilRig, PointTransform, SendToClient};
 use common::util::{avaliable_cords, point_in_square};
 use common::WorldSize;
 
-use crate::BoatClientId;
+use common::BoatClientId;
 
 /// Replicated for OilRig entity:
 /// - [`OilRigInfo`]
@@ -270,6 +270,7 @@ fn points_obsorbed_despawn(
             player_stats.add_to_score(point.worth().into());
             
             // client spawns UI and collects user input
+            // TODO is this pointless? we're doing this to avoid checking display() every frame on client
             sender.send::<_, SendToClient>(
                 &player_stats.display(),
                 &server,

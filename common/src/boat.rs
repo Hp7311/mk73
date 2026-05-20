@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use bevy::prelude::*;
+use lightyear::core::id::PeerId;
 use serde::{Deserialize, Serialize};
 
 use crate::primitives::{FileName, Level, Radian};
@@ -113,3 +114,8 @@ impl Boat {
         crate::util::add_circle_hud(self.radius())
     }
 }
+
+
+/// identifying the perticular [`Boat`]
+#[derive(Debug, Component)]
+pub struct BoatClientId(pub PeerId);

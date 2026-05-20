@@ -35,7 +35,11 @@ fn fire_weapon(
 ) {
     let (transform, weapon_counter) = boat.into_inner();
     let mut msg = SpawnWeapon {
-        weapon: weapon_counter.selected_weapon.unwrap(),
+        weapon: if let Some(weapon) = weapon_counter.selected_weapon {
+            weapon
+        } else {
+            return;
+        },
         position: transform.translation,  // currently starts at centre of boat
         starting_rotation: transform.rotation.wrap_radian(),
         end_rotation: get_rotate_radian(transform.translation.xy(), cursor_pos.0).wrap_radian(),

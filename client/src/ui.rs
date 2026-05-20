@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_inspector_egui::egui::emath::GuiRounding;
-use common::{MainCamera, primitives::{CustomTransform, DisplayScore, PlayerStats, Level, Percent}, protocol::{Move, Rotate}};
+use common::{MainCamera, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, UpgradeEvent}, protocol::{EntityOnServer, Move, Rotate, SendToServer}};
 use lightyear::prelude::{input::native::{ActionState, InputMarker}, *};
 
 #[cfg(target_family = "wasm")]
@@ -9,21 +9,25 @@ use {
     anyhow::anyhow
 };
 
-use crate::BoatState;
+use crate::{BoatState, ui::normal::{ProgressBar, UpgradeBar}};
 
 pub(crate) struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         // app.add_plugins(DbgPlugin);
-        app.add_systems(Startup, spawn_progress_bar.after(crate::setup));
+        app.add_systems(Startup, (spawn_progress_bar, spawn_upgrade_bar).after(crate::setup).chain());
         app.add_systems(Update, recv_stats_update);
 
         app.add_observer(draw_upgrade);
+        app.add_observer(upgrade);
     }
 }
 
 /// defaults currently to draw one level above current
+/// 
+/// diff with [`UpgradeEvent`]:
+///     - triggered if [`DisplayScore::NewLevel`] is sent **and** [`UpgradeBar`] is hidden
 #[derive(Debug, Event)]
 struct DrawUpgrade;
 
@@ -32,26 +36,31 @@ fn recv_stats_update(
     current: Single<&PlayerStats>,
     #[cfg(not(target_family = "wasm"))]
     bar: Single<(&mut Text, &mut BackgroundGradient), With<normal::ProgressBar>>,
+    upgrade_bar: Option<Single<&Visibility, With<normal::UpgradeBar>>>,
     mut commands: Commands
 ) {
+    let trigger_draw_upgrade = if let Some(upgrade_bar) = upgrade_bar {
+        *upgrade_bar == Visibility::Hidden
+    } else {
+        warn!("UpgradeBar not found");
+        return;
+    };
+
     #[cfg(not(target_family = "wasm"))]
     let (mut text, mut background) = bar.into_inner();
 
     for msg in rx.receive() {
+        // info!(?msg);
         match msg {
-            DisplayScore::NewLevel(level) => {
-                info!("New level: {:?}", level);
-                
-                commands.trigger(DrawUpgrade);
-                // draw upgrade box if doesn't already exist
-                // draw boats if not already drawed
+            DisplayScore::NewLevel(_level) => {
+                if trigger_draw_upgrade {
+                    commands.trigger(DrawUpgrade);
+                }
             },
             DisplayScore::Percent(p) => {
-                // #[cfg(debug_assertions)]
-
-                // commands.trigger(DrawUpgrade);
                 #[cfg(not(target_family = "wasm"))]
                 update_percent(p, current.level(), &mut text, &mut background);
+
                 #[cfg(target_family = "wasm")]
                 update_percent(p, current.level());
             }
@@ -88,15 +97,21 @@ mod wasm {
 
 
 #[cfg(not(target_family = "wasm"))]
-use normal::{spawn_progress_bar, update_percent, draw_upgrade};
+use normal::{spawn_progress_bar, update_percent, draw_upgrade, spawn_upgrade_bar};
 #[cfg(not(target_family = "wasm"))]
 mod normal {
     use common::util::InputExt as _;
     use crate::asset::{FontMap, SpriteMap};
     use super::*;
 
+    /// text: X% to level next_level
+    /// 
+    /// in a linear-gradient background GUI
     #[derive(Debug, Component)]
     pub struct ProgressBar;
+    /// text: Upgrade to level next_level
+    /// 
+    /// display next-level boats with observers on clicking on one of them
     #[derive(Debug, Component)]
     pub struct UpgradeBar;
 
@@ -153,45 +168,11 @@ mod normal {
         ));
     }
 
-    pub(super) fn update_percent(
-        new_percent: Percent,
-        current_level: Level,
-        text: &mut Text,
-        background: &mut BackgroundGradient
-    ) {
-        let next_level = current_level + 1;
-        text.0 = format!("{new_percent}% to level {next_level}");
-
-        // assumes only one LinearGradient in background
-        if let Some(gradient) = background.0.get_mut(0)
-            && let Gradient::Linear(linear_gradient) = gradient
-            && linear_gradient.stops.len() == 3
-        {
-            linear_gradient.stops[1].point = Val::Percent(new_percent.to::<f32>());
-            linear_gradient.stops[2].point = Val::Percent(new_percent.to::<f32>());
-        } else {
-            error_once!("Unexpected background configuration");
-        }
-    }
- 
-    pub(super) fn draw_upgrade(
-        _trigger: On<DrawUpgrade>,
-        current_level: Single<&PlayerStats>,
+    /// spawns upgrade bar text and set visibility to hidden
+    pub(super) fn spawn_upgrade_bar(
         fonts: Res<FontMap>,
-        sprites: Res<SpriteMap>,
         mut commands: Commands,
-        progress_bar: Single<Entity, With<ProgressBar>>,
-        upgrade_bar: Option<Single<(), With<UpgradeBar>>>
     ) {
-        if upgrade_bar.is_some() {
-            return;
-        }
-        // TODO reset bar to 0%
-        commands.get_entity(*progress_bar).unwrap()
-            .insert(Visibility::Hidden);
-
-        let next_level = current_level.level() + 1;
-
         commands
             .spawn((
                 Node {
@@ -220,10 +201,72 @@ mod normal {
                     weight: FontWeight::BOLD,
                     ..default()
                 },
-                Text(format!("Upgrade to level {}", next_level)),
+                Text("Upgrade to level N/A".to_owned()),
                 Name::new("UpgradeBar"),
-                UpgradeBar
-            ))
+                UpgradeBar,
+                Visibility::Hidden,
+            ));
+    }
+    /// updates `text` to `new_percent` to `current_level` + 1
+    /// 
+    /// ## Display
+    /// `"{new_percent} to level {current_level + 1}"`
+    /// and corresponding background
+    pub(super) fn update_percent(
+        new_percent: Percent,
+        current_level: Level,
+        text: &mut Text,
+        background: &mut BackgroundGradient
+    ) {
+        let next_level = current_level + 1;
+        text.0 = format!("{new_percent}% to level {next_level}");
+
+        // assumes only one LinearGradient in background
+        if let Some(gradient) = background.0.get_mut(0)
+            && let Gradient::Linear(linear_gradient) = gradient
+            && linear_gradient.stops.len() == 3
+        {
+            linear_gradient.stops[1].point = Val::Percent(new_percent.to::<f32>());
+            linear_gradient.stops[2].point = Val::Percent(new_percent.to::<f32>());
+        } else {
+            error_once!("Unexpected background configuration");
+        }
+    }
+
+    /// updates the upgrade selection bar [`UpgradeBar`]
+    /// 
+    /// - hide progress bar and set it to should-be-state after upgrading
+    /// - set pre-spawned upgrade bar to visible and update text
+    /// - replace upgrade bar's attached upgrade boats to appropriate ones
+    pub(super) fn draw_upgrade(
+        _trigger: On<DrawUpgrade>,
+        mut commands: Commands,
+        player_stats: Single<&PlayerStats, With<Controlled>>,
+        upgrade_bar: Single<(Entity, &mut Visibility, &mut Text), (With<UpgradeBar>, Without<ProgressBar>)>,
+        sprites: Res<SpriteMap>,
+        progress_bar: Single<(&mut Visibility, &mut Text, &mut BackgroundGradient), With<ProgressBar>>,
+    ) {
+        let next_level = player_stats.level() + 1;
+
+        {
+            let (mut progress_vis, mut text, mut linear_gradient) = progress_bar.into_inner();
+            *progress_vis = Visibility::Hidden;
+
+            // pass in next level as current_level to set UI before user upgrading
+            update_percent(0, next_level, &mut text, &mut linear_gradient);
+        }
+
+        let upgrade_bar = {
+            let (entity, mut visibility, mut text) = upgrade_bar.into_inner();
+            debug_assert_eq!(*visibility, Visibility::Hidden, "Should only trigger if UpgradeBar is hidden");
+            *visibility = Visibility::Visible;
+
+            text.0 = format!("Upgrade to level {}", next_level);
+            entity
+        };
+
+        commands.get_entity(upgrade_bar).unwrap()
+            .despawn_children()  // clear previous upgrade boats TODO do it in upgrade
             .with_children(|parent| {
                 for boat in next_level.avaliable_boats() {
                     parent.spawn((
@@ -246,42 +289,37 @@ mod normal {
                             image: sprites.get_long_lived(boat.file_name()),
                             ..default()
                         },
-                    ));
+                    )).observe(move |
+                        _trigger: On<Pointer<Click>>,
+                        mut commands_o: Commands
+                    | {
+                        info!("You clicked {:?}!", boat);
+                        // currently not caring about click duration TODO
+                        commands_o.trigger(UpgradeEvent {
+                            target: boat
+                        });
+                    });
                 }
             });
     }
 }
 
-/* translated into CSS:
+// FIXME submarine/not transition on upgrade
+// FIXME some issues with collecting points (can from all heights in multiple clients, can't collect after diving in single-client)
+// FIXME weapon (others) spawning
 
-#box {
-  height: 300.0px;
-  width: 500.0px;
-  border: 2px dotted rgb(96 139 168);
+// hide the upgradebar and disable click detections (possibly despawn?)
+// un-hide progressbar
+// TODO update circle hud
+fn upgrade(
+    _trigger: On<UpgradeEvent>,
 
-  display: flex;
-  flex-direction: column;
-
-  align-content: center;
-
-  /* make first text 50px away from top */
-  padding-top: 50px;
+    mut upgrade_bar: Single<&mut Visibility, (With<UpgradeBar>, Without<ProgressBar>)>,
+    mut progress_bar: Single<&mut Visibility, With<ProgressBar>>,
+) {
+    **upgrade_bar = Visibility::Hidden;
+    **progress_bar = Visibility::Visible;
 }
-
-#box > div {
-  position: relative;
-  border: 2px solid rgb(96 139 168);
-  border-radius: 5px;
-  background-color: rgb(96 139 168 / 0.2);
-  padding: 20px;
-  text-align: center;
-
-  /* otherwise flex boxes cover whole width */
-  align-self: center;
-}
-
-works!!!
-*/
 
 #[allow(dead_code)]
 struct DbgPlugin;
