@@ -17,6 +17,9 @@ use crate::world::WorldSize;
 /// unordered reliable
 pub struct SendToClient;
 pub struct SendToServer;
+// ordered reliable
+pub struct SendToClientOrdered;
+pub struct SendToServerOrdered;
 
 /// ship's head's radian with positive x-axis
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
@@ -220,8 +223,19 @@ impl Plugin for ProtocolPlugin {
             ..default()
         })
             .add_direction(NetworkDirection::ServerToClient);
+        app.add_channel::<SendToClientOrdered>(ChannelSettings {
+            mode: ChannelMode::OrderedReliable(ReliableSettings::default()),
+            ..default()
+        })
+            .add_direction(NetworkDirection::ServerToClient);
+
         app.add_channel::<SendToServer>(ChannelSettings {
             mode: ChannelMode::UnorderedReliable(ReliableSettings::default()),
+            ..default()
+        })
+            .add_direction(NetworkDirection::ClientToServer);
+        app.add_channel::<SendToServerOrdered>(ChannelSettings {
+            mode: ChannelMode::OrderedReliable(ReliableSettings::default()),
             ..default()
         })
             .add_direction(NetworkDirection::ClientToServer);

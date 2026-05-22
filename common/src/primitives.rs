@@ -282,6 +282,13 @@ impl Radian {
     /// let angle = Radian::from_deg(45.0);
     /// assert_eq!(angle.to_vec() * 18.0f32.sqrt(), vec2(3.0, 3.0));  // approximate
     /// ```
+    /// 
+    /// ### Effectively
+    /// `self.cos(), self.sin()`
+    /// 
+    /// or
+    /// 
+    /// [`Vec2::from_angle`]
     pub fn to_vec(self) -> Vec2 {
         vec2(self.0.cos(), self.0.sin())
     }
@@ -342,6 +349,7 @@ impl Add for Radian {
         Radian(self.0 + rhs.0)
     }
 }
+
 
 pub trait WrapRadian {
     fn wrap_radian(&self) -> Radian;

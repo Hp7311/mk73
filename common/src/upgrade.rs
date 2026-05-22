@@ -35,25 +35,21 @@ impl Plugin for UpgradePlugin {
     fn build(&self, app: &mut App) {
         #[cfg(feature = "client")]
         app.add_observer(client::on_upgrade)
-            .add_systems(Update, (client::recv_rollback, check_boat));
+            .add_systems(Update, client::recv_rollback);
         #[cfg(feature = "server")]
-        app.add_systems(Update, server::recv_upgrade).add_systems(Update, check_boat);
+        app.add_systems(Update, server::recv_upgrade);
     }
 }
 
-fn check_boat(
-    q: Query<&Boat, Changed<Boat>>
-) {
-    for boat in q {
-        info!(?boat);
-    }
-}
 #[cfg(feature = "client")]
 mod client {
-    use crate::protocol::{SendToServer, EntityOnServer};
+    use crate::boat::CircleHud;
+    use crate::{BoatReverseNegative, BoatReversePositive, CIRCLE_HUD, circle_hud_mesh};
+    use crate::protocol::{EntityOnServer, SendToServerOrdered};
     use crate::primitives::UpgradeEvent;
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn on_upgrade(
         trigger: On<UpgradeEvent>,
 
@@ -61,12 +57,17 @@ mod client {
         entity_on_server: Single<&EntityOnServer, With<Controlled>>,
 
         query: Single<(&mut Boat, &mut WeaponCounter, &mut ZIndex, &mut Sprite), With<Controlled>>,
-        // can't access `SpriteMap` in client./.
-        asset_server: Res<AssetServer>
+        // can't access `SpriteMap` in client ...
+        asset_server: Res<AssetServer>,
+
+        mut meshes: ResMut<Assets<Mesh>>,
+        circle_hud: Single<&Mesh2d, With<CircleHud>>,
+        mut indicator_positive: Single<&mut Transform, (With<BoatReversePositive>, Without<BoatReverseNegative>)>,
+        mut indicator_negative: Single<&mut Transform, With<BoatReverseNegative>>,
     ) {
         let target = trigger.target;
-        info!("Upgrade to {target:?}");
-        server_sender.send::<SendToServer>(UpgradeMessage {
+        trace!("Upgrade to {target:?}");
+        server_sender.send::<SendToServerOrdered>(UpgradeMessage {
             target,
             entity_on_server: *entity_on_server.into_inner()
         });
@@ -82,19 +83,40 @@ mod client {
             &mut weapon_counter,
             &mut z_index
         );
+
+        if let Some(mesh) = meshes.get_mut(*circle_hud) {
+            let circle_hud_radius = target.circle_hud_radius();
+            *mesh = circle_hud_mesh(circle_hud_radius).into();
+            // assume Z is CIRCLE_HUD
+            indicator_positive.translation = BoatReversePositive::relative_pos(circle_hud_radius).extend(*CIRCLE_HUD);
+            indicator_negative.translation = BoatReverseNegative::relative_pos(circle_hud_radius).extend(*CIRCLE_HUD);
+        }
     }
     pub(super) fn recv_rollback(
         mut reader: Single<&mut MessageReceiver<UpgradeRollback>>,
         query: Single<(&mut Boat, &mut WeaponCounter, &mut Sprite), With<Controlled>>,
-        asset_server: Res<AssetServer>
+        asset_server: Res<AssetServer>,
+
+        mut meshes: ResMut<Assets<Mesh>>,
+        circle_hud: Single<&Mesh2d, With<CircleHud>>,
+        mut indicator_positive: Single<&mut Transform, (With<BoatReversePositive>, Without<BoatReverseNegative>)>,
+        mut indicator_negative: Single<&mut Transform, With<BoatReverseNegative>>,
     ) {
         let (mut boat, mut weapon_counter, mut sprite) = query.into_inner();
         for UpgradeRollback { target } in reader.receive() {
-            info!("Rolling back to {target:?}");
+            warn!("Rolling level back to {target:?}");
             sprite.image = asset_server.load(target.file_name().0);
             sprite.custom_size = Some(target.sprite_size());
 
             degrade_components(target, &mut boat, &mut weapon_counter);
+
+            if let Some(mesh) = meshes.get_mut(*circle_hud) {
+                let circle_hud_radius = target.circle_hud_radius();
+                *mesh = circle_hud_mesh(circle_hud_radius).into();
+                // assume Z is CIRCLE_HUD
+                indicator_positive.translation = BoatReversePositive::relative_pos(circle_hud_radius).extend(*CIRCLE_HUD);
+                indicator_negative.translation = BoatReverseNegative::relative_pos(circle_hud_radius).extend(*CIRCLE_HUD);
+            }
         }
     }
 }
@@ -117,7 +139,7 @@ mod server {
                 mut boat, mut weapon_counter, mut z_index
             )) = stats.get_mut(Entity::from_bits(entity_on_server.0)) {
                 if stat.can_upgrade(target) {
-                    info!("Client {client_id:?} upgrading to {target:?}");
+                    trace!("Client {client_id:?} upgrading to {target:?}");
                     *stat.level_mut() = target.level();
                     upgrade_components(
                         target,

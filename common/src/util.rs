@@ -236,6 +236,24 @@ macro_rules! print_num {
     };
 }
 
+#[macro_export]
+macro_rules! debug_component {
+    ($component:ty, $($filter:ty)?, $($condition:expr)?) => {
+        |q: Query<&$component, $( $filter )?>| {
+            for c in q {
+                let s = stringify!($component);
+                $( if $condition(&c) { 
+                    info!("{}: {:?}", s, c);
+                }
+                continue;
+                )?
+                
+                info!("{}: {:?}", s, c);
+            }
+        }
+    };
+}
+
 // movements
 
 /// extract or return

@@ -1,11 +1,12 @@
 mod oil_rig;
 mod weapon;
+mod tcp;
 
 use std::time::Duration;
 
 use bevy::{diagnostic::{DiagnosticsPlugin, LogDiagnosticsPlugin}, log::LogPlugin, prelude::*, state::app::StatesPlugin};
 use common::{
-    Boat, BoatClientId, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, UpgradePlugin, WorldPlugin, primitives::{CustomTransform, PlayerStats, Position, WeaponCounter, ZIndex}, protocol::{Move, ProtocolPlugin, Rotate, SetupServer, SystemSetPlugin}
+    Boat, BoatClientId, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, UpgradePlugin, WorldPlugin, debug_component, primitives::{CustomTransform, PlayerStats, Position, WeaponCounter, ZIndex}, protocol::{Move, ProtocolPlugin, Rotate, SetupServer, SystemSetPlugin}
 };
 use lightyear::{
     prelude::input::native::ActionState,
@@ -18,7 +19,7 @@ use lightyear::{
     },
 };
 use common::protocol::{EntityOnServer, NewZIndex};
-use crate::oil_rig::OilRigPlugin;
+use crate::{oil_rig::OilRigPlugin, tcp::NetPlugin};
 use crate::weapon::WeaponPlugin;
 
 // FIXME server disconnects after few minutes
@@ -48,6 +49,7 @@ fn main() {
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client)
 
+        .add_plugins(NetPlugin)
         .run();
 }
 
@@ -146,6 +148,7 @@ fn recv_new_z_index(
                 error!("Client sent a non-existent Boat ID");
                 return;
             };
+            info!(?z_index);
             *z_index = msg.new_index;
         }
     }
@@ -154,99 +157,39 @@ fn recv_new_z_index(
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use bevy::log::LogPlugin;
-    use bevy::prelude::*;
-    use lightyear::netcode::{NetcodeClient, NetcodeServer};
-    use lightyear::netcode::server_plugin::NetcodeConfig;
-    use lightyear::prelude::*;
-    use lightyear::prelude::client::{ClientPlugins};
-    use lightyear::prelude::server::{ServerPlugins, ServerUdpIo, Start};
-    use lightyear::prelude::UdpIo;
-    use serde::{Deserialize, Serialize};
+    use std::{io::{Read, Write}, net::{TcpListener, TcpStream}, time::Duration};
 
-    // #[test]
-    #[ignore]
-    fn child_spawning() {
-        const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8000);
-        const CLIENT_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8001);
+use common::TCP_ADDR;
 
-        let mut server = App::new();
-        server.add_plugins((MinimalPlugins, LogPlugin::default(), ProtocolPlugin, ServerPlugins::default()));
-        let spawn_id = server.world_mut()
-            .spawn((
-                NetcodeServer::new(NetcodeConfig::default()),
-                LocalAddr(SERVER_ADDR),
-                ServerUdpIo::default(),
-            ))
-            .id();
-        server.world_mut().trigger(Start { entity: spawn_id });
+    #[test]
+    fn test_recv() {
+        let server = std::thread::spawn(|| {
+            let socket = TcpListener::bind(TCP_ADDR).unwrap();
+            let mut buf = vec![];
+            for stream in socket.incoming() {
+                println!("New client");
+                // FIXME wouldn't connect to another client if one has connection
+                // solution: threads for now (async possibly)
+                let mut stream = stream.unwrap();
 
-        server.add_observer(|trigger: On<Add, LinkOf>, mut commands: Commands| {
-            commands.get_entity(trigger.entity).unwrap().insert((
-                ReplicationSender::default(),
-                Name::from("Client"),
-            ));
-            println!("New")
+                while let Ok(amount) = stream.read_to_end(&mut buf)
+                    && amount != 0
+                {
+                    let f = buf.iter().take(4).copied().collect::<Vec<u8>>();
+                    let f: [u8; 4] = f.try_into().unwrap();
+                    let f = f32::from_be_bytes(f);
+
+                    buf.clear();
+                }
+            }
         });
-
-        let mut client = App::new();
-        client.add_plugins((MinimalPlugins, LogPlugin::default(), ProtocolPlugin, ClientPlugins::default()));
-
-        let spawn_id = client.world_mut().spawn((
-            Client::default(),
-            LocalAddr(CLIENT_ADDR),
-            PeerAddr(SERVER_ADDR),
-            Link::new(None),
-            ReplicationReceiver::default(),
-            PredictionManager::default(),
-            NetcodeClient::new(Authentication::Manual { server_addr: SERVER_ADDR, client_id: 0, private_key: default(), protocol_id: 0}, default()).unwrap(),
-            UdpIo::default()
-        )).id();
-        client.world_mut().trigger(Connect { entity: spawn_id });
-
-        for _ in 0..300 {
-            server.update();
-            client.update();
-        }
-
-
-        server.world_mut().spawn((
-            ParentComponent(8),
-            Replicate::to_clients(NetworkTarget::All),
-            // children![
-            //     ChildComponent(1)
-            // ]
-        ));
-
-        info!("Spawned before update");
-        for _ in 0..6000 {
-            server.update();
-            client.update();
-        }
-        client.add_systems(Update, |q: Query<&Replicated>| {
-            assert_eq!(q.iter().len(), 1);
-            println!("Passed");
+        let client = std::thread::spawn(|| {
+            let mut stream = TcpStream::connect(TCP_ADDR).unwrap();
+            assert_eq!(stream.write(&[1, 1, 1]).unwrap(), 3);
+            std::thread::sleep(Duration::from_secs(10));
         });
-        server.add_systems(Update, |q: Query<&ChildComponent>| {
-            assert_eq!(q.iter().len(), 1);
-        });
-
-        client.update();
-        server.update();
-    }
-
-    #[derive(Component, Deserialize, Serialize, PartialEq)]
-    struct ParentComponent(u128);
-    #[derive(Component, Deserialize, Serialize, PartialEq)]
-    struct ChildComponent(u8);
-
-    struct ProtocolPlugin;
-
-    impl Plugin for ProtocolPlugin {
-        fn build(&self, app: &mut App) {
-            app.register_component::<ParentComponent>();
-            app.register_component::<ChildComponent>();
-        }
+        
+        server.join().unwrap();
+        client.join().unwrap();
     }
 }

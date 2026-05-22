@@ -217,6 +217,7 @@ fn move_points(
     for (boats_in_range, mut point) in points_transform.iter_mut().filter_map(|point_info| {
         let boats_in_range = boats.iter()
             .filter(|&(CustomTransform { position: boat_pos, ..}, boat, boat_depth)| {
+                // info!(?boat_depth, ?point_info.depth);
                 in_range(boat_pos.0, point_info.position, boat.circle_hud_radius())
                     // TODO points should "lock in" to a boat once it starts to dive
                     && eq!(*boat_depth, point_info.depth)

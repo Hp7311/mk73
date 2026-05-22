@@ -70,7 +70,7 @@ fn fire_weapon(
     // at back to prevent use-after-move
     
     spawn_weapon_marker(&mut commands, Entity::from_bits(msg.entity_on_client.0),  msg.position.xy(), &mut meshes, &mut materials);
-    sender.send::<SendToServer>(msg);
+    sender.send::<SendToServer>(msg);  // can be unordered
 }
 
 fn spawn_others_weapon(

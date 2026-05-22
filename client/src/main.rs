@@ -7,21 +7,23 @@ mod weapon;
 mod boat;
 mod oil_rig;
 mod ui;
+mod tcp;
 #[cfg(target_family = "wasm")]
 mod web_utils;
 mod asset;
 
+use std::net::TcpStream;
 use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use common::UpgradePlugin;
+use common::{TCP_ADDR, UpgradePlugin};
 use common::{
     Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, SubKind, WorldPlugin,
     protocol::{Move, ProtocolPlugin, Rotate},
-    primitives::{Radian, ZIndex}
+    primitives::ZIndex
 };
 
 use lightyear::netcode::{auth::Authentication, Key, NetcodeClient};
@@ -38,6 +40,7 @@ use crate::boat::BoatPlugin;
 use crate::dive::DivingPlugin;
 use crate::input::InputBufferPlugin;
 use crate::oil_rig::OilRigPlugin;
+use crate::tcp::NetPlugin;
 use crate::ui::UiPlugin;
 use crate::weapon::WeaponPlugin;
 
@@ -49,8 +52,6 @@ compile_error! {"Should compile by trunk serve on production"}
 
 const DEFAULT_MAX_ZOOM: f32 = 2.0;
 const TIME_TO_LAUNCH_WEAPON: Duration = Duration::from_millis(200);
-/// absolute value of minimum radians that must be reached to reverse the Boat
-const MINIMUM_REVERSE: f32 = Radian::from_deg(180.0 - 45.0).0;
 
 fn main() {
     let mut app = App::new();
@@ -108,8 +109,11 @@ fn main() {
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect);
 
+    app.add_plugins(NetPlugin);
+
     app.run();
 }
+
 
 fn setup(mut commands: Commands) {
     let client_id = rand::random_range(0..100);

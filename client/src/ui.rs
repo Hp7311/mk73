@@ -1,15 +1,10 @@
 use bevy::prelude::*;
 use bevy_inspector_egui::egui::emath::GuiRounding;
-use common::{MainCamera, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, UpgradeEvent}, protocol::{EntityOnServer, Move, Rotate, SendToServer}};
+use common::{MainCamera, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, UpgradeEvent}, protocol::{Move, Rotate}};
 use lightyear::prelude::{input::native::{ActionState, InputMarker}, *};
 
-#[cfg(target_family = "wasm")]
-use {
-    crate::web_utils::*,
-    anyhow::anyhow
-};
-
-use crate::{BoatState, ui::normal::{ProgressBar, UpgradeBar}};
+use crate::{BoatState, asset::{FontMap, SpriteMap}};
+use self::normal::ProgressBar;
 
 pub(crate) struct UiPlugin;
 
@@ -19,60 +14,57 @@ impl Plugin for UiPlugin {
         app.add_systems(Startup, (spawn_progress_bar, spawn_upgrade_bar).after(crate::setup).chain());
         app.add_systems(Update, recv_stats_update);
 
-        app.add_observer(draw_upgrade);
-        app.add_observer(upgrade);
+        app.add_observer(show_upgrade);
+        app.add_observer(on_choose_upgrade);
     }
 }
 
+/// shows the [`UpgradeBar`]
+/// 
 /// defaults currently to draw one level above current
 /// 
 /// diff with [`UpgradeEvent`]:
-///     - triggered if [`DisplayScore::NewLevel`] is sent **and** [`UpgradeBar`] is hidden
+///     - triggered if [`DisplayScore::NewLevel`] is sent **and** [`UpgradeBar`] is hidden (which is hidden when user selects an upgrade)
 #[derive(Debug, Event)]
-struct DrawUpgrade;
+struct ShowUpgrade;
 
 fn recv_stats_update(
     mut rx: Single<&mut MessageReceiver<DisplayScore>>,
     current: Single<&PlayerStats>,
+    upgrade_bar: Single<&Visibility, With<UpgradeBar>>,
+    mut commands: Commands,
     #[cfg(not(target_family = "wasm"))]
-    bar: Single<(&mut Text, &mut BackgroundGradient), With<normal::ProgressBar>>,
-    upgrade_bar: Option<Single<&Visibility, With<normal::UpgradeBar>>>,
-    mut commands: Commands
+    mut progress_bar: Single<(&mut Text, &mut BackgroundGradient), With<normal::ProgressBar>>,
 ) {
-    let trigger_draw_upgrade = if let Some(upgrade_bar) = upgrade_bar {
-        *upgrade_bar == Visibility::Hidden
-    } else {
-        warn!("UpgradeBar not found");
-        return;
-    };
-
-    #[cfg(not(target_family = "wasm"))]
-    let (mut text, mut background) = bar.into_inner();
-
     for msg in rx.receive() {
         // info!(?msg);
         match msg {
             DisplayScore::NewLevel(_level) => {
-                if trigger_draw_upgrade {
-                    commands.trigger(DrawUpgrade);
+                // only show upgrade if upgrade bar is not visible right now
+                if *upgrade_bar == Visibility::Hidden {
+                    commands.trigger(ShowUpgrade);
                 }
             },
             DisplayScore::Percent(p) => {
                 #[cfg(not(target_family = "wasm"))]
-                update_percent(p, current.level(), &mut text, &mut background);
-
+                {
+                    let (ref mut text, ref mut background) = *progress_bar;
+                    normal::update_percent(p, current.level(), text, background);
+                }
                 #[cfg(target_family = "wasm")]
-                update_percent(p, current.level());
+                wasm::update_percent(p, current.level());
             }
         }
     }
 }
 
+// only updating and spawning the normal progress bar is platform dependent
 #[cfg(target_family = "wasm")]
-use wasm::{spawn_progress_bar, update_percent};
+use wasm::spawn_progress_bar;
 #[cfg(target_family = "wasm")]
 mod wasm {
     use super::*;
+    use crate::web_utils::*;
     pub(super) fn spawn_progress_bar() {
         let progress_bar = ProgressBar::new_element();
         // x% to level Y
@@ -97,11 +89,11 @@ mod wasm {
 
 
 #[cfg(not(target_family = "wasm"))]
-use normal::{spawn_progress_bar, update_percent, draw_upgrade, spawn_upgrade_bar};
+use normal::spawn_progress_bar;
 #[cfg(not(target_family = "wasm"))]
 mod normal {
     use common::util::InputExt as _;
-    use crate::asset::{FontMap, SpriteMap};
+    use crate::asset::FontMap;
     use super::*;
 
     /// text: X% to level next_level
@@ -109,11 +101,6 @@ mod normal {
     /// in a linear-gradient background GUI
     #[derive(Debug, Component)]
     pub struct ProgressBar;
-    /// text: Upgrade to level next_level
-    /// 
-    /// display next-level boats with observers on clicking on one of them
-    #[derive(Debug, Component)]
-    pub struct UpgradeBar;
 
     pub(super) fn spawn_progress_bar(
         mut commands: Commands,
@@ -168,45 +155,6 @@ mod normal {
         ));
     }
 
-    /// spawns upgrade bar text and set visibility to hidden
-    pub(super) fn spawn_upgrade_bar(
-        fonts: Res<FontMap>,
-        mut commands: Commands,
-    ) {
-        commands
-            .spawn((
-                Node {
-                    // pushes first boat down
-                    padding: UiRect::top(Val::Px(50.0)),
-                    margin: UiRect {
-                        // center by X-axis
-                        left: Val::Auto,
-                        right: Val::Auto,
-                        ..default()
-                    },
-                    // 20px gap between boats, assume all vertically placed
-                    row_gap: Val::Px(20.),
-                    flex_direction: FlexDirection::Column,
-                    ..default()
-                },
-                #[cfg(debug_assertions)]
-                Outline::new(Val::Px(1.0), Val::ZERO, Color::BLACK),
-                TextLayout {
-                    justify: Justify::Center,
-                    ..default()
-                },
-                TextFont {
-                    font: fonts.get_long_lived("regular.otf").unwrap(),
-                    font_size: 15.0,
-                    weight: FontWeight::BOLD,
-                    ..default()
-                },
-                Text("Upgrade to level N/A".to_owned()),
-                Name::new("UpgradeBar"),
-                UpgradeBar,
-                Visibility::Hidden,
-            ));
-    }
     /// updates `text` to `new_percent` to `current_level` + 1
     /// 
     /// ## Display
@@ -233,76 +181,127 @@ mod normal {
         }
     }
 
-    /// updates the upgrade selection bar [`UpgradeBar`]
-    /// 
-    /// - hide progress bar and set it to should-be-state after upgrading
-    /// - set pre-spawned upgrade bar to visible and update text
-    /// - replace upgrade bar's attached upgrade boats to appropriate ones
-    pub(super) fn draw_upgrade(
-        _trigger: On<DrawUpgrade>,
-        mut commands: Commands,
-        player_stats: Single<&PlayerStats, With<Controlled>>,
-        upgrade_bar: Single<(Entity, &mut Visibility, &mut Text), (With<UpgradeBar>, Without<ProgressBar>)>,
-        sprites: Res<SpriteMap>,
-        progress_bar: Single<(&mut Visibility, &mut Text, &mut BackgroundGradient), With<ProgressBar>>,
-    ) {
-        let next_level = player_stats.level() + 1;
-
-        {
-            let (mut progress_vis, mut text, mut linear_gradient) = progress_bar.into_inner();
-            *progress_vis = Visibility::Hidden;
-
-            // pass in next level as current_level to set UI before user upgrading
-            update_percent(0, next_level, &mut text, &mut linear_gradient);
-        }
-
-        let upgrade_bar = {
-            let (entity, mut visibility, mut text) = upgrade_bar.into_inner();
-            debug_assert_eq!(*visibility, Visibility::Hidden, "Should only trigger if UpgradeBar is hidden");
-            *visibility = Visibility::Visible;
-
-            text.0 = format!("Upgrade to level {}", next_level);
-            entity
-        };
-
-        commands.get_entity(upgrade_bar).unwrap()
-            .despawn_children()  // clear previous upgrade boats TODO do it in upgrade
-            .with_children(|parent| {
-                for boat in next_level.avaliable_boats() {
-                    parent.spawn((
-                        Node {
-                            // boats pile up
-                            position_type: PositionType::Relative,
-
-                            // render them 1/2 of actual size
-                            width: Val::Px(boat.sprite_size().x / 2.0),
-                            height: Val::Px(boat.sprite_size().y / 2.0),
-
-                            // center of box
-                            align_self: AlignSelf::Center,
-
-                            ..default()
-                        },
-                        #[cfg(debug_assertions)]
-                        Outline::new(Val::Px(1.0), Val::ZERO, Color::BLACK),
-                        ImageNode {
-                            image: sprites.get_long_lived(boat.file_name()),
-                            ..default()
-                        },
-                    )).observe(move |
-                        _trigger: On<Pointer<Click>>,
-                        mut commands_o: Commands
-                    | {
-                        info!("You clicked {:?}!", boat);
-                        // currently not caring about click duration TODO
-                        commands_o.trigger(UpgradeEvent {
-                            target: boat
-                        });
-                    });
-                }
-            });
-    }
 }
+
+/// text: Upgrade to level next_level
+/// 
+/// display next-level boats with observers on clicking on one of them
+#[derive(Debug, Component)]
+struct UpgradeBar;
+
+/// spawns upgrade bar text and set visibility to hidden
+fn spawn_upgrade_bar(
+    fonts: Res<FontMap>,
+    mut commands: Commands,
+) {
+    commands
+        .spawn((
+            Node {
+                // pushes first boat down
+                padding: UiRect::top(Val::Px(50.0)),
+                margin: UiRect {
+                    // center by X-axis
+                    left: Val::Auto,
+                    right: Val::Auto,
+                    ..default()
+                },
+                // 20px gap between boats, assume all vertically placed
+                row_gap: Val::Px(20.),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            #[cfg(debug_assertions)]
+            Outline::new(Val::Px(1.0), Val::ZERO, Color::BLACK),
+            TextLayout {
+                justify: Justify::Center,
+                ..default()
+            },
+            TextFont {
+                font: fonts.get_long_lived("regular.otf").unwrap(),
+                font_size: 15.0,
+                weight: FontWeight::BOLD,
+                ..default()
+            },
+            Text("Upgrade to level N/A".to_owned()),
+            Name::new("UpgradeBar"),
+            UpgradeBar,
+            Visibility::Hidden,
+        ));
+}
+    
+/// updates the upgrade selection bar [`UpgradeBar`]
+/// 
+/// - hide progress bar and set it to should-be-state after upgrading
+/// - set pre-spawned upgrade bar to visible and update text
+/// - replace upgrade bar's attached upgrade boats to appropriate ones
+fn show_upgrade(
+    _trigger: On<ShowUpgrade>,
+    mut commands: Commands,
+    player_stats: Single<&PlayerStats, With<Controlled>>,
+    upgrade_bar: Single<(Entity, &mut Visibility, &mut Text), (With<UpgradeBar>, Without<ProgressBar>)>,
+    sprites: Res<SpriteMap>,
+    progress_bar: Single<(&mut Visibility, &mut Text, &mut BackgroundGradient), With<ProgressBar>>,
+) {
+    let next_level = player_stats.level() + 1;
+
+    {
+        let (mut progress_vis, mut text, mut linear_gradient) = progress_bar.into_inner();
+        *progress_vis = Visibility::Hidden;
+
+        // pass in next level as current_level to set UI before user upgrading
+        #[cfg(target_family = "wasm")]
+        wasm::update_percent(0, next_level);
+        #[cfg(not(target_family = "wasm"))]
+        normal::update_percent(0, next_level, &mut text, &mut linear_gradient);
+    }
+
+    let upgrade_bar = {
+        let (entity, mut visibility, mut text) = upgrade_bar.into_inner();
+        assert_eq!(*visibility, Visibility::Hidden, "Should only trigger if UpgradeBar is hidden");
+        *visibility = Visibility::Visible;
+
+        text.0 = format!("Upgrade to level {}", next_level);
+        entity
+    };
+
+    commands.get_entity(upgrade_bar).unwrap()
+        .despawn_children()  // clear previous upgrade boats TODO do it in select upgrade observer
+        .with_children(|parent| {
+            for boat in next_level.avaliable_boats() {
+                parent.spawn((
+                    Node {
+                        // boats pile up
+                        position_type: PositionType::Relative,
+
+                        // render them 1/2 of actual size
+                        width: Val::Px(boat.sprite_size().x / 2.0),
+                        height: Val::Px(boat.sprite_size().y / 2.0),
+
+                        // center of box
+                        align_self: AlignSelf::Center,
+
+                        ..default()
+                    },
+                    #[cfg(debug_assertions)]
+                    Outline::new(Val::Px(1.0), Val::ZERO, Color::BLACK),
+                    ImageNode {
+                        image: sprites.get_long_lived(boat.file_name()),
+                        ..default()
+                    },
+                )).observe(move |
+                    _trigger: On<Pointer<Click>>,
+                    mut commands_o: Commands
+                | {
+                    info!("You clicked {:?}!", boat);
+                    // currently not caring about click duration TODO
+                    commands_o.trigger(UpgradeEvent {
+                        target: boat
+                    });
+                });
+            }
+        });
+}
+
 
 // FIXME submarine/not transition on upgrade
 // FIXME some issues with collecting points (can from all heights in multiple clients, can't collect after diving in single-client)
@@ -310,12 +309,11 @@ mod normal {
 
 // hide the upgradebar and disable click detections (possibly despawn?)
 // un-hide progressbar
-// TODO update circle hud
-fn upgrade(
+fn on_choose_upgrade(
     _trigger: On<UpgradeEvent>,
 
     mut upgrade_bar: Single<&mut Visibility, (With<UpgradeBar>, Without<ProgressBar>)>,
-    mut progress_bar: Single<&mut Visibility, With<ProgressBar>>,
+    mut progress_bar: Single<&mut Visibility, With<ProgressBar>>
 ) {
     **upgrade_bar = Visibility::Hidden;
     **progress_bar = Visibility::Visible;

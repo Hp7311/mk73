@@ -19,9 +19,7 @@ pub use movement::MovementPlugin;
 pub use upgrade::UpgradePlugin;
 pub use weapon::Weapon;
 pub use weapon::WeaponType;
-pub use boat::Boat;
-pub use boat::SubKind;
-pub use boat::BoatClientId;
+pub use boat::{Boat, SubKind, CircleHud, BoatClientId, BoatReverseNegative, BoatReversePositive};
 pub use world::WorldPlugin;
 pub use world::WorldSize;
 
@@ -29,6 +27,10 @@ pub const SERVER_ADDR: SocketAddr = ip_addr(Ipv4Addr::LOCALHOST, SERVER_PORT);
 #[cfg(feature = "client")]
 pub const CLIENT_ADDR: SocketAddr = ip_addr(Ipv4Addr::LOCALHOST, CLIENT_PORT);
 pub const PROTOCOL_ID: u64 = 0;
+
+pub fn circle_hud_mesh(radius: f32) -> Ring<Circle> {
+    Circle::new(radius).to_ring(3.0)
+}
 
 // --- Z-ordering constants
 /// primarily for the main [`Boat`] on the surface
@@ -47,6 +49,8 @@ pub struct MainCamera;
 const SERVER_PORT: u16 = 8000;
 #[cfg(feature = "client")]
 const CLIENT_PORT: u16 = 8001;
+
+pub const TCP_ADDR: SocketAddr = ip_addr(Ipv4Addr::LOCALHOST, 9000);
 
 const DEFAULT_MAX_TURN_DEG: crate::primitives::Radian = crate::primitives::Radian::from_deg(0.5);
 

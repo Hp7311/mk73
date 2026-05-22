@@ -25,7 +25,7 @@ use lightyear::{
     },
 };
 use common::util::in_states_2;
-use crate::{BoatState, MINIMUM_REVERSE};
+use crate::BoatState;
 
 pub(crate) struct InputBufferPlugin;
 
@@ -71,11 +71,11 @@ fn buffer_rotate(
         let mut moved_from_current = (raw_moved - current_rotation.0).normalize();
 
         // -- adjust for reversed ---
-        if moved_from_current.abs() > MINIMUM_REVERSE && !locked {
+        if moved_from_current.abs() > Boat::MINIMUM_REVERSE.0 && !locked {
             // reversing
             reversed.0 = true;
             moved_from_current = moved_from_current.flip();
-        } else if moved_from_current.abs() <= MINIMUM_REVERSE && reversed.0 && !locked {
+        } else if moved_from_current.abs() <= Boat::MINIMUM_REVERSE.0 && reversed.0 && !locked {
             // going forwards
             reversed.0 = false;
         } else if reversed.0 {

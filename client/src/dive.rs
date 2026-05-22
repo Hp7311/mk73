@@ -1,4 +1,6 @@
-use crate::BoatType;
+use std::io::Write;
+
+use crate::{BoatType, tcp::TcpWrapper};
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
@@ -7,9 +9,9 @@ use bevy::sprite_render::AlphaMode2d;
 use common::primitives::{
     Altitude as _, CustomTransform, DecimalPoint, GetZIndex, MeshBundle, ZIndex,
 };
-use common::protocol::{EntityOnServer, NewZIndex, SendToServer};
+use common::protocol::{EntityOnServer, NewZIndex, SendToServerOrdered};
 use common::util::{calculate_diving_overlay, in_states_2};
-use common::{eq, Boat, MainCamera, SubKind, OCEAN_FLOOR, OCEAN_SURFACE};
+use common::{Boat, MainCamera, OCEAN_FLOOR, OCEAN_SURFACE, SubKind, debug_component, eq, print_num};
 use lightyear::prelude::{Controlled, MessageSender};
 
 pub(crate) struct DivingPlugin;
@@ -29,6 +31,8 @@ impl Plugin for DivingPlugin {
                 .chain()
                 .run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))),
         );
+
+        // app.add_systems(Update, debug_component!(ZIndex, With<Controlled>, |z: &ZIndex| z.0 != 0.0));
     }
 }
 
@@ -110,16 +114,17 @@ fn update_diving_status(
 }
 
 fn act_on_state(
-    ships: Single<(&mut Transform, &mut ZIndex, &Boat, &EntityOnServer), With<Controlled>>,
+    ships: Single<(&mut Transform, &mut ZIndex, &Boat), With<Controlled>>,
     diving_status: Res<State<DivingStatus>>,
     mut setter: ResMut<NextState<DivingStatus>>,
-    mut new_z: Single<&mut MessageSender<NewZIndex>>,
+    mut tcp_wrapper: ResMut<TcpWrapper>
 ) {
-    let (mut transform, mut z_index, boat, &entity_on_server) = ships.into_inner();
+    let (mut transform, mut z_index, boat) = ships.into_inner();
 
     #[cfg(debug_assertions)]
     if boat.sub_kind() != SubKind::Submarine {
-        warn!("Should .run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))));")
+        warn!("Should .run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))));");
+        return;
     }
 
     match diving_status.get() {
@@ -144,10 +149,13 @@ fn act_on_state(
             return;
         }
     }
-    new_z.send::<SendToServer>(NewZIndex {
-        new_index: *z_index,
-        entity_on_server,
-    });
+    info!(?z_index);
+    // new_z.send::<SendToServerOrdered>(NewZIndex {
+    //     new_index: *z_index,
+    //     entity_on_server,
+    // });
+    let amount = tcp_wrapper.write(&z_index.to_be_bytes()).unwrap();
+    assert_eq!(amount, 4);
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone, Copy, Debug, Default)]

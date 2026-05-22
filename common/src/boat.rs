@@ -17,6 +17,9 @@ pub enum Boat {
     Yasen,
 }
 
+#[derive(Debug, Component)]
+pub struct CircleHud;
+
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubKind {
     Submarine,
@@ -25,6 +28,8 @@ pub enum SubKind {
 }
 
 impl Boat {
+    /// absolute value of minimum radians that must be reached to reverse the Boat
+    pub const MINIMUM_REVERSE: Radian = Radian::from_deg(180.0 - 45.0);
     pub const ALL: [Self; 3] = [Self::Yasen, Self::Momi, Self::Zubr];
     pub fn sub_kind(&self) -> SubKind {
         match self {
@@ -119,3 +124,33 @@ impl Boat {
 /// identifying the perticular [`Boat`]
 #[derive(Debug, Component)]
 pub struct BoatClientId(pub PeerId);
+
+#[derive(Debug, Component)]
+pub struct BoatReversePositive;
+
+#[derive(Debug, Component)]
+pub struct BoatReverseNegative;
+
+impl BoatReversePositive {
+    pub fn relative_pos(circle_hud_radius: f32) -> Vec2 {
+        Boat::MINIMUM_REVERSE.to_vec() * circle_hud_radius
+    }
+    pub fn mesh(length: f32) -> Segment2d {
+        Segment2d::from_ray_and_length(
+            Ray2d::new(Vec2::ZERO, Dir2::new(Boat::MINIMUM_REVERSE.to_vec()).unwrap()),
+            length
+        )
+    }
+}
+
+impl BoatReverseNegative {
+    pub fn relative_pos(circle_hud_radius: f32) -> Vec2 {
+        (- Boat::MINIMUM_REVERSE).to_vec() * circle_hud_radius
+    }
+    pub fn mesh(length: f32) -> Segment2d {
+        Segment2d::from_ray_and_length(
+            Ray2d::new(Vec2::ZERO, Dir2::new((-Boat::MINIMUM_REVERSE).to_vec()).unwrap()),
+            length
+        )
+    }
+}

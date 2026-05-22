@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, io::Write};
 
 use bevy::{color::palettes::css::GRAY, prelude::*};
-use common::{Boat, CIRCLE_HUD, OCEAN_SURFACE, primitives::{CustomTransform, MeshBundle, WeaponCounter, WrapRadian as _}};
+use common::{Boat, BoatReverseNegative, BoatReversePositive, CIRCLE_HUD, CircleHud, OCEAN_SURFACE, circle_hud_mesh, primitives::{CustomTransform, MeshBundle, WeaponCounter}, protocol::EntityOnServer};
 use lightyear::prelude::*;
 
-use crate::{BoatType, MINIMUM_REVERSE, asset::SpriteMap};
+use crate::{BoatType, asset::SpriteMap, tcp::TcpWrapper};
 
 pub(crate) struct BoatPlugin;
 
@@ -19,15 +19,17 @@ impl Plugin for BoatPlugin {
 #[allow(clippy::too_many_arguments)]
 fn spawn_boat(
     trigger: On<Add, CustomTransform>,
-    boats: Query<(&Boat, &CustomTransform)>,
+    boats: Query<(&Boat, &CustomTransform, &EntityOnServer)>,
     controlled: Query<(), (With<Boat>, With<Controlled>)>,
 
     mut commands: Commands,
     sprites: Res<SpriteMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+
+    mut tcp: ResMut<TcpWrapper>
 ) {
-    let (&boat, &custom) = boats.get(trigger.entity).inspect_err(|_| error!("Spawn custom along with boat")).unwrap();
+    let (&boat, &custom, entity_on_server) = boats.get(trigger.entity).unwrap();
     let controls = controlled.get(trigger.entity).is_ok();
 
     if !controls {
@@ -69,47 +71,47 @@ fn spawn_boat(
         })
         .with_children(|parent| {
             let circle_hud_radius = boat.circle_hud_radius();
+            let reverse_indicator_length = 10.0;
 
             parent.spawn((
                 MeshBundle {
-                    mesh: Mesh2d(meshes.add(Circle::new(circle_hud_radius).to_ring(3.0))),
+                    mesh: Mesh2d(meshes.add(circle_hud_mesh(circle_hud_radius))),
                     materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
                 },
-                Transform::from_xyz(0.0, 0.0, *CIRCLE_HUD)
+                Transform::from_xyz(0.0, 0.0, *CIRCLE_HUD),
+                CircleHud
             ))
             .insert(children![
                 // reverse indicators
                 (
-                    Transform::from_xyz(
-                        circle_hud_radius * MINIMUM_REVERSE.cos(),
-                        circle_hud_radius * MINIMUM_REVERSE.sin(),
-                        *CIRCLE_HUD
+                    Transform::from_translation(
+                        BoatReversePositive::relative_pos(circle_hud_radius)
+                            .extend(*CIRCLE_HUD)
                     ),
                     MeshBundle {
-                        mesh: Mesh2d(meshes.add(Segment2d::from_ray_and_length(
-                            Ray2d::new(Vec2::ZERO, Dir2::new(MINIMUM_REVERSE.wrap_radian().to_vec()).unwrap()),
-                            10.0
-                        ))),
+                        mesh: Mesh2d(meshes.add(BoatReversePositive::mesh(reverse_indicator_length))),
                         materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY)))
-                    }
+                    },
+                    BoatReversePositive
                 ),
                 (
-                    Transform::from_xyz(
-                        circle_hud_radius * (-MINIMUM_REVERSE).cos(),
-                        circle_hud_radius * (-MINIMUM_REVERSE).sin(),
-                        *CIRCLE_HUD
+                    Transform::from_translation(
+                        BoatReverseNegative::relative_pos(circle_hud_radius)
+                            .extend(*CIRCLE_HUD)
                     ),
                     MeshBundle {
-                        mesh: Mesh2d(meshes.add(Segment2d::from_ray_and_length(
-                            Ray2d::new(Vec2::ZERO, Dir2::new((-MINIMUM_REVERSE).wrap_radian().to_vec()).unwrap()),
-                            10.0
-                        ))),
+                        mesh: Mesh2d(meshes.add(BoatReverseNegative::mesh(reverse_indicator_length))),
                         materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY)))
-                    }
+                    },
+                    BoatReverseNegative
                 )
             ]);
         })
         .insert(Name::new("Client's boat"));
+
+    // associate socket with boat
+    let amount = tcp.write(&entity_on_server.0.to_be_bytes()).unwrap();
+    assert_eq!(amount, 8);
 
     commands.insert_resource(BoatType(boat.sub_kind()));
 }
