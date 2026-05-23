@@ -1,17 +1,20 @@
 use std::io::Write;
 
-use crate::{BoatType, tcp::TcpWrapper};
+use crate::tcp::TcpWrapper;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::AlphaMode2d;
 use common::primitives::{
-    Altitude as _, CustomTransform, DecimalPoint, GetZIndex, MeshBundle, ZIndex,
+    Altitude as _, CustomTransform, DecimalPoint, GetZIndex, MeshBundle, UpgradeEvent, ZIndex
 };
-use common::protocol::{EntityOnServer, NewZIndex, SendToServerOrdered};
+use common::protocol::{EntityOnServer, ZIndexUpdate, SendToServerOrdered};
+use common::protocol::tcp::TcpClientRequest;
 use common::util::{calculate_diving_overlay, in_states_2};
-use common::{Boat, MainCamera, OCEAN_FLOOR, OCEAN_SURFACE, SubKind, debug_component, eq, print_num};
+use common::{Boat, BoatType, MainCamera, OCEAN_FLOOR, OCEAN_SURFACE, SubKind, debug_component, eq};
+use lightyear::input::client::InputSystems;
+use lightyear::prelude::input::native::{ActionState, InputMarker};
 use lightyear::prelude::{Controlled, MessageSender};
 
 pub(crate) struct DivingPlugin;
@@ -25,18 +28,31 @@ impl Plugin for DivingPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                update_diving_status.run_if(input_just_pressed(KeyCode::KeyR)),
+                update_diving_status.run_if(input_just_pressed(KeyCode::KeyR)).run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))),
                 act_on_state.run_if(in_states_2(DivingStatus::Diving, DivingStatus::Surfacing)),
             )
                 .chain()
-                .run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))),
         );
+        app.add_systems(FixedPreUpdate, (
+            act_on_state.run_if(in_states_2(DivingStatus::Diving, DivingStatus::Surfacing)),
+            clear_z_update.run_if(in_state(DivingStatus::None))
+        ).in_set(InputSystems::WriteClientInputs));
+        app.add_observer(push_to_surface_on_upgrade);
 
-        // app.add_systems(Update, debug_component!(ZIndex, With<Controlled>, |z: &ZIndex| z.0 != 0.0));
+        // app.add_systems(FixedUpdate, debug_component!(ZIndex,,));
+        // app.add_systems(FixedUpdate, dbg_s);
     }
 }
 
-#[allow(clippy::needless_update)]
+fn dbg_s(
+    s: Single<&MeshMaterial2d<DivingOverlayShader>, With<DivingOverlay>>,
+    material: Res<Assets<DivingOverlayShader>>,
+) {
+    if let Some(m) = material.get(&s.0) {
+        info!(?m);
+    }
+}
+#[allow(clippy::needless_update)]  // wasm buffers
 fn spawn_diving_overlay(
     mut commands: Commands,
     mut diving_overlay_material: ResMut<Assets<DivingOverlayShader>>,
@@ -54,7 +70,7 @@ fn spawn_diving_overlay(
                         player_pos: vec2(0.0, 0.0),
                         darkness: 0.0,
                         ..default()
-                    })),
+                    })),  // TODO bug at edge
                 },
                 DivingOverlay,
                 Name::from("Diving overlay"),
@@ -97,38 +113,35 @@ fn update_diving_status(
     transform: Single<&Transform, (With<Controlled>, With<Boat>)>,
 ) {
     // if buttons.just_pressed(KeyCode::KeyR) {  already set in .run_if
-        let mut target = *getter.get();
-        match target {
+        let target = match getter.get() {
             DivingStatus::None => {
                 if eq!(transform.translation.z, 0.0) {
-                    target = DivingStatus::Diving
+                    DivingStatus::Diving
                 } else {
-                    target = DivingStatus::Surfacing;
+                    DivingStatus::Surfacing
                 }
             }
-            DivingStatus::Surfacing => target = DivingStatus::Diving,
-            DivingStatus::Diving => target = DivingStatus::Surfacing,
-        }
+            DivingStatus::Surfacing => DivingStatus::Diving,
+            DivingStatus::Diving => DivingStatus::Surfacing,
+        };
 
         setter.set(target);
 }
 
+/// modifies `Transform::z` and sends new ZIndex to server
 fn act_on_state(
-    ships: Single<(&mut Transform, &mut ZIndex, &Boat), With<Controlled>>,
+    ships: Single<(&mut Transform, &Boat, &mut ZIndex, &EntityOnServer), With<Controlled>>,
     diving_status: Res<State<DivingStatus>>,
     mut setter: ResMut<NextState<DivingStatus>>,
-    mut tcp_wrapper: ResMut<TcpWrapper>
+    // mut tcp_wrapper: ResMut<TcpWrapper>
+    // mut sender: Single<&mut MessageSender<NewZIndex>>,
+    mut z_update: Single<&mut ActionState<ZIndexUpdate>, With<InputMarker<ZIndexUpdate>>>
 ) {
-    let (mut transform, mut z_index, boat) = ships.into_inner();
-
-    #[cfg(debug_assertions)]
-    if boat.sub_kind() != SubKind::Submarine {
-        warn!("Should .run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))));");
-        return;
-    }
+    let (mut transform, boat, mut z_index, _e) = ships.into_inner();
 
     match diving_status.get() {
         DivingStatus::Diving => {
+            // local simulation
             *z_index = transform.decrease_with_limit(boat.diving_speed().get_raw(), OCEAN_FLOOR);
 
             if transform.reached(OCEAN_FLOOR, DecimalPoint::Three) {
@@ -149,13 +162,53 @@ fn act_on_state(
             return;
         }
     }
+
+    // let amount = tcp_wrapper.write(&TcpClientRequest::NewZIndex(*z_index).to_bytes()).unwrap();
+    // assert_eq!(amount, 4);
+
+    // sender.send::<SendToServerOrdered>(NewZIndex { new_index: **z_index, entity_on_server: *e });
+
     info!(?z_index);
-    // new_z.send::<SendToServerOrdered>(NewZIndex {
-    //     new_index: *z_index,
-    //     entity_on_server,
-    // });
-    let amount = tcp_wrapper.write(&z_index.to_be_bytes()).unwrap();
-    assert_eq!(amount, 4);
+    z_update.0 = ZIndexUpdate(Some(*z_index));
+    // unsafe { FRAME_TO_CLEAR = Some(50); }
+}
+
+fn clear_z_update(mut z_update: Single<&mut ActionState<ZIndexUpdate>, With<InputMarker<ZIndexUpdate>>>) {
+    if z_update.0.0 == None {
+        return;
+    }
+
+    // ActionState is not accurate therefore uses ?precision = 0.05 in z index comparisons
+    unsafe {
+        if FRAME_TO_CLEAR == None {
+            FRAME_TO_CLEAR = Some(80);
+            return;
+        }
+        let Some(ref mut f) = FRAME_TO_CLEAR else { unreachable!() };
+
+        *f -= 1;
+
+        if *f == 0 {
+            z_update.0 = ZIndexUpdate(None);
+            info!("Cleared");
+            FRAME_TO_CLEAR = None;
+        }
+    }
+}
+
+static mut FRAME_TO_CLEAR: Option<u8> = None;
+
+fn push_to_surface_on_upgrade(
+    trigger: On<UpgradeEvent>,
+    q: Single<(&Transform, &Boat), With<Controlled>>,
+    mut setter: ResMut<NextState<DivingStatus>>
+) {
+    let (transform, boat) = q.into_inner();
+    if boat.sub_kind() == SubKind::Submarine && trigger.target.sub_kind() != SubKind::Submarine
+        && !transform.reached(OCEAN_SURFACE, DecimalPoint::Three)
+    {
+        setter.set(DivingStatus::Surfacing);
+    }
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone, Copy, Debug, Default)]

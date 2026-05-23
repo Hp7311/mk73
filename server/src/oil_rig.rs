@@ -220,7 +220,7 @@ fn move_points(
                 // info!(?boat_depth, ?point_info.depth);
                 in_range(boat_pos.0, point_info.position, boat.circle_hud_radius())
                     // TODO points should "lock in" to a boat once it starts to dive
-                    && eq!(*boat_depth, point_info.depth)
+                    && eq!(*boat_depth, point_info.depth, ?precision = 0.05)
             })
             .map(|(CustomTransform { position, ..}, ..)| position.0)
             .collect::<Vec<_>>();

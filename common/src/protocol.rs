@@ -27,11 +27,16 @@ pub struct Rotate(pub Option<Radian>);
 /// speed is negative on reverse
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
 pub struct Move(pub Option<Speed>);
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Reflect, PartialEq)]
+pub struct ZIndexUpdate(pub Option<ZIndex>);
 
 impl MapEntities for Rotate {
     fn map_entities<E: EntityMapper>(&mut self, _entity_mapper: &mut E) {}
 }
 impl MapEntities for Move {
+    fn map_entities<E: EntityMapper>(&mut self, _entity_mapper: &mut E) {}
+}
+impl MapEntities for ZIndexUpdate {
     fn map_entities<E: EntityMapper>(&mut self, _entity_mapper: &mut E) {}
 }
 
@@ -172,11 +177,11 @@ pub(crate) struct UpgradeRollback {
 /// client sends updates to controlling boat's Z-index(physical depth) to the server as a Message
 ///
 /// requires [`EntityOnServer`] to be given and correctly represent the boat's entity on the server world
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-pub struct NewZIndex {
-    pub new_index: ZIndex,
-    pub entity_on_server: EntityOnServer
-}
+// #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+// pub struct NewZIndex {
+//     pub new_index: ZIndex,
+//     pub entity_on_server: EntityOnServer
+// }
 
 /// message sender and manager are inserted on every [`ClientOf`] entity on server
 pub struct ProtocolPlugin;
@@ -193,7 +198,8 @@ impl Plugin for ProtocolPlugin {
         app.register_component::<ZIndex>();
 
         app.register_component::<EntityOnServer>();
-        app.register_message::<NewZIndex>().add_direction(NetworkDirection::ClientToServer);
+
+        // app.register_message::<NewZIndex>().add_direction(NetworkDirection::ClientToServer);
 
         app.register_component::<OilRigTransform>();
         app.register_component::<PointTransform>().add_linear_interpolation();
@@ -204,8 +210,10 @@ impl Plugin for ProtocolPlugin {
         // MUST register these two for every input
         app.add_plugins(InputPlugin::<Rotate>::default());
         app.add_plugins(InputPlugin::<Move>::default());
+        app.add_plugins(InputPlugin::<ZIndexUpdate>::default());
         app.register_component::<ActionState<Rotate>>();
         app.register_component::<ActionState<Move>>();
+        app.register_component::<ActionState<ZIndexUpdate>>();
 
         app.register_message::<SpawnWeapon>().add_direction(NetworkDirection::ClientToServer);
         app.register_message::<WeaponRollBack>().add_direction(NetworkDirection::ServerToClient);
@@ -242,24 +250,43 @@ impl Plugin for ProtocolPlugin {
     }
 }
 
-#[derive(SystemSet, Hash, Debug, PartialEq, Eq, Clone)]
-pub enum SetupServer {
-    /// spawn main `Server` entity
-    Io,
-    /// spawn [`WorldSize`]
-    WorldSize,
-}
+pub mod tcp {
+    use super::EntityOnServer;
+    use crate::primitives::ZIndex;
 
-pub struct SystemSetPlugin {
-    pub is_server: bool
-}
-impl Plugin for SystemSetPlugin {
-    fn build(&self, app: &mut App) {
-        if self.is_server {
-            app.configure_sets(Startup, (
-                SetupServer::Io,
-                SetupServer::WorldSize
-            ).chain());
+    /// more strongly typed request-parsing and writing
+    pub enum TcpClientRequest {
+        /// marker: 4 bytes read
+        NewZIndex(ZIndex),
+        /// to identify a TCP stream on server with the client
+        /// 
+        /// marker: 8 bytes read
+        ControlledBoatOnServer(EntityOnServer)
+    }
+
+    impl TcpClientRequest {
+        /// buf is a buffer of current read, ideally a Vec that is cleared every read but that's not possible due to read_to_end waiting for EOF
+        /// 
+        /// ### Panics
+        /// if `read_len > buf.len()`
+        #[cfg(feature = "server")]
+        pub fn try_from_buf(buf: &[u8], read_len: usize) -> Option<Self> {
+            let full_buf = buf.split_at(read_len).0;
+            match read_len {
+                4 => Some(Self::NewZIndex(ZIndex(
+                    f32::from_be_bytes(full_buf.try_into().unwrap())
+                ))),
+                8 => Some(Self::ControlledBoatOnServer(EntityOnServer(
+                    u64::from_be_bytes(full_buf.try_into().unwrap())
+                ))),
+                _ => None
+            }
+        }
+        pub fn to_bytes(&self) -> Vec<u8> {
+            match self {
+                Self::NewZIndex(z) => z.to_be_bytes().to_vec(),
+                Self::ControlledBoatOnServer(e) => e.0.to_be_bytes().to_vec()
+            }
         }
     }
 }

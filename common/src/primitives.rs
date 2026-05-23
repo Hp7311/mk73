@@ -382,7 +382,7 @@ impl WrapRadian for Radian {
 /// only for the physics depth, NOT the rendering depth ([`Transform::translation`])
 /// 
 /// also used for strong typing
-#[derive(Component, Serialize, Deserialize, PartialEq, Deref, PartialOrd, Copy, Clone, Debug, Default)]
+#[derive(Component, Serialize, Deserialize, PartialEq, Deref, PartialOrd, Copy, Clone, Debug, Default, Reflect)]
 pub struct ZIndex(pub f32);
 
 impl Sub for ZIndex {

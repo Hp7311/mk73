@@ -240,8 +240,8 @@ macro_rules! print_num {
 macro_rules! debug_component {
     ($component:ty, $($filter:ty)?, $($condition:expr)?) => {
         |q: Query<&$component, $( $filter )?>| {
+            let s = stringify!($component);
             for c in q {
-                let s = stringify!($component);
                 $( if $condition(&c) { 
                     info!("{}: {:?}", s, c);
                 }

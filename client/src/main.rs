@@ -12,14 +12,14 @@ mod tcp;
 mod web_utils;
 mod asset;
 
-use std::net::TcpStream;
 use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use common::{TCP_ADDR, UpgradePlugin};
+use common::UpgradePlugin;
+use common::protocol::ZIndexUpdate;
 use common::{
     Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, SubKind, WorldPlugin,
     protocol::{Move, ProtocolPlugin, Rotate},
@@ -81,13 +81,13 @@ fn main() {
     // plugins
     .init_state::<BoatState>()
     .add_plugins(WorldPlugin)
-    .add_plugins(OilRigPlugin)
+    // .add_plugins(OilRigPlugin)
     .add_plugins(BoatPlugin)
     .add_plugins(InputBufferPlugin)
     .add_plugins(MovementPlugin { move_weapon: true })
     .add_plugins(DivingPlugin)
     .add_plugins(WeaponPlugin)
-    .add_plugins(UiPlugin)
+    .add_plugins(UiPlugin) 
     .add_plugins(UpgradePlugin)
 
     // init
@@ -95,6 +95,7 @@ fn main() {
     .add_systems(Startup, setup)
     .add_observer(on_added_actionstate::<Rotate>)
     .add_observer(on_added_actionstate::<Move>)
+    .add_observer(on_added_actionstate::<ZIndexUpdate>)
 
     .add_systems(FixedUpdate, update_state)
     .add_systems(Update, move_camera)
@@ -109,7 +110,7 @@ fn main() {
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect);
 
-    app.add_plugins(NetPlugin);
+    // app.add_plugins(NetPlugin);
 
     app.run();
 }
@@ -276,10 +277,6 @@ fn sync_z_index(
         transform.translation.z = z_index.0;
     }
 }
-
-/// for performance improvements in diving
-#[derive(Resource, PartialEq)]
-struct BoatType(SubKind);
 
 fn on_disconnect(trigger: On<Add, Disconnected>, query: Query<&Disconnected>) {
     let disconnected = query.get(trigger.entity).unwrap();

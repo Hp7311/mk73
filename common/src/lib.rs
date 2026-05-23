@@ -17,11 +17,11 @@ pub mod protocol;
 pub mod util;
 pub use movement::MovementPlugin;
 pub use upgrade::UpgradePlugin;
-pub use weapon::Weapon;
-pub use weapon::WeaponType;
+pub use weapon::{Weapon, WeaponType};
 pub use boat::{Boat, SubKind, CircleHud, BoatClientId, BoatReverseNegative, BoatReversePositive};
-pub use world::WorldPlugin;
-pub use world::WorldSize;
+#[cfg(feature = "client")]
+pub use boat::BoatType;
+pub use world::{WorldPlugin, WorldSize};
 
 pub const SERVER_ADDR: SocketAddr = ip_addr(Ipv4Addr::LOCALHOST, SERVER_PORT);
 #[cfg(feature = "client")]

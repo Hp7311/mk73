@@ -7,7 +7,7 @@ use crate::{
     Boat,
     collision::{out_of_bound_no_rotation, out_of_bounds},
     primitives::{CustomTransform, Mk48Rect},
-    protocol::{OilRigTransform, SetupServer}
+    protocol::OilRigTransform
 };
 #[cfg(feature = "server")]
 use lightyear::prelude::{Connected, Disconnected, NetworkTarget};
@@ -30,7 +30,7 @@ pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         #[cfg(feature = "server")]
-        app.add_systems(Startup, spawn_worldsize.in_set(SetupServer::WorldSize))
+        app.add_systems(Startup, spawn_worldsize)
             .add_observer(on_new_client)
             .add_observer(on_client_disconnected);
 
@@ -240,7 +240,7 @@ fn get_map_size(player_num: u32, minimum_size: Vec2, expand_per_multiple: Vec2) 
 
 fn get_multiplayer_by_player_num(player_num: u32) -> u32 {
     match player_num {
-        0..20 => 1,
+        0..20 => 20,
         20..50 => 2,
         50..130 => 3,
         130..200 => 4,

@@ -66,7 +66,7 @@ impl ProgressBar {
     const ELEMENT_ID: &'static str = "progress_bar";
 
     pub fn new_element() -> Element {
-        assert_eq!(get_element(), None, "creating a new progress bar when one's already presesnt");
+        assert_eq!(Self::get_element(), None, "creating a new progress bar when one's already presesnt");
 
         let elem = new_elem("div").unwrap();
         // style managed by styles.css

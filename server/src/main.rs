@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use bevy::{diagnostic::{DiagnosticsPlugin, LogDiagnosticsPlugin}, log::LogPlugin, prelude::*, state::app::StatesPlugin};
 use common::{
-    Boat, BoatClientId, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, UpgradePlugin, WorldPlugin, debug_component, primitives::{CustomTransform, PlayerStats, Position, WeaponCounter, ZIndex}, protocol::{Move, ProtocolPlugin, Rotate, SetupServer, SystemSetPlugin}
+    Boat, BoatClientId, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, UpgradePlugin, WorldPlugin, primitives::{CustomTransform, PlayerStats, Position, WeaponCounter, ZIndex}, print_num, protocol::{Move, ProtocolPlugin, Rotate}
 };
 use lightyear::{
     prelude::input::native::ActionState,
@@ -18,13 +18,14 @@ use lightyear::{
         *,
     },
 };
-use common::protocol::{EntityOnServer, NewZIndex};
+use common::protocol::{EntityOnServer, ZIndexUpdate};
 use crate::{oil_rig::OilRigPlugin, tcp::NetPlugin};
 use crate::weapon::WeaponPlugin;
 
 // FIXME server disconnects after few minutes
-fn main() {
-    App::new()
+fn main() -> AppExit {
+    let mut app = App::new();
+    app
         .add_plugins((
             // headless plugins
             MinimalPlugins,
@@ -35,11 +36,10 @@ fn main() {
         ))
         .add_plugins(ServerPlugins::default())
         .add_plugins(ProtocolPlugin)
-        .add_plugins(SystemSetPlugin { is_server: true })
         .add_plugins(OilRigPlugin)
         .add_plugins(WeaponPlugin)
         .add_plugins(UpgradePlugin)
-        .add_systems(Startup, setup.in_set(SetupServer::Io))
+        .add_systems(Startup, setup)
         .add_plugins(WorldPlugin)
         // handle client action
         .add_plugins(MovementPlugin { move_weapon: true })
@@ -49,8 +49,9 @@ fn main() {
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client)
 
-        .add_plugins(NetPlugin)
-        .run();
+        .add_plugins(NetPlugin);
+
+    app.run()
 }
 
 /// starts the server
@@ -113,8 +114,8 @@ fn handle_connected_client(
             position: Position(position),
             ..CustomTransform::default()
         },
-        OCEAN_SURFACE,
         boat,
+        OCEAN_SURFACE,
         WeaponCounter {
             weapons: boat.armanents(),
             selected_weapon: boat.default_weapon()
@@ -129,6 +130,12 @@ fn handle_connected_client(
         
         ActionState::<Rotate>::default(),
         ActionState::<Move>::default(),
+        ActionState::<ZIndexUpdate>::default(),
+
+        // children![(
+        //     OCEAN_SURFACE,
+        //     Replicate::to_clients(NetworkTarget::AllExceptSingle(client_id))
+        // )],
         
         ControlledBy {
             owner: entity,
@@ -139,57 +146,22 @@ fn handle_connected_client(
 }
 
 fn recv_new_z_index(
-    rxs: Query<&mut MessageReceiver<NewZIndex>>,
-    mut z_index: Query<&mut ZIndex>
+    // rxs: Query<&mut MessageReceiver<NewZIndex>>,
+    q: Query<(&ActionState<ZIndexUpdate>, &mut ZIndex)>
 ) {
-    for mut rx in rxs {
-        for msg in rx.receive() {
-            let Ok(mut z_index) = z_index.get_mut(Entity::from_bits(msg.entity_on_server.0)) else {
-                error!("Client sent a non-existent Boat ID");
-                return;
-            };
-            info!(?z_index);
-            *z_index = msg.new_index;
-        }
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use std::{io::{Read, Write}, net::{TcpListener, TcpStream}, time::Duration};
-
-use common::TCP_ADDR;
-
-    #[test]
-    fn test_recv() {
-        let server = std::thread::spawn(|| {
-            let socket = TcpListener::bind(TCP_ADDR).unwrap();
-            let mut buf = vec![];
-            for stream in socket.incoming() {
-                println!("New client");
-                // FIXME wouldn't connect to another client if one has connection
-                // solution: threads for now (async possibly)
-                let mut stream = stream.unwrap();
-
-                while let Ok(amount) = stream.read_to_end(&mut buf)
-                    && amount != 0
-                {
-                    let f = buf.iter().take(4).copied().collect::<Vec<u8>>();
-                    let f: [u8; 4] = f.try_into().unwrap();
-                    let f = f32::from_be_bytes(f);
-
-                    buf.clear();
-                }
-            }
-        });
-        let client = std::thread::spawn(|| {
-            let mut stream = TcpStream::connect(TCP_ADDR).unwrap();
-            assert_eq!(stream.write(&[1, 1, 1]).unwrap(), 3);
-            std::thread::sleep(Duration::from_secs(10));
-        });
-        
-        server.join().unwrap();
-        client.join().unwrap();
+    // for mut rx in rxs {
+        // for msg in rx.receive() {
+        //     let Ok(mut z_index) = z_index.get_mut(Entity::from_bits(msg.entity_on_server.0)) else {
+        //         error!("Client sent a non-existent Boat ID");
+        //         return;
+        //     };
+        //     info!(?msg.new_index);
+        //     *z_index = msg.new_index;
+        // }
+    // }
+    for (z_update, mut z_index) in q {
+        let Some(target) = z_update.0.0 else { return; };
+        *z_index = target;
+        info!(?target);
     }
 }

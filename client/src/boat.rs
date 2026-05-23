@@ -1,10 +1,10 @@
 use std::{collections::HashMap, io::Write};
 
 use bevy::{color::palettes::css::GRAY, prelude::*};
-use common::{Boat, BoatReverseNegative, BoatReversePositive, CIRCLE_HUD, CircleHud, OCEAN_SURFACE, circle_hud_mesh, primitives::{CustomTransform, MeshBundle, WeaponCounter}, protocol::EntityOnServer};
+use common::{Boat, BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, CircleHud, OCEAN_SURFACE, circle_hud_mesh, debug_component, primitives::{CustomTransform, MeshBundle, WeaponCounter}, protocol::{EntityOnServer, tcp::TcpClientRequest}};
 use lightyear::prelude::*;
 
-use crate::{BoatType, asset::SpriteMap, tcp::TcpWrapper};
+use crate::{asset::SpriteMap, tcp::TcpWrapper};
 
 pub(crate) struct BoatPlugin;
 
@@ -27,7 +27,7 @@ fn spawn_boat(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 
-    mut tcp: ResMut<TcpWrapper>
+    // mut tcp: ResMut<TcpWrapper>
 ) {
     let (&boat, &custom, entity_on_server) = boats.get(trigger.entity).unwrap();
     let controls = controlled.get(trigger.entity).is_ok();
@@ -52,6 +52,7 @@ fn spawn_boat(
 
     commands
         .get_entity(trigger.entity).unwrap()
+        // .insert(OCEAN_SURFACE)
         .insert(BoatBundle {
             boat,
             weapon_counter: WeaponCounter {
@@ -110,8 +111,8 @@ fn spawn_boat(
         .insert(Name::new("Client's boat"));
 
     // associate socket with boat
-    let amount = tcp.write(&entity_on_server.0.to_be_bytes()).unwrap();
-    assert_eq!(amount, 8);
+    // let amount = tcp.write(&TcpClientRequest::ControlledBoatOnServer(*entity_on_server).to_bytes()).unwrap();
+    // assert_eq!(amount, 8);
 
     commands.insert_resource(BoatType(boat.sub_kind()));
 }

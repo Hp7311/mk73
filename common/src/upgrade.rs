@@ -44,7 +44,7 @@ impl Plugin for UpgradePlugin {
 #[cfg(feature = "client")]
 mod client {
     use crate::boat::CircleHud;
-    use crate::{BoatReverseNegative, BoatReversePositive, CIRCLE_HUD, circle_hud_mesh};
+    use crate::{BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, circle_hud_mesh};
     use crate::protocol::{EntityOnServer, SendToServerOrdered};
     use crate::primitives::UpgradeEvent;
     use super::*;
@@ -64,6 +64,8 @@ mod client {
         circle_hud: Single<&Mesh2d, With<CircleHud>>,
         mut indicator_positive: Single<&mut Transform, (With<BoatReversePositive>, Without<BoatReverseNegative>)>,
         mut indicator_negative: Single<&mut Transform, With<BoatReverseNegative>>,
+
+        mut boat_type: ResMut<BoatType>,
     ) {
         let target = trigger.target;
         trace!("Upgrade to {target:?}");
@@ -91,6 +93,8 @@ mod client {
             indicator_positive.translation = BoatReversePositive::relative_pos(circle_hud_radius).extend(*CIRCLE_HUD);
             indicator_negative.translation = BoatReverseNegative::relative_pos(circle_hud_radius).extend(*CIRCLE_HUD);
         }
+
+        boat_type.0 = target.sub_kind();
     }
     pub(super) fn recv_rollback(
         mut reader: Single<&mut MessageReceiver<UpgradeRollback>>,

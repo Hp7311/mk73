@@ -5,20 +5,22 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::{io::Read, net::TcpListener, sync::mpsc};
 
-use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
+use common::protocol::tcp::TcpClientRequest;
 use common::{Boat, TCP_ADDR};
 use common::util::InputExt;
 use common::primitives::ZIndex;
-use common::protocol::EntityOnServer;
 
 pub(crate) struct NetPlugin;
 
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_systems(FixedUpdate, (read_request, spawn_receiver_for_client))
-            .add_observer(move_client_request_rx);
+            .add_systems(FixedUpdate, (
+                read_request,
+                spawn_receiver_for_client,
+                move_client_request_rx
+            ));
     }
 }
 
@@ -99,30 +101,33 @@ unsafe impl Sync for MoveClientRequestReceiverTx {}
 /// sent via mpsc
 struct MoveClientRequestReceiver {
     /// the moving entity
-    rx: ClientRequestReceiver,
+    start: Entity,
     /// the target entity (Boat)
     end: Entity
 }
 
 fn read_request(
-    // rxs: Query<(Entity, &ClientRequestReceiver)>,
-    // mut z_index: Query<&mut ZIndex>,
-    world: &mut World
+    rxs: Query<(Entity, &ClientRequestReceiver)>,
+    mut z_index: Query<&mut ZIndex, With<Boat>>,
+    mut commands: Commands,
+    tx: Res<MoveClientRequestReceiverTx>
 ) {
-    let mut rxs = world.query::<(Entity, &ClientRequestReceiver)>();
-    for (entity, rx) in rxs.iter(world) {
+    for (entity, rx) in rxs {
         match rx.0.try_recv() {
-            Ok(TcpClientRequest::NewZIndex(new)) => info!(?new),
+            Ok(TcpClientRequest::NewZIndex(new)) => {
+                if let Ok(mut z) = z_index.get_mut(entity) {
+                    *z = new;
+                }
+            },
             Ok(TcpClientRequest::ControlledBoatOnServer(boat)) => {
-                let rx_owned = world.get_entity_mut(entity).unwrap().take::<ClientRequestReceiver>().unwrap();
-                let tx = world.get_resource::<MoveClientRequestReceiverTx>().unwrap();
+                // let rx_owned = world.get_entity_mut(entity).unwrap().take::<ClientRequestReceiver>().unwrap();
                 tx.0.send(MoveClientRequestReceiver {
-                    rx: rx_owned,
+                    start: entity,
                     end: Entity::from_bits(boat.0)
                 }).unwrap();
             },
             Err(mpsc::TryRecvError::Disconnected) => {
-                if let Ok(c) = world.get_entity_mut(entity) {
+                if let Ok(mut c) = commands.get_entity(entity) {
                     // client diconnected, despawn if not already by lightyear
                     c.despawn();
                 }
@@ -134,48 +139,21 @@ fn read_request(
 
 /// move client request receivers to the specified boat entity they're associated with
 fn move_client_request_rx(
-    rx: Res<MoveClientRequestReceiverRx>,
-    mut commands: Commands
+    world: &mut World
 ) {
+    let rx = world.get_resource::<MoveClientRequestReceiverRx>().unwrap();
     if let Ok(msg) = rx.0.try_recv() {
-        info!("Moving request rx {:?} to {}", msg.rx, msg.end);
+        let start = world.get_entity_mut(msg.start).unwrap().take::<ClientRequestReceiver>().unwrap();
+        info!("Moving request rx from {:?} to {}", msg.start, msg.end);
 
-        if let Ok(mut target) = commands.get_entity(msg.end){
-            target.insert(msg.rx);
+        if let Ok(mut target) = world.get_entity_mut(msg.end) {
+            target.insert(start);
         } else {
             error!("Invalid boat entity specified");
         }
     }
 }
 
-// TODO common with different interface impl for client and server
-enum TcpClientRequest {
-    /// marker: 4 bytes read
-    NewZIndex(ZIndex),
-    /// to identify a TCP stream on server with the client
-    /// 
-    /// marker: 8 bytes read
-    ControlledBoatOnServer(EntityOnServer)
-}
-
-impl TcpClientRequest {
-    /// buf is a buffer of current read, ideally a Vec that is cleared every read but that's not possible due to read_to_end waiting for EOF
-    /// 
-    /// ### Panics
-    /// if `read_len > buf.len()`
-    fn try_from_buf(buf: &[u8], read_len: usize) -> Option<Self> {
-        let full_buf = buf.split_at(read_len).0;
-        match read_len {
-            4 => Some(Self::NewZIndex(ZIndex(
-                f32::from_be_bytes(full_buf.try_into().unwrap())
-            ))),
-            8 => Some(Self::ControlledBoatOnServer(EntityOnServer(
-                u64::from_be_bytes(full_buf.try_into().unwrap())
-            ))),
-            _ => None
-        }
-    }
-}
 
 impl Drop for StreamWrapper {
     fn drop(&mut self) {

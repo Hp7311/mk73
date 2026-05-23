@@ -11,7 +11,7 @@ use common::TCP_ADDR;
 pub(crate) struct NetPlugin;
 
 #[derive(Debug, Resource, Deref, DerefMut)]
-pub(crate) struct TcpWrapper(TcpStream);
+pub(crate) struct TcpWrapper(pub TcpStream);
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(3);
 

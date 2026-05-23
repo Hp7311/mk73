@@ -10,6 +10,12 @@ use crate::{
     weapon::Weapon,
 };
 
+
+/// for performance improvements in diving
+#[derive(Resource, PartialEq)]
+#[cfg(feature = "client")]
+pub struct BoatType(pub SubKind);
+
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Boat {
     Zubr,
