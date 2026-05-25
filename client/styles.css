@@ -1,4 +1,4 @@
-#progress_bar { /* make sure id syncronised with web_utils */
+#progress_bar { /* make sure id syncronised with web_utils */ /* deprecated, use bevy native instead */
     font-family: Arial, sans-serif;
     font-size: calc(7px + 0.8vmin);
     pointer-events: none;

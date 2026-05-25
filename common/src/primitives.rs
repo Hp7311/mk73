@@ -15,7 +15,7 @@ use crate::{Boat, eq};
 use crate::protocol::{OilRigTransform, PointTransform};
 use crate::weapon::Weapon;
 use crate::collision::out_of_bounds;
-use crate::util::move_with_rotation;
+use crate::util::{InputExt, move_with_rotation};
 use crate::world::WorldSize;
 
 /// note that this is not updated on client for boats that it doesn't control
@@ -452,7 +452,12 @@ impl From<Vec2> for Position {
     }
 }
 
-// TODO level system etc
+/// a trait that marks a type as present in the spritesheet
+pub trait FetchSprite {
+    /// returns the name in spritesheet.json
+    fn fetch_sprite_str(&self) -> impl AsRef<str>;
+}
+
 #[derive(Debug, Clone, Copy, Default, Component, Deserialize, Serialize, PartialEq)]
 pub struct PlayerStats {
     score: u32,
@@ -564,6 +569,13 @@ impl Level {
     pub fn to_u8(self) -> u8 {
         self as u8 + 1
     }
+    pub fn try_from_u8(n: u8) -> Option<Self> {
+        if (n - 1).to::<usize>() < Self::ALL.len() {
+            Some(Self::ALL[(n - 1).to::<usize>()])
+        } else {
+            None
+        }
+    }
 }
 
 impl fmt::Display for Level {
@@ -583,12 +595,6 @@ impl Add<u8> for Level {
         Level::ALL.into_iter().find(|l| l.to_u8() == target).unwrap()
     }
 }
-
-/// strongly typed
-/// 
-/// used for `client::asset::SpriteMap`, returned by file_name methods
-#[derive(Debug)]
-pub struct FileName(pub &'static str);
 
 /// sent to client on score change by [`PlayerStats::display`]
 #[derive(Debug, Deserialize, Serialize)]
@@ -622,6 +628,7 @@ pub enum Point {
     Scrap,
 }
 
+
 impl Point {
     pub const ALL: [Self; 3] = [Self::Barrel, Self::Coin, Self::Scrap];
 
@@ -632,12 +639,15 @@ impl Point {
             Self::Scrap => 1,
         }
     }
-    pub fn file_name(&self) -> FileName {
-        FileName(match self {
-            Self::Barrel => "barrel.png",
-            Self::Coin => "coin.png",
-            Self::Scrap => "scrap.png",
-        })
+}
+
+impl FetchSprite for Point {
+    fn fetch_sprite_str(&self) -> impl AsRef<str> {
+        match self {
+            Self::Barrel => "Barrel",
+            Self::Coin => "Coin",
+            Self::Scrap => "Scrap",
+        }
     }
 }
 /// the altitude of an entity
@@ -840,3 +850,6 @@ impl RoughEq for PointTransform {
             && self.point == rhs.point
     }
 }
+
+#[derive(Debug, Event)]
+pub struct UpgradeRollbackEvent(pub Boat);

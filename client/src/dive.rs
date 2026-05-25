@@ -168,11 +168,12 @@ fn act_on_state(
 
     // sender.send::<SendToServerOrdered>(NewZIndex { new_index: **z_index, entity_on_server: *e });
 
-    info!(?z_index);
+    // info!(?z_index);
     z_update.0 = ZIndexUpdate(Some(*z_index));
     // unsafe { FRAME_TO_CLEAR = Some(50); }
 }
 
+#[expect(clippy::partialeq_to_none)]
 fn clear_z_update(mut z_update: Single<&mut ActionState<ZIndexUpdate>, With<InputMarker<ZIndexUpdate>>>) {
     if z_update.0.0 == None {
         return;
@@ -190,7 +191,7 @@ fn clear_z_update(mut z_update: Single<&mut ActionState<ZIndexUpdate>, With<Inpu
 
         if *f == 0 {
             z_update.0 = ZIndexUpdate(None);
-            info!("Cleared");
+            // info!("Cleared");
             FRAME_TO_CLEAR = None;
         }
     }

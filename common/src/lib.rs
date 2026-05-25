@@ -23,6 +23,8 @@ pub use boat::{Boat, SubKind, CircleHud, BoatClientId, BoatReverseNegative, Boat
 pub use boat::BoatType;
 pub use world::{WorldPlugin, WorldSize};
 
+pub use macros::BoatImpl;
+
 pub const SERVER_ADDR: SocketAddr = ip_addr(Ipv4Addr::LOCALHOST, SERVER_PORT);
 #[cfg(feature = "client")]
 pub const CLIENT_ADDR: SocketAddr = ip_addr(Ipv4Addr::LOCALHOST, CLIENT_PORT);

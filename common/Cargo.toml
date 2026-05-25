@@ -16,6 +16,7 @@ rand = "0.10"
 getrandom = { version = "0.2.17", features = ["js"] }
 serde = { workspace = true }
 rustls-pemfile = "2"
+macros = { path = "./macros", features = ["common_ty"] }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"]}

@@ -195,7 +195,7 @@ pub(crate) fn rotate_vec2(source: Vec2, Radian(angle): Radian) -> Vec2 {
 macro_rules! add_dbg_app {
     ( $app:expr, $( $system:expr ),+ ) => {
         #[cfg(debug_assertions)]
-        $app.add_systems(Update, $(
+        $app.add_systems(::bevy::app::Update, $(
             $system
         )+);
     };
@@ -239,20 +239,32 @@ macro_rules! print_num {
 #[macro_export]
 macro_rules! debug_component {
     ($component:ty, $($filter:ty)?, $($condition:expr)?) => {
-        |q: Query<&$component, $( $filter )?>| {
+        |q: ::bevy::prelude::Query<&$component, $( $filter )?>| {
             let s = stringify!($component);
             for c in q {
                 $( if $condition(&c) { 
-                    info!("{}: {:?}", s, c);
+                    ::bevy::log::info!("{}: {:?}", s, c);
                 }
                 continue;
                 )?
                 
-                info!("{}: {:?}", s, c);
+                ::bevy::log::info!("{}: {:?}", s, c);
             }
         }
     };
 }
+
+#[macro_export]
+macro_rules! hashmap {
+    () => {
+        ::std::collections::HashMap::new()
+    };
+
+    ($($key:expr => $value:expr),+ $(,)?) => {
+        ::std::collections::HashMap::from([ $(($key, $value)),* ])
+    };
+}
+
 
 // movements
 

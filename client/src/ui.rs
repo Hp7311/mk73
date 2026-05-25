@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_inspector_egui::egui::emath::GuiRounding;
-use common::{MainCamera, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, UpgradeEvent}, protocol::{Move, Rotate}};
+use common::{MainCamera, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, UpgradeEvent, UpgradeRollbackEvent}, protocol::{Move, Rotate}};
 use lightyear::prelude::{input::native::{ActionState, InputMarker}, *};
 
 use crate::{BoatState, asset::{FontMap, SpriteMap}};
@@ -15,6 +15,7 @@ impl Plugin for UiPlugin {
 
         app.add_observer(show_upgrade);
         app.add_observer(on_choose_upgrade);
+        app.add_observer(on_upgrade_rollback);
     }
 }
 
@@ -241,7 +242,8 @@ fn show_upgrade(
                     #[cfg(debug_assertions)]
                     Outline::new(Val::Px(1.0), Val::ZERO, Color::BLACK),
                     ImageNode {
-                        image: sprites.get_long_lived(boat.file_name()),
+                        image: sprites.image(),
+                        texture_atlas: sprites.get(boat),
                         ..default()
                     },
                 )).observe(move |
@@ -258,23 +260,41 @@ fn show_upgrade(
         });
 }
 
-
-// FIXME submarine/not transition on upgrade
-// FIXME some issues with collecting points (can from all heights in multiple clients, can't collect after diving in single-client)
 // FIXME weapon (others) spawning
+
+// these two systems have friends in common::upgrade
 
 // hide the upgradebar and disable click detections (possibly despawn?)
 // un-hide progressbar
 fn on_choose_upgrade(
-    _trigger: On<UpgradeEvent>,
+    trigger: On<UpgradeEvent>,
 
     mut upgrade_bar: Single<&mut Visibility, With<UpgradeBar>>,
-    mut progress_bar: Single<&mut Visibility, (With<ProgressBar>, Without<UpgradeBar>)>
+    mut progress_bar: Single<&mut Visibility, (With<ProgressBar>, Without<UpgradeBar>)>,
+
+    mut sprite: Single<&mut Sprite, With<Controlled>>,
+    sprites: Res<SpriteMap>
 ) {
+    sprite.image = sprites.image();
+    sprite.custom_size = Some(trigger.target.sprite_size());
+    // note that we are not `= Some(sprites.get(trigger.target).unwrap())` everywhere, displaying a whole spritesheet is obvious enough
+    sprite.texture_atlas = sprites.get(trigger.target);
+
     **upgrade_bar = Visibility::Hidden;
     **progress_bar = Visibility::Visible;
 }
 
+fn on_upgrade_rollback(
+    trigger: On<UpgradeRollbackEvent>,
+
+    mut sprite: Single<&mut Sprite, With<Controlled>>,
+    sprites: Res<SpriteMap>
+) {
+    sprite.image = sprites.image();
+    sprite.custom_size = Some(trigger.0.sprite_size());
+    // note that we are not `= Some(sprites.get(trigger.target).unwrap())` everywhere, displaying a whole spritesheet is obvious enough
+    sprite.texture_atlas = sprites.get(trigger.0);
+}
 #[allow(dead_code)]
 struct DbgPlugin;
 

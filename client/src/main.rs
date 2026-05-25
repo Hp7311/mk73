@@ -81,7 +81,7 @@ fn main() {
     // plugins
     .init_state::<BoatState>()
     .add_plugins(WorldPlugin)
-    // .add_plugins(OilRigPlugin)
+    .add_plugins(OilRigPlugin)
     .add_plugins(BoatPlugin)
     .add_plugins(InputBufferPlugin)
     .add_plugins(MovementPlugin { move_weapon: true })

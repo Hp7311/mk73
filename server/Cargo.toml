@@ -7,5 +7,6 @@ edition = "2024"
 bevy = { workspace = true }
 lightyear = { workspace = true }
 common = { path = "../common", features = ["server"]}
+macros = { path = "../common/macros" }
 rand = "0.10"
 serde = { version = "1.0.228", features = ["derive"] }

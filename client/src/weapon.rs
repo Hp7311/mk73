@@ -50,8 +50,9 @@ fn fire_weapon(
     msg.entity_on_client.0 = commands.spawn((
         Sprite {
             // weapons get spawned frequently
-            image: sprites.get_long_lived(msg.weapon.file_name()),
+            image: sprites.image(),
             custom_size: Some(msg.weapon.custom_size()),
+            texture_atlas: sprites.get(msg.weapon),
             ..default()
         },
         Transform {
@@ -91,8 +92,9 @@ fn spawn_others_weapon(
         .insert((
             Sprite {
                 // weapons get spawned frequently
-                image: sprites.get_long_lived(weapon.file_name()),
+                image: sprites.image(),
                 custom_size: Some(weapon.custom_size()),
+                texture_atlas: sprites.get(*weapon),
                 ..default()
             },
             Name::new("Other's weapon")

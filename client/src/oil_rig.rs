@@ -50,8 +50,9 @@ fn spawn_point(
         .insert((
             Sprite {
                 // points get spawned VERY frequently
-                image: sprites.get_long_lived(point_info.point.file_name()),
+                image: sprites.image(),
                 custom_size: Some(Point::custom_size()),
+                texture_atlas: sprites.get(point_info.point),
                 ..default()
             },
             Transform::from_translation(point_info.to_translation()),

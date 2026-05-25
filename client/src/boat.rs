@@ -41,14 +41,16 @@ fn spawn_boat(
                     ..default()
                 },
                 sprite: Sprite {
-                    // no need to keep the Handle
-                    image: sprites.get_long_lived(boat.file_name()),
+                    image: sprites.image(),
                     custom_size: Some(boat.sprite_size()),
+                    texture_atlas: sprites.get(boat),  
                     ..default()
                 }
             });
         return;
     }
+
+    // FIXME other's boat sprite not updated
 
     commands
         .get_entity(trigger.entity).unwrap()
@@ -60,8 +62,9 @@ fn spawn_boat(
                 selected_weapon: boat.default_weapon(),
             },
             sprite: Sprite {
-                image: sprites.get_long_lived(boat.file_name()), // preload assets
+                image: sprites.image(), // preload assets
                 custom_size: Some(boat.sprite_size()),
+                texture_atlas: sprites.get(boat),
                 ..default()
             },
             transform: Transform {

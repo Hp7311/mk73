@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use bevy::{diagnostic::{DiagnosticsPlugin, LogDiagnosticsPlugin}, log::LogPlugin, prelude::*, state::app::StatesPlugin};
 use common::{
-    Boat, BoatClientId, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, UpgradePlugin, WorldPlugin, primitives::{CustomTransform, PlayerStats, Position, WeaponCounter, ZIndex}, print_num, protocol::{Move, ProtocolPlugin, Rotate}
+    Boat, BoatClientId, BoatImpl, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, UpgradePlugin, WorldPlugin, primitives::{FetchSprite, CustomTransform, PlayerStats, Position, WeaponCounter, ZIndex}, print_num, protocol::{Move, ProtocolPlugin, Rotate}
 };
 use lightyear::{
     prelude::input::native::ActionState,
@@ -23,7 +23,7 @@ use crate::{oil_rig::OilRigPlugin, tcp::NetPlugin};
 use crate::weapon::WeaponPlugin;
 
 // FIXME server disconnects after few minutes
-fn main() -> AppExit {
+fn main() {
     let mut app = App::new();
     app
         .add_plugins((
@@ -47,11 +47,11 @@ fn main() -> AppExit {
 
         // handle client req
         .add_observer(handle_new_client)
-        .add_observer(handle_connected_client)
+        .add_observer(handle_connected_client);
 
-        .add_plugins(NetPlugin);
+    // app.add_plugins(NetPlugin);
 
-    app.run()
+    app.run();
 }
 
 /// starts the server
@@ -162,6 +162,5 @@ fn recv_new_z_index(
     for (z_update, mut z_index) in q {
         let Some(target) = z_update.0.0 else { return; };
         *z_index = target;
-        info!(?target);
     }
 }

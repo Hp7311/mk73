@@ -174,9 +174,9 @@ pub(crate) struct UpgradeMessage {
 pub(crate) struct UpgradeRollback {
     pub target: Boat
 }
-/// client sends updates to controlling boat's Z-index(physical depth) to the server as a Message
-///
-/// requires [`EntityOnServer`] to be given and correctly represent the boat's entity on the server world
+// client sends updates to controlling boat's Z-index(physical depth) to the server as a Message
+//
+// requires [`EntityOnServer`] to be given and correctly represent the boat's entity on the server world
 // #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 // pub struct NewZIndex {
 //     pub new_index: ZIndex,

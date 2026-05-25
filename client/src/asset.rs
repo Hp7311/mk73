@@ -1,35 +1,21 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use common::primitives::FileName;
+use common::{primitives::FetchSprite, util::InputExt};
+use serde::Deserialize;
 
 pub(crate) struct AssetPreloadPlugin;
 
 impl Plugin for AssetPreloadPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SpriteMap(HashMap::new()))
+        app
             .insert_resource(FontMap(HashMap::new()))
 
-            .add_systems(Startup, init_sprites)
+            .add_systems(Startup, init_spritesheet)
             .add_systems(Startup, init_font);
     }
 }
 
-/// list of paths to load sprites from
-/// 
-/// putting on top = loads first
-const SPRITE_PATHS: &[&str] = &[
-    "yasen.png",
-    "momi.png",
-    "zubr.png",
-    "Set65.png",
-    "oil_platform.png",
-    "coin.png",
-    "scrap.png",
-    "barrel.png",
-    // "waves.png",
-    // "textures.png",
-];
 const FONT_PATHS: &[&str] = &[
     "regular.otf"
 ];
@@ -45,18 +31,29 @@ const FONT_PATHS: &[&str] = &[
 ///     - contains id of an image
 ///     - taken by `Sprite`
 ///     - [`AssetServer::load`] automatically adds loaded image to `Assets` and returns a `Handle`
-#[derive(Debug, Resource)]
-pub struct SpriteMap(HashMap<&'static str, Handle<Image>>);
+fn init_spritesheet(
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    mut textures: ResMut<Assets<TextureAtlasLayout>>
+) {
+    let sprite = asset_server.load("spritesheet.webp");
 
-fn init_sprites(mut map: ResMut<SpriteMap>, asset_server: Res<AssetServer>) {
-    info!("Started loading sprites");
-    for &path in SPRITE_PATHS {
-        if map.0.insert(path, asset_server.load(path)).is_some() {
-            warn!("Re-inserting image at {}", path);
-        }
-    }
-    info!("Finished loading sprites");
+    let map = SpriteMap::new(sprite.clone(), &mut textures);
+    let atlas = map.get(Foo).unwrap();
+
+    commands.spawn((
+        Sprite::from_atlas_image(sprite, atlas),
+    ));
+    commands.insert_resource(map);
+    info!("Finished loading spritesheet")
 }
+struct Foo;
+impl FetchSprite for Foo {
+    fn fetch_sprite_str(&self) -> impl AsRef<str> {
+        "Bofors57MmMk3"
+    }
+}
+
 #[derive(Debug, Resource)]
 pub struct FontMap(HashMap<&'static str, Handle<Font>>);
 
@@ -68,31 +65,6 @@ fn init_font(mut map: ResMut<FontMap>, asset_server: Res<AssetServer>) {
     }
 }
 
-// consider merging 2 maps to 1 generic
-#[allow(dead_code)]
-impl SpriteMap {
-    /// doesn't move out of internal [`HashMap`] therefore keeping the Asset even if the returned handle is droppeed
-    pub fn get_long_lived(&self, path: FileName) -> Handle<Image> {
-        self.0.get(path.0)
-            .unwrap_or_else(|| panic!("file name incorrect: {}, implementation should gaurantee correctness", path.0))
-            .clone()
-    }
-    // sprite will not be avaliable after this
-    /// moves asset out herefore the Asset will be dropped if the returned handle is droppeed
-    /// 
-    /// ### Warning
-    /// trying to access a [`Handle`] again would return None,
-    /// 
-    /// only use this method if you're absolutely sure you only need the Sprite once
-    pub fn get(&mut self, path: FileName) -> Handle<Image> {
-        self.0.remove(path.0)
-            .unwrap_or_else(|| panic!("file name {} doesn't exist, 1: wrong name, 2: dropped", path.0))
-            .clone()
-    }
-    pub fn id(&self, path: &str) -> Option<AssetId<Image>> {
-        self.0.get(path).map(|s| s.id())
-    }
-}
 #[allow(dead_code)]
 impl FontMap {
     /// doesn't move out of internal [`HashMap`] therefore keeping the Asset even if the returned handle is droppeed
@@ -110,5 +82,140 @@ impl FontMap {
     }
     pub fn id(&self, path: &str) -> Option<AssetId<Font>> {
         self.0.get(path).map(|s| s.id())
+    }
+}
+
+// FIXME size alignment
+/// we don't care about the original size of sprite etc, we do real siz in meters!
+#[derive(Debug, Resource)]
+pub struct SpriteMap {
+    image: Handle<Image>,
+    /// in sync with [`atlas::textures`](TextureAtlasLayout::textures)
+    names: Vec<String>,
+    atlas: Handle<TextureAtlasLayout>
+}
+
+/// returns None if not found
+impl SpriteMap {
+    /// should be only called once
+    pub fn new(image: Handle<Image>, textures: &mut Assets<TextureAtlasLayout>) -> Self {
+        let sheet = SpriteSheet::new();
+        let (names, atlas) = sheet.to_texture_atlas_names();
+        let atlas = textures.add(atlas);
+        
+        let names = names.into_iter().map(ToOwned::to_owned).collect();
+
+        Self {
+            image,
+            names,
+            atlas
+        }
+    }
+    /// e.g. the `name` for [`Boat::Yasen`](common::Boat::Yasen) is its debug impl which is "Yasen"
+    pub fn get(&self, name: impl FetchSprite) -> Option<TextureAtlas> {
+        let index = self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())?;
+
+        Some(TextureAtlas {
+            index, 
+            layout: self.atlas.clone()
+        })
+    }
+    pub fn get_index(&self, name: impl FetchSprite) -> Option<usize> {
+        self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())
+    }
+    /// sets texture atlas to given name, returns None if not found
+    pub fn set_to(&self, name: impl FetchSprite, atlas: &mut TextureAtlas) -> Option<()> {
+        atlas.index = self.get_index(name)?;
+
+        Some(())
+    }
+    /// hide .clone s
+    pub fn image(&self) -> Handle<Image> {
+        self.image.clone()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SpriteSheet {
+    pub frames: HashMap<String, SheetCell>,
+    pub meta: Meta
+}
+
+impl SpriteSheet {
+    pub fn new() -> Self {
+        let json = include_str!("../assets/spritesheet.json");
+
+        serde_json::from_str::<SpriteSheet>(json).unwrap()
+    }
+    /// - `path` relative to crate root (Cargo.toml)
+    #[allow(unused)]
+    pub fn from_file(path: &str) -> Self {
+        let json = std::fs::read_to_string(path).unwrap();
+
+        serde_json::from_str(&json).unwrap()
+    }
+    /// returns list of sprite names
+    pub fn to_texture_atlas_names(&self) -> (Vec<&str>, TextureAtlasLayout) {
+        let mut names = vec![];
+        let mut textures = vec![];
+        // let mut custom_size = vec![];
+
+        for (name, cell) in self.frames.iter() {
+            names.push(name.as_str());
+            textures.push(cell.frame.to::<URect>());
+        }
+
+        (names, TextureAtlasLayout {
+            size: self.meta.size.into(),
+            textures
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct SheetCell {
+    pub rotated: bool,
+    pub trimmed: bool,
+    pub frame: Rect4,
+    pub sprite_source_size: Rect4,
+    pub source_size: Rect2
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Meta {
+    /// whole sprite size
+    pub size: Rect2
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+pub struct Rect4 {
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+pub struct Rect2 {
+    pub w: u32,
+    pub h: u32
+}
+
+impl From<Rect2> for UVec2 {
+    fn from(value: Rect2) -> Self {
+        uvec2(value.w, value.h)
+    }
+}
+impl From<Rect4> for URect {
+    fn from(value: Rect4) -> Self {
+        let min = uvec2(value.x, value.y);
+        let max = uvec2(min.x + value.w, min.y + value.h);
+
+        URect {
+            min,
+            max 
+        }
     }
 }

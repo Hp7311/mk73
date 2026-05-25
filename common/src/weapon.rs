@@ -1,11 +1,13 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::primitives::{FileName, Radian};
+use crate::primitives::{FetchSprite, Radian};
 use crate::{DEFAULT_MAX_TURN_DEG, primitives::Speed};
 
+// TODO macro for this too
 
 #[derive(Debug, Component, Clone, Copy, PartialEq, Serialize, Deserialize, Hash, Eq)]
 pub enum Weapon {
+    // Mark18,
     Set65
 }
 
@@ -15,11 +17,6 @@ pub enum WeaponType {
 }
 
 impl Weapon {
-    pub fn file_name(&self) -> FileName {
-        FileName(match self {
-            Weapon::Set65 => "Set65.png",
-        })
-    }
     pub fn custom_size(&self) -> Vec2 {
         match self {
             Weapon::Set65 => vec2(25.6, 2.0),
@@ -44,5 +41,11 @@ impl Weapon {
         match self {
             Weapon::Set65 => DEFAULT_MAX_TURN_DEG * 3.0,
         }
+    }
+}
+
+impl FetchSprite for Weapon {
+    fn fetch_sprite_str(&self) -> impl AsRef<str> {
+        format!("{self:?}")
     }
 }

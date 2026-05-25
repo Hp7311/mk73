@@ -46,7 +46,7 @@ mod client {
     use crate::boat::CircleHud;
     use crate::{BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, circle_hud_mesh};
     use crate::protocol::{EntityOnServer, SendToServerOrdered};
-    use crate::primitives::UpgradeEvent;
+    use crate::primitives::{UpgradeEvent, UpgradeRollbackEvent};
     use super::*;
 
     #[allow(clippy::too_many_arguments)]
@@ -56,9 +56,7 @@ mod client {
         mut server_sender: Single<&mut MessageSender<UpgradeMessage>>,
         entity_on_server: Single<&EntityOnServer, With<Controlled>>,
 
-        query: Single<(&mut Boat, &mut WeaponCounter, &mut ZIndex, &mut Sprite), With<Controlled>>,
-        // can't access `SpriteMap` in client ...
-        asset_server: Res<AssetServer>,
+        query: Single<(&mut Boat, &mut WeaponCounter, &mut ZIndex), With<Controlled>>,
 
         mut meshes: ResMut<Assets<Mesh>>,
         circle_hud: Single<&Mesh2d, With<CircleHud>>,
@@ -74,10 +72,7 @@ mod client {
             entity_on_server: *entity_on_server.into_inner()
         });
 
-        let (mut boat, mut weapon_counter, mut z_index, mut sprite) = query.into_inner();
-
-        sprite.image = asset_server.load(target.file_name().0);
-        sprite.custom_size = Some(target.sprite_size());
+        let (mut boat, mut weapon_counter, mut z_index) = query.into_inner();
 
         upgrade_components(
             target,
@@ -96,21 +91,22 @@ mod client {
 
         boat_type.0 = target.sub_kind();
     }
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn recv_rollback(
         mut reader: Single<&mut MessageReceiver<UpgradeRollback>>,
-        query: Single<(&mut Boat, &mut WeaponCounter, &mut Sprite), With<Controlled>>,
-        asset_server: Res<AssetServer>,
+        query: Single<(&mut Boat, &mut WeaponCounter), With<Controlled>>,
 
         mut meshes: ResMut<Assets<Mesh>>,
         circle_hud: Single<&Mesh2d, With<CircleHud>>,
         mut indicator_positive: Single<&mut Transform, (With<BoatReversePositive>, Without<BoatReverseNegative>)>,
         mut indicator_negative: Single<&mut Transform, With<BoatReverseNegative>>,
+
+        mut commands: Commands
     ) {
-        let (mut boat, mut weapon_counter, mut sprite) = query.into_inner();
+        let (mut boat, mut weapon_counter) = query.into_inner();
         for UpgradeRollback { target } in reader.receive() {
             warn!("Rolling level back to {target:?}");
-            sprite.image = asset_server.load(target.file_name().0);
-            sprite.custom_size = Some(target.sprite_size());
+            commands.trigger(UpgradeRollbackEvent(target));
 
             degrade_components(target, &mut boat, &mut weapon_counter);
 

@@ -2472,14 +2472,14 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 name = "client"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "bevy",
  "bevy-inspector-egui",
  "common",
  "getrandom 0.4.2",
  "lightyear",
  "rand 0.10.0",
- "web-sys",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2529,6 +2529,7 @@ dependencies = [
  "criterion",
  "getrandom 0.2.17",
  "lightyear",
+ "macros",
  "rand 0.10.0",
  "rustls-pemfile",
  "serde",
@@ -4122,10 +4123,21 @@ checksum = "85ab80394333c02fe689eaf900ab500fbd0c2213da414687ebf995a65d5a6104"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
+ "image-webp",
  "moxcms",
  "num-traits",
  "png",
  "tiff",
+]
+
+[[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
+dependencies = [
+ "byteorder-lite",
+ "quick-error",
 ]
 
 [[package]]
@@ -5081,6 +5093,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d640282b302c0bb0a2a8e0233ead9035e3bed871f0b7e81fe4a1ec829765db44"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -6871,6 +6893,7 @@ dependencies = [
  "bevy",
  "common",
  "lightyear",
+ "macros",
  "rand 0.10.0",
  "serde",
 ]
