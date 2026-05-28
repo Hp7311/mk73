@@ -38,20 +38,9 @@ fn init_spritesheet(
 ) {
     let sprite = asset_server.load("spritesheet.webp");
 
-    let map = SpriteMap::new(sprite.clone(), &mut textures);
-    let atlas = map.get(Foo).unwrap();
-
-    commands.spawn((
-        Sprite::from_atlas_image(sprite, atlas),
-    ));
+    let map = SpriteMap::new(sprite, &mut textures);
     commands.insert_resource(map);
     info!("Finished loading spritesheet")
-}
-struct Foo;
-impl FetchSprite for Foo {
-    fn fetch_sprite_str(&self) -> impl AsRef<str> {
-        "Bofors57MmMk3"
-    }
 }
 
 #[derive(Debug, Resource)]
@@ -82,7 +71,7 @@ impl FontMap {
     }
     pub fn id(&self, path: &str) -> Option<AssetId<Font>> {
         self.0.get(path).map(|s| s.id())
-    }
+    }   
 }
 
 // FIXME size alignment

@@ -11,7 +11,7 @@
 // note that we're passing owned vals everywhere which doesn't matter for types smaller than 64 bits
 use crate::boat::Boat;
 use crate::collision::out_of_bound_point;
-use crate::primitives::{CustomTransform, LastSpeed, NormalizeRadian, Radian, Speed, TargetRotation, WrapRadian};
+use crate::primitives::{CustomTransform, LastSpeed, NormalizeRadian, Radian, Size, Speed, TargetRotation, WrapRadian};
 use crate::protocol::{Move, Rotate};
 use crate::world::WorldSize;
 
@@ -99,7 +99,7 @@ fn move_inner(move_input: &ActionState<Move>, custom: &mut CustomTransform, boat
     }
     custom.speed = target;
 
-    if !custom.move_position_checked(world_size, boat.sprite_size()) {
+    if !custom.move_position_checked(world_size, boat.render_size()) {
         // maybe UI pop-up
     }
 }

@@ -184,7 +184,7 @@ fn rig_spawn_points(
                 break chosen;
             };
 
-            let &chosen_type = Point::ALL.choose(&mut rng).unwrap();
+            let &chosen_type = Point::VARIANTS.choose(&mut rng).unwrap();
 
             commands.spawn((
                 chosen_type,

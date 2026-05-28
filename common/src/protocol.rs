@@ -102,7 +102,7 @@ impl PointTransform {
             point
         }
     }
-    pub fn custom_size() -> Vec2 {
+    pub fn custom_size() -> Vec2 {  // Size?
         vec2(5.0, 5.0)
     }
     /// ## use for [`Transform`]

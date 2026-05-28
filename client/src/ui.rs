@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_inspector_egui::egui::emath::GuiRounding;
-use common::{MainCamera, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, UpgradeEvent, UpgradeRollbackEvent}, protocol::{Move, Rotate}};
+use common::{MainCamera, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, Size, UpgradeEvent, UpgradeRollbackEvent}, protocol::{Move, Rotate}};
 use lightyear::prelude::{input::native::{ActionState, InputMarker}, *};
 
 use crate::{BoatState, asset::{FontMap, SpriteMap}};
@@ -231,8 +231,8 @@ fn show_upgrade(
                         position_type: PositionType::Relative,
 
                         // render them 1/2 of actual size
-                        width: Val::Px(boat.sprite_size().x / 2.0),
-                        height: Val::Px(boat.sprite_size().y / 2.0),
+                        width: Val::Px(boat.render_size().x / 2.0),
+                        height: Val::Px(boat.render_size().y / 2.0),
 
                         // center of box
                         align_self: AlignSelf::Center,
@@ -276,7 +276,7 @@ fn on_choose_upgrade(
     sprites: Res<SpriteMap>
 ) {
     sprite.image = sprites.image();
-    sprite.custom_size = Some(trigger.target.sprite_size());
+    sprite.custom_size = Some(trigger.target.render_size());
     // note that we are not `= Some(sprites.get(trigger.target).unwrap())` everywhere, displaying a whole spritesheet is obvious enough
     sprite.texture_atlas = sprites.get(trigger.target);
 
@@ -291,7 +291,7 @@ fn on_upgrade_rollback(
     sprites: Res<SpriteMap>
 ) {
     sprite.image = sprites.image();
-    sprite.custom_size = Some(trigger.0.sprite_size());
+    sprite.custom_size = Some(trigger.0.render_size());
     // note that we are not `= Some(sprites.get(trigger.target).unwrap())` everywhere, displaying a whole spritesheet is obvious enough
     sprite.texture_atlas = sprites.get(trigger.0);
 }

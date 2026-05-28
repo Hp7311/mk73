@@ -56,10 +56,6 @@ pub const TCP_ADDR: SocketAddr = ip_addr(Ipv4Addr::LOCALHOST, 9000);
 
 const DEFAULT_MAX_TURN_DEG: crate::primitives::Radian = crate::primitives::Radian::from_deg(0.5);
 
-/// # Warning
-/// Code will break silently if we use something else
-const DEFAULT_SPRITE_SHRINK: f32 = 0.3;
-
 #[cfg(all(not(debug_assertions), feature = "client", feature = "server"))]
 // not erroring in debug to look good to rust-analyzer
 compile_error!("Client and Server features mutually exclusive");

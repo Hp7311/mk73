@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Write};
 
 use bevy::{color::palettes::css::GRAY, prelude::*};
-use common::{Boat, BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, CircleHud, OCEAN_SURFACE, circle_hud_mesh, debug_component, primitives::{CustomTransform, MeshBundle, WeaponCounter}, protocol::{EntityOnServer, tcp::TcpClientRequest}};
+use common::{Boat, BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, CircleHud, OCEAN_SURFACE, circle_hud_mesh, primitives::{CustomTransform, MeshBundle, Size, WeaponCounter}, protocol::{EntityOnServer, tcp::TcpClientRequest}};
 use lightyear::prelude::*;
 
 use crate::{asset::SpriteMap, tcp::TcpWrapper};
@@ -42,7 +42,7 @@ fn spawn_boat(
                 },
                 sprite: Sprite {
                     image: sprites.image(),
-                    custom_size: Some(boat.sprite_size()),
+                    custom_size: Some(boat.render_size()),
                     texture_atlas: sprites.get(boat),  
                     ..default()
                 }
@@ -63,7 +63,7 @@ fn spawn_boat(
             },
             sprite: Sprite {
                 image: sprites.image(), // preload assets
-                custom_size: Some(boat.sprite_size()),
+                custom_size: Some(boat.render_size()),
                 texture_atlas: sprites.get(boat),
                 ..default()
             },

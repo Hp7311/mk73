@@ -15,6 +15,7 @@ pub fn in_states_2<T: States>(first: T, second: T)  -> impl Fn(Res<State<T>>) ->
     move |state| *state.get() == first || *state.get() == second
 }
 
+/// defaults to 0.001 precision
 #[macro_export]
 macro_rules! eq {
     ($x:expr, $y:expr) => {

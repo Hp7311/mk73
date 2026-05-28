@@ -1,7 +1,7 @@
 use bevy::color::palettes::css::LIME;
 use bevy::prelude::*;
 use lightyear::prelude::*;
-use common::primitives::{CursorPos, LastSpeed, MeshBundle, Speed, TargetRotation, WeaponCounter, WrapRadian as _};
+use common::primitives::{CursorPos, LastSpeed, MeshBundle, Size, Speed, TargetRotation, WeaponCounter, WrapRadian as _};
 use common::protocol::{SpawnWeapon, SendToServer, WeaponRollBack, EntityOnClient};
 use common::util::get_rotate_radian;
 use common::{Boat, CIRCLE_HUD, Weapon};
@@ -51,7 +51,7 @@ fn fire_weapon(
         Sprite {
             // weapons get spawned frequently
             image: sprites.image(),
-            custom_size: Some(msg.weapon.custom_size()),
+            custom_size: Some(msg.weapon.render_size()),
             texture_atlas: sprites.get(msg.weapon),
             ..default()
         },
@@ -93,7 +93,7 @@ fn spawn_others_weapon(
             Sprite {
                 // weapons get spawned frequently
                 image: sprites.image(),
-                custom_size: Some(weapon.custom_size()),
+                custom_size: Some(weapon.render_size()),
                 texture_atlas: sprites.get(*weapon),
                 ..default()
             },

@@ -1,5 +1,6 @@
 use bevy::{prelude::*, sprite_render::Material2d};
 use serde::{Deserialize, Serialize};
+use strum::{EnumCount, EnumIter, IntoEnumIterator, VariantArray};
 use std::fmt;
 use std::ops::Mul;
 use std::{
@@ -195,23 +196,26 @@ pub struct Speed(f32);
 
 impl Speed {
     pub const ZERO: Self = Self(0.0);
+    const KNOTS_TO_RAW: f32 = 1.0 / 23.0;
+    const METERS_TO_RAW: f32 = 1.94384 / 23.0;
+    #[inline]
     pub fn from_knots(knots: f32) -> Self {
-        Speed(knots / 23.0)
+        Speed(knots * Self::KNOTS_TO_RAW)
+    }
+    #[inline]
+    pub fn from_meter(meter: f32) -> Self {
+        Speed(meter * Self::METERS_TO_RAW)
     }
     pub fn from_raw(raw: f32) -> Self {
         Speed(raw)
     }
-    #[deprecated = "Use += instead"]
-    pub fn add_raw(&mut self, raw: f32) {
-        self.0 += raw;
-    }
-    #[deprecated = "Use -= instead"]
-    pub fn subtract_raw(&mut self, raw: f32) {
-        self.0 -= raw;
-    }
     pub fn get_knots(&self) -> f32 {
-        self.0 * 23.0
+        self.0 / Self::KNOTS_TO_RAW
     }
+    pub fn get_meters(&self) -> f32 {
+        self.0 / Self::METERS_TO_RAW
+    }
+    #[inline]
     pub fn get_raw(&self) -> f32 {
         self.0
     }
@@ -247,6 +251,12 @@ impl Neg for Speed {
     type Output = Speed;
     fn neg(self) -> Self::Output {
         Speed::from_raw(-self.0)
+    }
+}
+impl Mul<f32> for Speed {
+    type Output = Self;
+    fn mul(self, rhs: f32) -> Self::Output {
+        Self(self.0 * rhs)
     }
 }
 impl PartialOrd for Speed {
@@ -324,6 +334,14 @@ impl Neg for Radian {
     type Output = Radian;
     fn neg(self) -> Self::Output {
         Radian(-self.0)
+    }
+}
+
+impl Mul for Radian {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self(self.0 * rhs.0)    
     }
 }
 
@@ -522,7 +540,7 @@ impl PlayerStats {
 /// 
 /// ### Note
 /// this doesn't represent maximum possible level see [`DisplayScore::NewLevel`]
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, PartialOrd)]
+#[derive(VariantArray, EnumIter, EnumCount, Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, PartialOrd)]
 #[rustfmt::skip]
 pub enum Level {
     #[default]
@@ -531,15 +549,11 @@ pub enum Level {
 }
 
 impl Level {
-    pub const ALL: [Self; 10] = {
-        use Level::*;
-        [One, Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten]
-    };
     pub const MAX: Self = Self::Ten;
     
     /// all avaliable boats for a level
     pub fn avaliable_boats(&self) -> impl Iterator<Item = Boat> {
-        Boat::ALL.into_iter().filter(|boat| boat.level() == *self)
+        Boat::iter().filter(|boat| boat.level() == *self)
     }
     pub const fn required_score(&self) -> u32 {
         use Level as L;
@@ -558,7 +572,7 @@ impl Level {
     }
     /// maximum [`Level`] from given `score`
     pub fn max_from_score(score: u32) -> Self {
-        Level::ALL.into_iter()
+        Level::iter()
             .rev()
             .find(|l| l.required_score() <= score)
             .unwrap()  // u32 cannot be negative
@@ -570,8 +584,8 @@ impl Level {
         self as u8 + 1
     }
     pub fn try_from_u8(n: u8) -> Option<Self> {
-        if (n - 1).to::<usize>() < Self::ALL.len() {
-            Some(Self::ALL[(n - 1).to::<usize>()])
+        if (n - 1).to::<usize>() < Self::COUNT {
+            Some(Self::VARIANTS[(n - 1).to::<usize>()])
         } else {
             None
         }
@@ -592,7 +606,7 @@ impl Add<u8> for Level {
         let target = self.to_u8() + rhs;
         assert!(target <= Level::MAX.to_u8(), "Exceeds max level");
 
-        Level::ALL.into_iter().find(|l| l.to_u8() == target).unwrap()
+        Level::iter().find(|l| l.to_u8() == target).unwrap()
     }
 }
 
@@ -621,7 +635,7 @@ pub struct CursorPos(pub Vec2);
 
 
 /// an entity that provide an amount of points
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(VariantArray, Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Point {
     Barrel,
     Coin,
@@ -630,8 +644,8 @@ pub enum Point {
 
 
 impl Point {
-    pub const ALL: [Self; 3] = [Self::Barrel, Self::Coin, Self::Scrap];
-
+    /// re-export, server and client doesn't have strum
+    pub const VARIANTS: &'static [Self] = <Self as VariantArray>::VARIANTS;
     pub fn worth(&self) -> u16 {
         match self {
             Self::Barrel => 2,
@@ -798,6 +812,20 @@ impl From<Vec2> for WidthHeight {
     }
 }
 
+pub trait Size {
+    /// logical size in meters
+    fn size(&self) -> Vec2;
+
+    const SIZE_TO_RENDER_MULTIPLIER: f32 = 3.0;
+    /// size in pixels
+    /// 
+    /// used by [`Sprite::custom_size`], NOT necessarily the dimensions of the image
+    /// 
+    /// usaully no need to implement manually
+    fn render_size(&self) -> Vec2 {
+        self.size() * Self::SIZE_TO_RENDER_MULTIPLIER
+    }
+}
 /// emmited by client
 #[derive(Debug, Event)]
 #[cfg(feature = "client")]
@@ -853,3 +881,16 @@ impl RoughEq for PointTransform {
 
 #[derive(Debug, Event)]
 pub struct UpgradeRollbackEvent(pub Boat);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_speed_conversions() {
+        let knots_speed = Speed::from_knots(100.0);
+        let meter_speed = Speed::from_meter(51.4444);
+
+        assert!(knots_speed.rough_eq(&meter_speed));
+    }
+}

@@ -21,7 +21,7 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use common::UpgradePlugin;
 use common::protocol::ZIndexUpdate;
 use common::{
-    Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, SubKind, WorldPlugin,
+    Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, WorldPlugin,
     protocol::{Move, ProtocolPlugin, Rotate},
     primitives::ZIndex
 };
@@ -40,7 +40,6 @@ use crate::boat::BoatPlugin;
 use crate::dive::DivingPlugin;
 use crate::input::InputBufferPlugin;
 use crate::oil_rig::OilRigPlugin;
-use crate::tcp::NetPlugin;
 use crate::ui::UiPlugin;
 use crate::weapon::WeaponPlugin;
 
@@ -53,7 +52,7 @@ compile_error! {"Should compile by trunk serve on production"}
 const DEFAULT_MAX_ZOOM: f32 = 2.0;
 const TIME_TO_LAUNCH_WEAPON: Duration = Duration::from_millis(200);
 
-fn main() {
+fn main() -> AppExit {
     let mut app = App::new();
 
     app.add_plugins(
@@ -111,8 +110,7 @@ fn main() {
     .add_observer(on_remove_disconnect);
 
     // app.add_plugins(NetPlugin);
-
-    app.run();
+    app.run()
 }
 
 
@@ -225,7 +223,7 @@ fn update_state(
 
 /// using hack to achieve system to be only triggered when both
 /// [`ActionState<T>`] and [`Controlled`] added
-#[deny(unused)]     
+// #[deny(unused)]     
 fn on_added_actionstate<T>(
     trigger: On<Add, ActionState<T>>,
     controlled_action_states: Query<(), (With<ActionState<T>>, With<Controlled>)>,

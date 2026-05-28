@@ -157,6 +157,8 @@ pub fn update_cursor_pos(
 use server::*;
 #[cfg(feature = "server")]
 mod server {
+use crate::primitives::Size;
+
 use super::*;
 use lightyear::prelude::Replicate;
 
@@ -217,9 +219,9 @@ pub fn on_client_disconnected(
         if commands.get_spawned_entity(id).is_err() {
             continue;
         }
-        if out_of_bounds(&world_size, Mk48Rect::new(custom.position.0, boat.sprite_size()), custom.rotation) {
+        if out_of_bounds(&world_size, Mk48Rect::new(custom.position.0, boat.render_size()), custom.rotation) {
             let [min, max] = Mk48Rect::new(Vec2::ZERO, world_size.get_size()).clamp_corners();
-            custom.position = custom.position.clamp_with_padding(min, max, boat.sprite_size().max_element());
+            custom.position = custom.position.clamp_with_padding(min, max, boat.render_size().max_element());
         }
     }
     for (transform, entity) in rigs {
@@ -240,7 +242,7 @@ fn get_map_size(player_num: u32, minimum_size: Vec2, expand_per_multiple: Vec2) 
 
 fn get_multiplayer_by_player_num(player_num: u32) -> u32 {
     match player_num {
-        0..20 => 20,
+        0..20 => 1,
         20..50 => 2,
         50..130 => 3,
         130..200 => 4,

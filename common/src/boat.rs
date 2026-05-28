@@ -1,14 +1,14 @@
 use bevy::prelude::*;
 use lightyear::core::id::PeerId;
 use serde::{Deserialize, Serialize};
+use strum::{EnumCount, EnumIter, VariantArray};
 
-use crate::primitives::{Level, Radian};
+use crate::primitives::{Radian, Size};
 use crate::{
-    DEFAULT_MAX_TURN_DEG, DEFAULT_SPRITE_SHRINK,
-    primitives::Speed,
-    weapon::Weapon,
+    DEFAULT_MAX_TURN_DEG,
+    primitives::Speed
 };
-use macros::BoatImpl;
+use macros::{BoatImpl, FetchSprite, Size};
 
 
 /// for performance improvements in diving
@@ -16,32 +16,55 @@ use macros::BoatImpl;
 #[cfg(feature = "client")]
 pub struct BoatType(pub SubKind);
 
-
-#[derive(BoatImpl, Component, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(BoatImpl, FetchSprite, Size, EnumCount, EnumIter, VariantArray, Component, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Boat {
-    #[armanents(Set65)]
+    #[armanents(Mark18, 2, default)]
+    #[armanents(Shell_57x441Mmr, 2)]
+    #[armanents(Mark9, 4)]
     #[level = 1]
-    FiarmileD,
-    #[armanents(Set65)]
+    #[length = 35]
+    FairmileD,
+    #[armanents(Type53, 2, default)]
     #[level = 1]
+    #[length = 18.9]
     G5,
-    #[armanents(Set65)]
+    #[armanents(Type53, 2, default)]
+    #[armanents(Shell_57x441Mmr, 2)]
+    #[armanents(Mark9, 4)]
     #[level = 1]
+    #[length = 25.4]
     Komar,
     #[armanents(None)]
     #[level = 1]
+    #[length = 36.9]
     Olympias,
-    #[armanents(Set65)]
+    #[armanents(Mark18, 4, default)]
     #[level = 1]
+    #[length = 23]
     Pt34,
-    #[armanents(Set65)]
+    #[armanents(Mark18, 4, default)]
+    #[armanents(Shell_127x680Mmr, 3)]
+    #[armanents(Mark9, 4)]
     #[level = 2]
-    Zubr,
-    #[armanents(Set65)]
-    #[level = 2]
+    #[length = 85.3]
     Momi,
-    #[armanents(Set65)]
+    #[armanents(Mark18, 5, default)]
+    #[armanents(Shell_57x441Mmr, 1)]
+    #[level = 2]
+    #[length =  67.1]
+    TypeViic,
+    #[armanents(Of45, 9, default)]
+    #[armanents(Shell_25x129Mmr, 2)]
+    #[level = 2]
+    #[length = 57]
+    Zubr,
+    #[armanents(Set65, 4, default)]  // or maybe 6?
+    #[armanents(BrahMos, 4)]
+    #[armanents(Vodopad, 4)]
+    #[armanents(Igla, 2)]
+    #[armanents(Brosok, 4)]
     #[level = 8]
+    #[length = 130]
     Yasen,
 }
 
@@ -55,25 +78,16 @@ pub enum SubKind {
     HoverCraft,
 }
 
+
 impl Boat {
     /// absolute value of minimum radians that must be reached to reverse the Boat
     pub const MINIMUM_REVERSE: Radian = Radian::from_deg(180.0 - 45.0);
-    pub const ALL: [Self; 3] = [Self::Yasen, Self::Momi, Self::Zubr];
+    pub const VARIANTS: &'static [Self] = <Self as VariantArray>::VARIANTS;
     pub fn sub_kind(&self) -> SubKind {
         match self {
             Self::Zubr => SubKind::HoverCraft,
             Self::Momi => SubKind::SurfaceShip,
             Self::Yasen => SubKind::Submarine,
-            _ => todo!()
-        }
-    }
-    pub fn default_weapon(&self) -> Option<Weapon> {
-        match self {
-            // TODO
-            Self::Zubr => None,
-            Self::Momi => None,
-
-            Self::Yasen => Some(Weapon::Set65),
             _ => todo!()
         }
     }
@@ -86,45 +100,31 @@ impl Boat {
         })
     }
     pub fn rev_max_speed(&self) -> Speed {
-        Speed::from_knots(match self {
-            Self::Zubr => 29.0,
-            Self::Momi => 31.0,
-            Self::Yasen => 21.0,
-            _ => todo!()
-        })
+        self.max_speed() * 0.6
     }
     pub fn diving_speed(&self) -> Speed {
         Speed::from_raw(match self {
-            Self::Zubr => 0.004,  // FIXME
-            Self::Momi => 0.005,
+            Self::FairmileD => unreachable!(),
+            Self::G5 => unreachable!(),
+            Self::Komar => unreachable!(),
+            Self::Olympias => unreachable!(),
+            Self::Pt34 => unreachable!(),
+            Self::Momi => unreachable!(),
+            Self::TypeViic => 0.004,
+            Self::Zubr => unreachable!(),
             Self::Yasen => 0.004,
-            _ => todo!()
         })
     }
     pub fn acceleration(&self) -> Speed {
-        Speed::from_knots(match self {
-            Self::Zubr => 1.0,
-            Self::Momi => 1.0,
-            Self::Yasen => 1.0,
-            _ => todo!()
-        })
-    }
-    /// vec2(width, height)
-    pub fn sprite_size(&self) -> Vec2 {
-        (match self {
-            Self::Momi => vec2(1024.0, 91.0),
-            Self::Zubr => vec2(512.0, 190.0),
-            Self::Yasen => vec2(1024.0, 156.0),
-            _ => todo!()
-        }) * DEFAULT_SPRITE_SHRINK
+        Speed::from_knots(1.0)
     }
     /// max turn in degrees
     pub fn max_turn(&self) -> Radian {
         DEFAULT_MAX_TURN_DEG
     }
-    /// radius
+    /// radius in pixels
     pub fn radius(&self) -> f32 {
-        self.sprite_size().x / 2.0
+        self.render_size().x / 2.0
     }
     /// should use this function or code will break
     pub fn circle_hud_radius(&self) -> f32 {
