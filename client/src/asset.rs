@@ -74,8 +74,6 @@ impl FontMap {
     }   
 }
 
-// FIXME size alignment
-/// we don't care about the original size of sprite etc, we do real siz in meters!
 #[derive(Debug, Resource)]
 pub struct SpriteMap {
     image: Handle<Image>,
@@ -100,7 +98,7 @@ impl SpriteMap {
             atlas
         }
     }
-    /// e.g. the `name` for [`Boat::Yasen`](common::Boat::Yasen) is its debug impl which is "Yasen"
+    /// e.g. the default `name` for [`Boat::Yasen`](common::Boat::Yasen) is its identifier "Yasen"
     pub fn get(&self, name: impl FetchSprite) -> Option<TextureAtlas> {
         let index = self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())?;
 
@@ -113,6 +111,7 @@ impl SpriteMap {
         self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())
     }
     /// sets texture atlas to given name, returns None if not found
+    #[allow(dead_code)]
     pub fn set_to(&self, name: impl FetchSprite, atlas: &mut TextureAtlas) -> Option<()> {
         atlas.index = self.get_index(name)?;
 
@@ -143,11 +142,10 @@ impl SpriteSheet {
 
         serde_json::from_str(&json).unwrap()
     }
-    /// returns list of sprite names
+    /// returns list of sprite names and texutre atlas (ordered, ret.0[0] == ret.1.textures.get)
     pub fn to_texture_atlas_names(&self) -> (Vec<&str>, TextureAtlasLayout) {
         let mut names = vec![];
         let mut textures = vec![];
-        // let mut custom_size = vec![];
 
         for (name, cell) in self.frames.iter() {
             names.push(name.as_str());

@@ -1,3 +1,5 @@
+#![allow(dead_code, reason = "No longer used")]
+
 use std::{net::TcpStream, time::Duration};
 
 use bevy::prelude::*;

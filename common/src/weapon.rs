@@ -1,10 +1,8 @@
 use bevy::prelude::*;
 use macros::{FetchSprite, MaxSpeed, Size, WeaponType};
 use serde::{Deserialize, Serialize};
-use crate::primitives::{FetchSprite, Radian};
+use crate::primitives::Radian;
 use crate::{DEFAULT_MAX_TURN_DEG, primitives::Speed};
-
-// TODO macro for this too
 
 #[derive(FetchSprite, Size, WeaponType, MaxSpeed, Debug, Component, Clone, Copy, PartialEq, Serialize, Deserialize, Hash, Eq)]
 #[allow(non_camel_case_types)]
@@ -13,7 +11,7 @@ pub enum Weapon {
     #[weapon_type = "Torpedo"]
     #[max_speed = 29]
     Mark18,
-    // Shell_lengthxheightMmr  length and height in milimeters (apparently since mk48 divide it by 1000)
+    // Shell_heightxlengthMmr  length and height in milimeters (apparently since mk48 divide it by 1000)
     #[max_speed = 1243.6]
     Shell_57x441Mmr,
     #[length = 0.4]

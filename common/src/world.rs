@@ -118,6 +118,7 @@ pub fn spawn_sprite(
             ..default()
         },
         // TODO add graphics features to background. Right now a Sprite::from_color can replace it
+        // e.g. wave effect around controlling player's ocean (will take a lot of time)
         Mesh2d(meshes.add(Rectangle::from_size(world_size.get_size()))),
         MeshMaterial2d(materials.add(WorldMaterial::from_srgb_u8(1, 14, 41))),
         Name::new("Background"),
@@ -125,7 +126,6 @@ pub fn spawn_sprite(
     ));
 }
 
-// TODO wave effect around controlling player's ocean (will take a lot of time)
 
 pub fn update_sprite_size(mut meshes: ResMut<Assets<Mesh>>, sprite: Single<&Mesh2d, With<Background>>, world_size: Single<&WorldSize, Changed<WorldSize>>) {
     // sprite.custom_size = Some(world_size.get_size());

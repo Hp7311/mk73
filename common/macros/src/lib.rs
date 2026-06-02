@@ -5,7 +5,7 @@ use std::{collections::HashMap, ops::Not, sync::LazyLock};
 use proc_macro::{TokenStream};
 use proc_macro2::{Span, Ident, TokenStream as TokenStream2};
 use quote::quote;
-use syn::{Data, DataEnum, DeriveInput, Expr, ExprLit, Lit, LitFloat, LitInt, LitStr, Meta as SynMeta, MetaList, MetaNameValue, Path, Token, Variant, parse::ParseStream, parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::{Comma, Token}};
+use syn::{Data, DataEnum, DeriveInput, Expr, ExprLit, Lit, LitFloat, LitInt, Meta as SynMeta, MetaNameValue, Token, Variant, parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::Comma};
 use helper::absolute_path;
 
 use crate::helper::SpriteSheet;
@@ -419,7 +419,7 @@ fn impl_size(variants: &Punctuated<Variant, Comma>, name: &Ident) -> TokenStream
             assert_eq!(name.next(), None);
 
             match_arms.push(quote! {
-                Self::#ident => ::std::convert::Into::into((#length, #height))  // FIXME
+                Self::#ident => ::std::convert::Into::into((#length, #height))
             });
             continue;
         }
@@ -511,7 +511,7 @@ fn impl_size(variants: &Punctuated<Variant, Comma>, name: &Ident) -> TokenStream
     if !match_arms.is_empty() {
         quote! {
             impl #size_trait for #name {
-                fn size(&self) -> Vec2 {
+                fn size(&self) -> ::bevy::prelude::Vec2 {
                     match self {
                         #(#match_arms),*
                     }
@@ -521,10 +521,10 @@ fn impl_size(variants: &Punctuated<Variant, Comma>, name: &Ident) -> TokenStream
     } else if !render_size_arms.is_empty() {
         quote! {
             impl #size_trait for #name {
-                fn size(&self) -> Vec2 {
+                fn size(&self) -> ::bevy::prelude::Vec2 {
                     unimplemented("Derive did not specify size in pixels")
                 }
-                fn render_size(&self) -> Vec2 {
+                fn render_size(&self) -> ::bevy::prelude::Vec2 {
                     match self {
                         #(#render_size_arms),*
                     }

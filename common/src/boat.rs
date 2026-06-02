@@ -16,7 +16,7 @@ use macros::{BoatImpl, FetchSprite, Size};
 #[cfg(feature = "client")]
 pub struct BoatType(pub SubKind);
 
-#[derive(BoatImpl, FetchSprite, Size, EnumCount, EnumIter, VariantArray, Component, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(BoatImpl, FetchSprite, Size, EnumCount, EnumIter, VariantArray, Component, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Boat {
     #[armanents(Mark18, 2, default)]
     #[armanents(Shell_57x441Mmr, 2)]

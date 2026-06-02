@@ -832,6 +832,13 @@ pub trait Size {
 pub struct UpgradeEvent {
     pub target: Boat
 }
+
+#[cfg(feature = "client")]
+#[derive(Debug, Event)]
+pub struct MaybePushToSurface {
+    pub last_boat: Boat
+}
+
 pub trait RoughEq<Rhs = Self> {
     /// returns true if two vals are roughly equal (counting floats to be equal if difference below 0.001
     fn rough_eq(&self, rhs: &Rhs) -> bool;

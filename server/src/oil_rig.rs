@@ -35,7 +35,7 @@ impl Plugin for OilRigPlugin {
             );
     }
 }
-/// use [`rand::rng`] to determine whether to spawn a new [`Point`]
+/// use [`rand::rng()`] to determine whether to spawn a new [`Point`]
 static SPAWN_POINT_VEC: LazyLock<Vec<bool>> = LazyLock::new(|| {
     #[cfg(debug_assertions)]
     let false_vec = [false; 4];
@@ -97,8 +97,8 @@ fn spawn_rigs(
 
 /// spawns a must-valid rig at [`OCEAN_SURFACE`], returns the center of the spawned rig
 /// 
-/// ### Hangs
-/// if there aren't space
+/// ### Returns
+/// if a space isn't found after 10 iterations
 /// 
 /// ### Params
 /// - `world_size`: the [`Single<WorldSize>`]
@@ -115,11 +115,17 @@ fn spawn_random_rig(
     rng: &mut ThreadRng,
     world_size: &WorldSize,
     other_rigs: &[Vec2]
-) -> Vec2 {
+) {
     let mut rotation;
     let mut center;
 
+    let mut iterations = 0;  // prevent no space where the server would crash..
     'outer: loop {
+        iterations += 1;
+
+        if iterations > 10 {
+            return;
+        }
         rotation = rng.random_range(-PI..PI);
         center = vec2(
             rng.random_range(-world_size.get_size().x / 2.0..world_size.get_size().x / 2.0),
@@ -151,8 +157,6 @@ fn spawn_random_rig(
         PointAmount::new(rng),
         Replicate::to_clients(NetworkTarget::All)
     ));
-
-    center
 }
 
 /// replicate [`PointTransform`]s to client which is equivalent of `CustomTransform` for Points

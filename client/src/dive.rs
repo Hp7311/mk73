@@ -1,21 +1,17 @@
-use std::io::Write;
-
-use crate::tcp::TcpWrapper;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::AlphaMode2d;
 use common::primitives::{
-    Altitude as _, CustomTransform, DecimalPoint, GetZIndex, MeshBundle, UpgradeEvent, ZIndex
+    Altitude as _, CustomTransform, DecimalPoint, GetZIndex, MaybePushToSurface, MeshBundle, ZIndex
 };
-use common::protocol::{EntityOnServer, ZIndexUpdate, SendToServerOrdered};
-use common::protocol::tcp::TcpClientRequest;
-use common::util::{calculate_diving_overlay, in_states_2};
-use common::{Boat, BoatType, MainCamera, OCEAN_FLOOR, OCEAN_SURFACE, SubKind, debug_component, eq};
+use common::protocol::{EntityOnServer, ZIndexUpdate};
+use common::util::{calculate_diving_overlay, in_states_2, not_in_state};
+use common::{Boat, BoatType, MainCamera, OCEAN_FLOOR, OCEAN_SURFACE, SubKind, eq};
 use lightyear::input::client::InputSystems;
 use lightyear::prelude::input::native::{ActionState, InputMarker};
-use lightyear::prelude::{Controlled, MessageSender};
+use lightyear::prelude::Controlled;
 
 pub(crate) struct DivingPlugin;
 
@@ -29,7 +25,7 @@ impl Plugin for DivingPlugin {
             FixedUpdate,
             (
                 update_diving_status.run_if(input_just_pressed(KeyCode::KeyR)).run_if(resource_exists_and_equals(BoatType(SubKind::Submarine))),
-                act_on_state.run_if(in_states_2(DivingStatus::Diving, DivingStatus::Surfacing)),
+                act_on_state.run_if(not_in_state(DivingStatus::None)),
             )
                 .chain()
         );
@@ -44,14 +40,6 @@ impl Plugin for DivingPlugin {
     }
 }
 
-fn dbg_s(
-    s: Single<&MeshMaterial2d<DivingOverlayShader>, With<DivingOverlay>>,
-    material: Res<Assets<DivingOverlayShader>>,
-) {
-    if let Some(m) = material.get(&s.0) {
-        info!(?m);
-    }
-}
 #[allow(clippy::needless_update)]  // wasm buffers
 fn spawn_diving_overlay(
     mut commands: Commands,
@@ -70,7 +58,7 @@ fn spawn_diving_overlay(
                         player_pos: vec2(0.0, 0.0),
                         darkness: 0.0,
                         ..default()
-                    })),  // TODO bug at edge
+                    })),  // FIXME bug at edge
                 },
                 DivingOverlay,
                 Name::from("Diving overlay"),
@@ -106,7 +94,10 @@ enum DivingStatus {
     None,
     Surfacing,
     Diving,
+    /// when a submarine upgrades to a surface ship
+    PushingToSurface(Boat), // due to f32 not Eq, can't store Speed
 }
+
 fn update_diving_status(
     mut setter: ResMut<NextState<DivingStatus>>,
     getter: Res<State<DivingStatus>>,
@@ -123,6 +114,10 @@ fn update_diving_status(
             }
             DivingStatus::Surfacing => DivingStatus::Diving,
             DivingStatus::Diving => DivingStatus::Surfacing,
+            DivingStatus::PushingToSurface(_) => {
+                warn!("Should not run the system");
+                return;
+            }
         };
 
         setter.set(target);
@@ -155,6 +150,13 @@ fn act_on_state(
                 setter.set(DivingStatus::None);
             }
         }
+        DivingStatus::PushingToSurface(target) => {
+            *z_index = transform.increase_with_limit(target.diving_speed().get_raw(), OCEAN_SURFACE);
+
+            if transform.reached(OCEAN_SURFACE, DecimalPoint::Three) {
+                setter.set(DivingStatus::None);
+            }
+        }
         DivingStatus::None => {
             warn!(
                 "Should only act_on_state if in DivingStatus::Diving or DivingStatus::Surfacing"
@@ -163,6 +165,7 @@ fn act_on_state(
         }
     }
 
+    info!("State: {:?}", diving_status.get());
     // let amount = tcp_wrapper.write(&TcpClientRequest::NewZIndex(*z_index).to_bytes()).unwrap();
     // assert_eq!(amount, 4);
 
@@ -200,15 +203,14 @@ fn clear_z_update(mut z_update: Single<&mut ActionState<ZIndexUpdate>, With<Inpu
 static mut FRAME_TO_CLEAR: Option<u8> = None;
 
 fn push_to_surface_on_upgrade(
-    trigger: On<UpgradeEvent>,
-    q: Single<(&Transform, &Boat), With<Controlled>>,
+    trigger: On<MaybePushToSurface>,
+    transform: Single<&Transform, With<Controlled>>,
     mut setter: ResMut<NextState<DivingStatus>>
 ) {
-    let (transform, boat) = q.into_inner();
-    if boat.sub_kind() == SubKind::Submarine && trigger.target.sub_kind() != SubKind::Submarine
-        && !transform.reached(OCEAN_SURFACE, DecimalPoint::Three)
+    if !transform.reached(OCEAN_SURFACE, DecimalPoint::Three)
     {
-        setter.set(DivingStatus::Surfacing);
+        info!("Surfacing");
+        setter.set(DivingStatus::PushingToSurface(trigger.last_boat));
     }
 }
 

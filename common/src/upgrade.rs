@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use lightyear::prelude::*;
 
-use crate::{Boat, BoatClientId, SubKind, primitives::{WeaponCounter, ZIndex}, protocol::{UpgradeMessage, UpgradeRollback}};
+use crate::{Boat, BoatClientId, SubKind, primitives::WeaponCounter, protocol::{UpgradeMessage, UpgradeRollback}};
 
 
 /// - client
@@ -46,7 +46,7 @@ mod client {
     use crate::boat::CircleHud;
     use crate::{BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, circle_hud_mesh};
     use crate::protocol::{EntityOnServer, SendToServerOrdered};
-    use crate::primitives::{UpgradeEvent, UpgradeRollbackEvent};
+    use crate::primitives::{MaybePushToSurface, UpgradeEvent, UpgradeRollbackEvent};
     use super::*;
 
     #[allow(clippy::too_many_arguments)]
@@ -56,7 +56,7 @@ mod client {
         mut server_sender: Single<&mut MessageSender<UpgradeMessage>>,
         entity_on_server: Single<&EntityOnServer, With<Controlled>>,
 
-        query: Single<(&mut Boat, &mut WeaponCounter, &mut ZIndex), With<Controlled>>,
+        query: Single<(&mut Boat, &mut WeaponCounter), With<Controlled>>,
 
         mut meshes: ResMut<Assets<Mesh>>,
         circle_hud: Single<&Mesh2d, With<CircleHud>>,
@@ -64,6 +64,8 @@ mod client {
         mut indicator_negative: Single<&mut Transform, With<BoatReverseNegative>>,
 
         mut boat_type: ResMut<BoatType>,
+
+        mut commands: Commands
     ) {
         let target = trigger.target;
         trace!("Upgrade to {target:?}");
@@ -72,13 +74,15 @@ mod client {
             entity_on_server: *entity_on_server.into_inner()
         });
 
-        let (mut boat, mut weapon_counter, mut z_index) = query.into_inner();
+        let (mut boat, mut weapon_counter) = query.into_inner();
 
+        if boat.sub_kind() == SubKind::Submarine && target.sub_kind() != SubKind::Submarine {  // maybe add depth to sub diving
+            commands.trigger(MaybePushToSurface { last_boat: *boat });
+        }
         upgrade_components(
             target,
             &mut boat,
-            &mut weapon_counter,
-            &mut z_index
+            &mut weapon_counter
         );
 
         if let Some(mesh) = meshes.get_mut(*circle_hud) {
@@ -108,7 +112,7 @@ mod client {
             warn!("Rolling level back to {target:?}");
             commands.trigger(UpgradeRollbackEvent(target));
 
-            degrade_components(target, &mut boat, &mut weapon_counter);
+            upgrade_components(target, &mut boat, &mut weapon_counter);
 
             if let Some(mesh) = meshes.get_mut(*circle_hud) {
                 let circle_hud_radius = target.circle_hud_radius();
@@ -126,60 +130,46 @@ mod server {
     use super::*;
 
     pub(super) fn recv_upgrade(
-        mut reader: Single<&mut MessageReceiver<UpgradeMessage>>,
+        readers: Query<&mut MessageReceiver<UpgradeMessage>>,
         mut sender: ServerMultiMessageSender,
         server: Single<&Server>,
     
-        mut stats: Query<(&mut PlayerStats, &BoatClientId, &mut Boat, &mut WeaponCounter, &mut ZIndex)>
+        mut stats: Query<(&mut PlayerStats, &BoatClientId, &mut Boat, &mut WeaponCounter)>
     ) {
-        for UpgradeMessage { target, entity_on_server } in reader.receive() {
-            if let Ok((
-                mut stat,
-                client_id,
-                mut boat, mut weapon_counter, mut z_index
-            )) = stats.get_mut(Entity::from_bits(entity_on_server.0)) {
-                if stat.can_upgrade(target) {
-                    trace!("Client {client_id:?} upgrading to {target:?}");
-                    *stat.level_mut() = target.level();
-                    upgrade_components(
-                        target,
-                        &mut boat,
-                        &mut weapon_counter,
-                        &mut z_index
-                    );
+        for mut reader in readers {
+            for UpgradeMessage { target, entity_on_server } in reader.receive() {
+                if let Ok((
+                    mut stat,
+                    client_id,
+                    mut boat, mut weapon_counter
+                )) = stats.get_mut(Entity::from_bits(entity_on_server.0)) {
+                    if stat.can_upgrade(target) {
+                        trace!("Client {client_id:?} upgrading to {target:?}");
+                        *stat.level_mut() = target.level();
+                        upgrade_components(
+                            target,
+                            &mut boat,
+                            &mut weapon_counter
+                        );
+                    } else {
+                        info!("Client {client_id:?}'s upgrade to {target:?} rejected");
+                        sender.send::<_, SendToClient>(
+                            &UpgradeRollback {
+                                target: *boat
+                            },
+                            &server,
+                            &NetworkTarget::Single(client_id.0)
+                        ).unwrap();
+                    }
                 } else {
-                    info!("Client {client_id:?}'s upgrade to {target:?} rejected");
-                    sender.send::<_, SendToClient>(
-                        &UpgradeRollback {
-                            target: *boat
-                        },
-                        &server,
-                        &NetworkTarget::Single(client_id.0)
-                    ).unwrap();
+                    warn!("Invalid Entity ID");
                 }
-            } else {
-                warn!("Invalid Entity ID");
             }
         }
     }
 }
 
 fn upgrade_components(
-    target: Boat,
-    boat: &mut Boat,
-    weapon_counter: &mut WeaponCounter,
-    _z_index: &mut ZIndex
-) {
-    if boat.sub_kind() == SubKind::Submarine && target.sub_kind() != SubKind::Submarine {
-        // TODO if sub submerged, push back up
-    }
-    *boat = target;
-    *weapon_counter = WeaponCounter::from_boat(&target);
-}
-
-/// [`upgrade_components`] but no `z_index`
-#[allow(dead_code)] // rust-analyzer
-fn degrade_components(
     target: Boat,
     boat: &mut Boat,
     weapon_counter: &mut WeaponCounter,

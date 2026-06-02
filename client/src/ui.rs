@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_inspector_egui::egui::emath::GuiRounding;
-use common::{MainCamera, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, Size, UpgradeEvent, UpgradeRollbackEvent}, protocol::{Move, Rotate}};
+use common::{Boat, MainCamera, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, Size, UpgradeEvent, UpgradeRollbackEvent}, protocol::{Move, Rotate}};
 use lightyear::prelude::{input::native::{ActionState, InputMarker}, *};
 
 use crate::{BoatState, asset::{FontMap, SpriteMap}};
@@ -11,7 +11,7 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         // app.add_plugins(DbgPlugin);
         app.add_systems(Startup, (spawn_progress_bar, spawn_upgrade_bar).after(crate::setup).chain());
-        app.add_systems(Update, recv_stats_update);
+        app.add_systems(Update, (recv_stats_update, receive_other_boat_update));
 
         app.add_observer(show_upgrade);
         app.add_observer(on_choose_upgrade);
@@ -260,7 +260,6 @@ fn show_upgrade(
         });
 }
 
-// FIXME weapon (others) spawning
 
 // these two systems have friends in common::upgrade
 
@@ -275,10 +274,12 @@ fn on_choose_upgrade(
     mut sprite: Single<&mut Sprite, With<Controlled>>,
     sprites: Res<SpriteMap>
 ) {
-    sprite.image = sprites.image();
+    // sprite.image = sprites.image();
     sprite.custom_size = Some(trigger.target.render_size());
-    // note that we are not `= Some(sprites.get(trigger.target).unwrap())` everywhere, displaying a whole spritesheet is obvious enough
-    sprite.texture_atlas = sprites.get(trigger.target);
+    let Some(ref mut texture_atlas) = sprite.texture_atlas else {
+        panic!()
+    };
+    texture_atlas.index = sprites.get_index(trigger.target).unwrap_or_else(|| panic!("{:?} is not in the spritesheet", trigger.target));
 
     **upgrade_bar = Visibility::Hidden;
     **progress_bar = Visibility::Visible;
@@ -294,6 +295,18 @@ fn on_upgrade_rollback(
     sprite.custom_size = Some(trigger.0.render_size());
     // note that we are not `= Some(sprites.get(trigger.target).unwrap())` everywhere, displaying a whole spritesheet is obvious enough
     sprite.texture_atlas = sprites.get(trigger.0);
+}
+
+/// update the sprite of non-controlled boats when they upgrade
+fn receive_other_boat_update(
+    query: Query<(&mut Sprite, &Boat), (Without<Controlled>, Changed<Boat>)>,
+    sprites: Res<SpriteMap>
+) {
+    for (mut sprite, boat) in query {
+        let Some(ref mut texture_atlas) = sprite.texture_atlas else { panic!() };
+        texture_atlas.index = sprites.get_index(*boat).unwrap_or_else(|| panic!("{:?} is not in the spritesheet", boat));
+        sprite.custom_size = Some(boat.render_size());
+    }
 }
 #[allow(dead_code)]
 struct DbgPlugin;

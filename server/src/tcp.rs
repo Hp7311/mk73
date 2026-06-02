@@ -1,5 +1,5 @@
 //! custom networking backend
-
+#![allow(dead_code, reason = "No longer used")]
 use std::net::TcpStream;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;

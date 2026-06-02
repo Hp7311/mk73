@@ -1,10 +1,10 @@
-use std::{collections::HashMap, io::Write};
+use std::collections::HashMap;
 
 use bevy::{color::palettes::css::GRAY, prelude::*};
-use common::{Boat, BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, CircleHud, OCEAN_SURFACE, circle_hud_mesh, primitives::{CustomTransform, MeshBundle, Size, WeaponCounter}, protocol::{EntityOnServer, tcp::TcpClientRequest}};
+use common::{Boat, BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, CircleHud, OCEAN_SURFACE, circle_hud_mesh, primitives::{CustomTransform, MeshBundle, Size, WeaponCounter}};
 use lightyear::prelude::*;
 
-use crate::{asset::SpriteMap, tcp::TcpWrapper};
+use crate::asset::SpriteMap;
 
 pub(crate) struct BoatPlugin;
 
@@ -19,17 +19,15 @@ impl Plugin for BoatPlugin {
 #[allow(clippy::too_many_arguments)]
 fn spawn_boat(
     trigger: On<Add, CustomTransform>,
-    boats: Query<(&Boat, &CustomTransform, &EntityOnServer)>,
+    boats: Query<(&Boat, &CustomTransform)>,  //  &EntityOnServer // legacy custom TCP impl
     controlled: Query<(), (With<Boat>, With<Controlled>)>,
 
     mut commands: Commands,
     sprites: Res<SpriteMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-
-    // mut tcp: ResMut<TcpWrapper>
 ) {
-    let (&boat, &custom, entity_on_server) = boats.get(trigger.entity).unwrap();
+    let (&boat, &custom) = boats.get(trigger.entity).unwrap();
     let controls = controlled.get(trigger.entity).is_ok();
 
     if !controls {
@@ -49,8 +47,6 @@ fn spawn_boat(
             });
         return;
     }
-
-    // FIXME other's boat sprite not updated
 
     commands
         .get_entity(trigger.entity).unwrap()

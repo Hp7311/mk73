@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 
+// FIXING server unresponsive after few minutes
 mod input;
 mod dive;
 mod weapon;
@@ -8,8 +9,6 @@ mod boat;
 mod oil_rig;
 mod ui;
 mod tcp;
-#[cfg(target_family = "wasm")]
-mod web_utils;
 mod asset;
 
 use std::time::Duration;
@@ -30,11 +29,11 @@ use lightyear::netcode::{auth::Authentication, Key, NetcodeClient};
 use lightyear::prelude::{
     input::native::{ActionState, InputMarker},
     client::{
-        ClientPlugins, ClientConfig, NetcodeConfig, WebSocketClientIo, WebSocketScheme
+        ClientPlugins, NetcodeConfig
     },
     *
 };
-use lightyear::websocket::client::WebSocketTarget;
+use lightyear::webtransport::client::WebTransportClientIo;
 use crate::asset::AssetPreloadPlugin;
 use crate::boat::BoatPlugin;
 use crate::dive::DivingPlugin;
@@ -113,6 +112,7 @@ fn main() -> AppExit {
     app.run()
 }
 
+const DIGEST: &str = include_str!("../../cert/digest.txt");
 
 fn setup(mut commands: Commands) {
     let client_id = rand::random_range(0..100);
@@ -138,10 +138,8 @@ fn setup(mut commands: Commands) {
             PeerAddr(SERVER_ADDR),
             Link::default(),
             NetcodeClient::new(auth, netcode_config).unwrap(),
-            WebSocketClientIo {
-                config: ClientConfig::default(),
-                #[cfg(debug_assertions)]
-                target: WebSocketTarget::Addr(WebSocketScheme::Plain),
+            WebTransportClientIo {
+                certificate_digest: DIGEST.to_string()
             },
             ReplicationReceiver::default(),
             PredictionManager::default()

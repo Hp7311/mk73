@@ -33,7 +33,7 @@ pub struct MovementPlugin {
     pub move_weapon: bool
 }
 
-// FIXME jerky movement (maybe in debug mode?)
+// FIXME sometimes jerky movement (maybe in debug mode?)
 // wow, private documented items can be seen from public
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {

@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*};
 #[cfg(feature = "server")]
+#[cfg(false)]
 use lightyear::websocket::server::Identity;
 use crate::primitives::{Radian, Speed};
 use crate::primitives::{Mk48Rect, WidthHeight, ZIndex};
@@ -15,6 +16,9 @@ pub fn in_states_2<T: States>(first: T, second: T)  -> impl Fn(Res<State<T>>) ->
     move |state| *state.get() == first || *state.get() == second
 }
 
+pub fn not_in_state<T: States>(not: T) -> impl Fn(Res<State<T>>) -> bool {
+    move |state| *state.get() != not
+}
 /// defaults to 0.001 precision
 #[macro_export]
 macro_rules! eq {
@@ -295,6 +299,7 @@ pub const fn ip_addr(hostname: Ipv4Addr, port: u16) -> SocketAddr {
 
 /// webtransport/websocket certificate, currently not used, using plain websockets
 #[cfg(feature = "server")]
+#[cfg(false)]  // not using websockets
 pub fn from_pem_file(
     cert_path: impl AsRef<std::path::Path>,
     key_path: impl AsRef<std::path::Path>,
