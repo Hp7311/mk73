@@ -131,11 +131,8 @@ fn handle_connected_client(
             ..CustomTransform::default()
         },
         boat,
+        WeaponCounter::from_boat(&boat),  // TODO not replicated, will do messages to update
         OCEAN_SURFACE,
-        WeaponCounter {
-            weapons: boat.armanents(),
-            selected_weapon: boat.default_weapon()
-        },
         PlayerStats::new(0),
         
         BoatClientId(client_id),

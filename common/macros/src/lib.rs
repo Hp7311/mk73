@@ -3,6 +3,7 @@ mod helper;
 use std::{collections::HashMap, ops::Not, sync::LazyLock};
 
 use proc_macro::{TokenStream};
+use proc_macro_crate::Error::CouldNotRead;
 use proc_macro2::{Span, Ident, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{Data, DataEnum, DeriveInput, Expr, ExprLit, Lit, LitFloat, LitInt, Meta as SynMeta, MetaNameValue, Token, Variant, parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::Comma};
@@ -235,13 +236,13 @@ fn impl_fetch_sprite(ast: DeriveInput) -> TokenStream2 {
 fn derive_armanents(variants: &Punctuated<Variant, Comma>) -> TokenStream2 {
     let mut match_arms = vec![];
     let mut default_weapon_arms = vec![];
-    let (weapon_path, hashmap_path) = (absolute_path("Weapon"), absolute_path("hashmap"));
+    let (weapon_path, hashmap_path, weapon_data_path) = (absolute_path("Weapon"), absolute_path("util::OrderedHashMap"), absolute_path("primitives::WeaponData"));
 
     for variant in variants {
         let ident = &variant.ident;
         let mut no_weapon = false;
         let mut default_weapon = None;
-        let mut armanents = HashMap::new();
+        let mut armanents: Vec<(String, u16)> = Vec::new();
 
         for args in variant.attrs.iter()
             .filter(|attr| attr.path().is_ident("armanents"))
@@ -264,7 +265,7 @@ fn derive_armanents(variants: &Punctuated<Variant, Comma>) -> TokenStream2 {
             let second_arg = args.next();
             let count = if let Some(Expr::Lit(num)) = &second_arg {
                 if let Lit::Int(num) = &num.lit {
-                    num.base10_parse::<u8>().expect("Too many weapons")
+                    num.base10_parse::<u16>().expect("Too many weapons")
                 } else {
                     bail!("Expected integer for num");
                 }
@@ -273,7 +274,12 @@ fn derive_armanents(variants: &Punctuated<Variant, Comma>) -> TokenStream2 {
                 1
             };
 
-            *armanents.entry(weapon_name.clone()).or_insert(0) += count;
+            // equivalent to *armanents.entry(weapon_name.clone()).or_insert(0) += count;
+            if let Some((_name, counter)) = armanents.iter_mut().find(|(name, _)| *name == weapon_name) {
+                *counter += count;
+            } else {
+                armanents.push((weapon_name.clone(), count));
+            }
             
             if let Some(Expr::Path(path)) = second_arg
                 && path.path.is_ident("default")
@@ -317,14 +323,17 @@ fn derive_armanents(variants: &Punctuated<Variant, Comma>) -> TokenStream2 {
                 let weapon = name.parse::<TokenStream2>().unwrap();
 
                 quote! {
-                    #weapon => #count
+                    (#weapon, #weapon_data_path {
+                        max: #count,
+                        avaliable: #count
+                    })
                 }
             });
 
         let ret = quote! {
-            #hashmap_path! {
+            #hashmap_path::from_arr([
                 #(#construct),*
-            }
+            ])
         };
 
         let match_arm = quote! {
@@ -334,7 +343,7 @@ fn derive_armanents(variants: &Punctuated<Variant, Comma>) -> TokenStream2 {
     }
 
     quote!(
-        pub fn armanents(&self) -> ::std::collections::HashMap<#weapon_path, u8>{
+        pub fn armanents(&self) -> #hashmap_path<#weapon_path, #weapon_data_path>{
             match self {
                 #(#match_arms),*
             }

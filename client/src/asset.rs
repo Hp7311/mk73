@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 
 use bevy::prelude::*;
 use common::{primitives::FetchSprite, util::InputExt};
@@ -11,13 +11,13 @@ impl Plugin for AssetPreloadPlugin {
         app
             .insert_resource(FontMap(HashMap::new()))
 
-            .add_systems(Startup, init_spritesheet)
+            .add_systems(Startup, (init_spritesheet, init_sprite_ui_sheet))
             .add_systems(Startup, init_font);
     }
 }
 
 const FONT_PATHS: &[&str] = &[
-    "regular.otf"
+    "Aileron-Regular.otf"
 ];
 
 /// Stores assets by their path,
@@ -40,9 +40,18 @@ fn init_spritesheet(
 
     let map = SpriteMap::new(sprite, &mut textures);
     commands.insert_resource(map);
-    info!("Finished loading spritesheet")
 }
 
+fn init_sprite_ui_sheet(
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    mut textures: ResMut<Assets<TextureAtlasLayout>>
+) {
+    let sprite = asset_server.load("sprites_css.png");
+
+    let map = SpriteUiMap::new(sprite, &mut textures);
+    commands.insert_resource(map);
+}
 #[derive(Debug, Resource)]
 pub struct FontMap(HashMap<&'static str, Handle<Font>>);
 
@@ -123,6 +132,51 @@ impl SpriteMap {
     }
 }
 
+/// currently, image is from Mk48, to be sustanible, better to generate ourselves // TODO
+#[derive(Debug, Resource)]
+pub struct SpriteUiMap {
+    image: Handle<Image>,
+    names: Vec<String>,
+    atlas: Handle<TextureAtlasLayout>,
+    /// stores the actual atlas without Handle (references)
+    _atlas: TextureAtlasLayout
+}
+
+impl SpriteUiMap {
+    fn new(image: Handle<Image>, textures: &mut Assets<TextureAtlasLayout>) -> Self {
+        let sheet = SpriteUiSheet::new();
+        let (names, atlas) = sheet.to_texture_atlas_names();
+        let atlas_handle = textures.add(atlas.clone());
+        
+        let names = names.into_iter().map(ToOwned::to_owned).collect();
+
+        Self {
+            image,
+            names,
+            atlas: atlas_handle,
+            _atlas: atlas
+        }
+    }
+    pub fn get(&self, name: impl FetchSprite) -> Option<TextureAtlas> {
+        let index = self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())?;
+
+        Some(TextureAtlas {
+            index, 
+            layout: self.atlas.clone()
+        })
+    }
+    pub fn get_size(&self, name: impl FetchSprite) -> Option<URect> {
+        let position = self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())?;
+
+        self._atlas.textures.get(position).copied()
+    }
+    pub fn get_index(&self, name: impl FetchSprite) -> Option<usize> {
+        self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())
+    }
+    pub fn image(&self) -> Handle<Image> {
+        self.image.clone()
+    }
+}
 #[derive(Debug, Deserialize)]
 pub struct SpriteSheet {
     pub frames: HashMap<String, SheetCell>,
@@ -176,6 +230,35 @@ pub struct Meta {
     pub size: Rect2
 }
 
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SpriteUiSheet {
+    width: u32,
+    height: u32,
+    sprites: HashMap<String, RectPoint>
+}
+
+impl SpriteUiSheet {
+    fn new() -> Self {
+        let json = include_str!("../assets/sprites_css.json");
+
+        serde_json::from_str(json).unwrap()
+    }
+    fn to_texture_atlas_names(&self) -> (Vec<&str>, TextureAtlasLayout) {
+        let mut rects = vec![];
+        let mut names = vec![];
+
+        for (name, &rect) in &self.sprites {
+            names.push(name.as_str());
+            rects.push(rect.to::<URect>());
+        }
+
+        (names, TextureAtlasLayout {
+            size: uvec2(self.width, self.height),
+            textures: rects
+        })
+    }
+}
 #[derive(Debug, Deserialize, Clone, Copy)]
 pub struct Rect4 {
     pub x: u32,
@@ -190,6 +273,24 @@ pub struct Rect2 {
     pub h: u32
 }
 
+#[derive(Debug, Deserialize, Clone, Copy)]
+pub struct RectPoint {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32
+}
+impl From<RectPoint> for URect {
+    fn from(value: RectPoint) -> Self {
+        let min = uvec2(value.x, value.y);
+        let max = uvec2(min.x + value.width, min.y + value.height);
+
+        URect {
+            min,
+            max
+        }
+    }
+}
 impl From<Rect2> for UVec2 {
     fn from(value: Rect2) -> Self {
         uvec2(value.w, value.h)

@@ -1,3 +1,4 @@
+use std::debug_assert_matches;
 use bevy::color::palettes::css::LIME;
 use bevy::prelude::*;
 use lightyear::prelude::*;
@@ -8,6 +9,7 @@ use common::{Boat, CIRCLE_HUD, Weapon};
 use crate::FiresWeapon;
 use crate::asset::SpriteMap;
 
+/// movement in [`common::movement`]
 pub(crate) struct WeaponPlugin;
 
 impl Plugin for WeaponPlugin {
@@ -16,8 +18,10 @@ impl Plugin for WeaponPlugin {
             .add_observer(fire_weapon)
             .add_observer(spawn_others_weapon)
 
-            .add_systems(Update, rollback)
+            .add_systems(FixedUpdate, rollback)
             .add_systems(Update, sync_weapon_marker);
+        
+        app.add_observer(change_weapon);
     }
 }
 
@@ -103,6 +107,18 @@ fn spawn_others_weapon(
     spawn_weapon_marker(&mut commands, trigger.entity, transform.translation.xy(), &mut meshes, &mut materials);
 }
 
+#[derive(Debug, Event)]
+pub(crate) struct ChangeWeapon {
+    pub target: Weapon
+}
+
+fn change_weapon(
+    trigger: On<ChangeWeapon>,
+    mut weapon_counter: Single<&mut WeaponCounter, With<Controlled>>
+) {
+    debug_assert_matches!(weapon_counter.selected_weapon, Some(_));
+    weapon_counter.selected_weapon = Some(trigger.target);
+}
 fn rollback(mut reader: Single<&mut MessageReceiver<WeaponRollBack>>, mut commands: Commands, mut weapons: Query<&mut Transform, With<Weapon>>) {
     for msg in reader.receive() {
         match msg {

@@ -1,14 +1,15 @@
-use bevy::prelude::*;
+use bevy::{input_focus::InputFocus, prelude::*};
 use bevy_inspector_egui::egui::emath::GuiRounding;
-use common::{Boat, MainCamera, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, Size, UpgradeEvent, UpgradeRollbackEvent}, protocol::{Move, Rotate}};
+use common::{Boat, MainCamera, Weapon, get_mut, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, Size, UpgradeEvent, UpgradeRollbackEvent, WeaponCounter}, protocol::{Move, Rotate}, util::pixel};
 use lightyear::prelude::{input::native::{ActionState, InputMarker}, *};
 
-use crate::{BoatState, asset::{FontMap, SpriteMap}};
+use crate::{BoatState, asset::{FontMap, SpriteMap, SpriteUiMap}, weapon::ChangeWeapon};
 
 pub(crate) struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
+        // app.insert_resource(BlockInput(false));  // true later once we have play button
         // app.add_plugins(DbgPlugin);
         app.add_systems(Startup, (spawn_progress_bar, spawn_upgrade_bar).after(crate::setup).chain());
         app.add_systems(Update, (recv_stats_update, receive_other_boat_update));
@@ -16,6 +17,8 @@ impl Plugin for UiPlugin {
         app.add_observer(show_upgrade);
         app.add_observer(on_choose_upgrade);
         app.add_observer(on_upgrade_rollback);
+
+        app.add_plugins(WeaponUiPlugin);
     }
 }
 
@@ -93,7 +96,7 @@ pub(super) fn spawn_progress_bar(
             ..default()
         },
         TextFont {
-            font: fonts.get_long_lived("regular.otf").unwrap(),
+            font: fonts.get_long_lived("Aileron-Regular.otf").unwrap(),
             font_size: 15.0,
             weight: FontWeight::BOLD,
             ..default()
@@ -176,7 +179,7 @@ fn spawn_upgrade_bar(
                 ..default()
             },
             TextFont {
-                font: fonts.get_long_lived("regular.otf").unwrap(),
+                font: fonts.get_long_lived("Aileron-Regular.otf").unwrap(),
                 font_size: 15.0,
                 weight: FontWeight::BOLD,
                 ..default()
@@ -193,7 +196,7 @@ fn spawn_upgrade_bar(
 /// - hide progress bar and set it to should-be-state after upgrading
 /// - set pre-spawned upgrade bar to visible and update text
 /// - replace upgrade bar's attached upgrade boats to appropriate ones
-fn show_upgrade(
+fn show_upgrade(  // this doesn't work if i add BlockInput etc
     _trigger: On<ShowUpgrade>,
     mut commands: Commands,
     player_stats: Single<&PlayerStats, With<Controlled>>,
@@ -214,7 +217,7 @@ fn show_upgrade(
 
     let upgrade_bar = {
         let (entity, mut visibility, mut text) = upgrade_bar.into_inner();
-        assert_eq!(*visibility, Visibility::Hidden, "Should only trigger if UpgradeBar is hidden");
+        debug_assert_eq!(*visibility, Visibility::Hidden, "Should only trigger if UpgradeBar is hidden");
         *visibility = Visibility::Visible;
 
         text.0 = format!("Upgrade to level {}", next_level);
@@ -308,6 +311,231 @@ fn receive_other_boat_update(
         sprite.custom_size = Some(boat.render_size());
     }
 }
+
+struct WeaponUiPlugin;
+
+impl Plugin for WeaponUiPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<InputFocus>();
+        app.add_observer(spawn_weapon_selection_bar)
+            .add_systems(Update, switch_weapon_selection_bar_brightness)
+            .add_observer(change_weapon);
+    }
+}
+
+#[derive(Debug, Component)]
+struct WeaponSelection;
+
+#[derive(Debug, Component)]
+struct WeaponSelectionIndividualImage;
+
+/// contains target
+/// 
+/// containint the weapon to avoid conflicts with actual weapon
+#[derive(Debug, Component)]
+struct WeaponSelectionIndividualBox(Weapon);
+
+#[derive(Debug, Component)]
+struct WeaponDataText;
+
+// technically UI stuff
+fn spawn_weapon_selection_bar(
+    trigger: On<Add, WeaponCounter>,
+    weapon_counter: Single<(Entity, &WeaponCounter), With<Controlled>>,
+    mut commands: Commands,
+    sprites: Res<SpriteUiMap>,
+    fonts: Res<FontMap>
+) {
+    if weapon_counter.0 != trigger.entity {
+        return;  // other's
+    }
+
+    let (_, weapon_counter) = weapon_counter.into_inner();
+
+    let mut base_entity = commands.spawn((
+        Node {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::Center,  // not important
+            margin: UiRect::top(auto()).with_left(auto()).with_right(auto()),
+            // column_gap: px(20),
+            padding: UiRect::all(px(5.5)),
+            ..default()
+        },
+        WeaponSelection,
+    ));
+    let height = weapon_counter.weapons.keys().max_by(|this, other| {
+        Ord::cmp(
+            &sprites.get_size(**this).unwrap().height(),
+            &sprites.get_size(**other).unwrap().height()
+        )
+    }).unwrap();
+    let height = sprites.get_size(*height).unwrap().height() + PADDING_TOP as u32 * 2 + FONT_SIZE as u32 + ROW_GAP as u32;  // TODO .map().max()
+    const FONT_SIZE: f32 = 15.0;
+    const PADDING_TOP: i32 = 10;
+    const ROW_GAP: i32 = 10;
+    const PADDING: UiRect = UiRect::all(pixel(10)).with_left(pixel(5)).with_right(pixel(5));
+
+    for (weapon, data) in weapon_counter.weapons.iter() {
+        base_entity.with_children(|parent| {
+            parent.spawn((
+                // box
+                Node {
+                    height: px(height),
+                    padding: PADDING,
+                    flex_direction: FlexDirection::Column,  // image and text vertical
+                    row_gap: px(ROW_GAP),  // so text doesn't get too close to image
+                    ..default()
+                },
+                BackgroundColor(if weapon_counter.selected_weapon.unwrap() == *weapon {
+                    PRESSED_BACKGROUND
+                } else {
+                    NORMAL_BACKGROUND
+                }),
+                Button,
+                WeaponSelectionIndividualBox(*weapon)
+            )).with_child((
+                // image
+                ImageNode {
+                    image: sprites.image(),
+                    texture_atlas: sprites.get(*weapon),
+                    color: NORMAL,
+                    ..default()
+                },
+                Node {
+                    position_type: PositionType::Relative,
+                    width: px(sprites.get_size(*weapon).unwrap().width()),
+                    height: px(sprites.get_size(*weapon).unwrap().height()),
+                    ..default()
+                },
+                WeaponSelectionIndividualImage
+            ))
+            .with_child((
+                Text::new(format!("{}/{}", data.avaliable, data.max)),  // using indent
+                TextFont {
+                    font: fonts.get_long_lived("Aileron-Regular.otf").unwrap(),
+                    font_size: FONT_SIZE,
+                    ..default()
+                },
+                TextColor(if weapon_counter.selected_weapon.unwrap() == *weapon {
+                    TEXT_SELECTED
+                } else {
+                    TEXT_LIGHT
+                }),
+                TextLayout {
+                    justify: Justify::Right,
+                    ..default()
+                },
+                WeaponDataText
+            ));
+        });
+    }
+}
+
+const TEXT_LIGHT: Color = Color::linear_rgba(1.0, 1.0, 1.0, 0.5);
+const TEXT_SELECTED: Color = Color::linear_rgba(1.0, 1.0, 1.0, 1.0);
+// const NORMAL: Color = Color::linear_rgb(0.3, 0.3, 0.3);
+const NORMAL: Color = Color::linear_rgb(0.5, 0.5, 0.5);
+const NORMAL_BACKGROUND: Color = Color::linear_rgba(0.0, 0.0, 0.0, 0.0);
+
+const HOVER: Color = Color::linear_rgb(0.5, 0.5, 0.5);
+const HOVER_BACKGROUND: Color = Color::linear_rgba(0.3, 0.3, 0.3, 0.1);
+
+const PRESSED: Color = Color::linear_rgb(1.0, 1.0, 1.0);
+const PRESSED_BACKGROUND: Color = Color::linear_rgba(1.0, 1.0, 1.0, 0.1);
+// TODO if exauhsted weapon, diff color
+
+fn switch_weapon_selection_bar_brightness(
+    mut input_focus: ResMut<InputFocus>,
+    interaction_q: Query<
+        (
+            Entity,
+            &Children,
+            &Interaction,
+            &mut BackgroundColor,
+            &mut Button,
+            &WeaponSelectionIndividualBox
+        ),
+        Changed<Interaction>
+    >,
+    mut images: Query<&mut ImageNode, With<WeaponSelectionIndividualImage>>,
+    mut texts: Query<&mut TextColor, With<WeaponDataText>>,
+
+    weapon_counter: Single<&WeaponCounter, With<Controlled>>,
+    mut commands: Commands
+) {
+    for (entity, children, interaction, mut background, mut button, WeaponSelectionIndividualBox(weapon)) in interaction_q {
+        let mut image = get_mut!(children, images).unwrap();
+        let mut text_color = get_mut!(children, texts).unwrap();
+        match *interaction {
+            Interaction::Pressed => {
+                if let Some(selected) = weapon_counter.selected_weapon
+                    && selected == *weapon
+                {
+                    continue;  // no excessive event fires
+                }
+                input_focus.set(entity);
+                commands.trigger(ChangeWeapon { target: *weapon });
+                // colouring done in fn change_weapon to avoid ambiguity
+                button.set_changed();
+            }
+            Interaction::Hovered => {
+                if background.0 == PRESSED_BACKGROUND {
+                    continue;  // already pressing
+                }
+                input_focus.set(entity);
+                image.color = HOVER;
+                background.0 = HOVER_BACKGROUND;
+                button.set_changed();
+            }
+            Interaction::None => {
+                if let Some(selected) = weapon_counter.selected_weapon
+                    && selected == *weapon
+                    && background.0 == PRESSED_BACKGROUND
+                {
+                    continue;  // if selected, don't release
+                }
+
+                input_focus.clear();
+
+                image.color = NORMAL;  // more
+                background.0 = NORMAL_BACKGROUND;
+                text_color.0 = TEXT_LIGHT;
+            }
+        }
+    }
+}
+
+fn change_weapon(
+    trigger: On<ChangeWeapon>,
+    mut backgrounds: Query<(&Children, &mut BackgroundColor, &WeaponSelectionIndividualBox)>,
+    mut images: Query<&mut ImageNode, With<WeaponSelectionIndividualImage>>,
+    mut texts: Query<&mut TextColor, With<WeaponDataText>>
+) {
+    {
+        let (children, mut background, _box) =
+            backgrounds.iter_mut()
+                .find(|(_, background, _)| background.0 == PRESSED_BACKGROUND).unwrap();
+        let mut image = get_mut!(children, images).unwrap();
+        let mut text = get_mut!(children, texts).unwrap();
+
+        background.0 = NORMAL_BACKGROUND;
+        image.color = NORMAL;
+        text.0 = TEXT_LIGHT;
+    }
+
+    let (children, mut background, _) = 
+        backgrounds.iter_mut()
+            .find(|(_, _, WeaponSelectionIndividualBox(weapon))| *weapon == trigger.target)
+            .unwrap();
+    let mut image = get_mut!(children, images).unwrap();
+    let mut text_color = get_mut!(children, texts).unwrap();
+
+    image.color = PRESSED;
+    background.0 = PRESSED_BACKGROUND;
+    text_color.0 = TEXT_SELECTED;
+}
+
 #[allow(dead_code)]
 struct DbgPlugin;
 

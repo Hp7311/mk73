@@ -16,7 +16,7 @@ use crate::{Boat, eq};
 use crate::protocol::{OilRigTransform, PointTransform};
 use crate::weapon::Weapon;
 use crate::collision::out_of_bounds;
-use crate::util::{InputExt, move_with_rotation};
+use crate::util::{InputExt, OrderedHashMap, move_with_rotation};
 use crate::world::WorldSize;
 
 /// note that this is not updated on client for boats that it doesn't control
@@ -68,8 +68,14 @@ pub fn in_range(first: Vec2, second: Vec2, by: f32) -> bool {
 
 #[derive(Debug, Component, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WeaponCounter {
-    pub weapons: HashMap<Weapon, u8>,
+    pub weapons: OrderedHashMap<Weapon, WeaponData>,
     pub selected_weapon: Option<Weapon> // potential terry fox
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WeaponData {
+    pub max: u16,
+    pub avaliable: u16,
 }
 
 impl WeaponCounter {
@@ -80,6 +86,14 @@ impl WeaponCounter {
         }
     }
 }
+
+// #[derive(Debug, Resource)]
+// pub struct BlockInput(pub bool);  // TODO
+
+// /// .run_if for movement, fire weapon systems etc
+// pub fn input_free(res: Res<BlockInput>) -> bool {
+//     !res.0
+// }
 
 // maybe Trait on Rect？
 /// useful helpers like getting corners and large bounding box
@@ -271,7 +285,7 @@ pub struct TargetRotation(pub Radian);
 
 
 /// used by weapons to find accleration
-#[derive(Component, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Component, Copy, Clone, PartialEq, Serialize, Deserialize, Debug)]
 pub struct LastSpeed(pub Speed);
 
 /// the target speed by which the ships should aim to accelerate towards
@@ -472,7 +486,7 @@ impl From<Vec2> for Position {
 
 /// a trait that marks a type as present in the spritesheet
 pub trait FetchSprite {
-    /// returns the name in spritesheet.json
+    /// returns the name in spritesheet.json and sprites_css.json
     fn fetch_sprite_str(&self) -> impl AsRef<str>;
 }
 

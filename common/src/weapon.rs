@@ -28,7 +28,7 @@ pub enum Weapon {
     Shell_127x680Mmr,
     #[length = 1.1]
     #[weapon_type = "Rocket"]
-    #[max_speed = 1312.1]
+    #[max_speed = 388.8]
     Of45,
     #[length = 7.9]
     #[weapon_type = "Torpedo"]

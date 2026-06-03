@@ -217,7 +217,7 @@ fn update_state(
         }
     }
 }
-
+// TODO a lot of misses and moving when firing weapon
 
 /// using hack to achieve system to be only triggered when both
 /// [`ActionState<T>`] and [`Controlled`] added

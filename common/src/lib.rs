@@ -59,3 +59,5 @@ const DEFAULT_MAX_TURN_DEG: crate::primitives::Radian = crate::primitives::Radia
 #[cfg(all(not(debug_assertions), feature = "client", feature = "server"))]
 // not erroring in debug to look good to rust-analyzer
 compile_error!("Client and Server features mutually exclusive");
+
+// TODO wrapping of the World like the Earth, suggested by OceanForceYT

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bevy::{color::palettes::css::GRAY, prelude::*};
-use common::{Boat, BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, CircleHud, OCEAN_SURFACE, circle_hud_mesh, primitives::{CustomTransform, MeshBundle, Size, WeaponCounter}};
+use common::{Boat, BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, CircleHud, OCEAN_SURFACE, circle_hud_mesh, primitives::{CustomTransform, MeshBundle, Size, WeaponCounter}, util::OrderedHashMap};
 use lightyear::prelude::*;
 
 use crate::asset::SpriteMap;
@@ -169,7 +169,7 @@ impl Default for BoatBundle {
             // mouse_target: TargetRotation::default(),
             // target_speed: TargetSpeed::default(),
             weapon_counter: WeaponCounter {
-                weapons: HashMap::new(),
+                weapons: OrderedHashMap::new(),
                 selected_weapon: None,
             },
             boat: Boat::Yasen, // should be G5

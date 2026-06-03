@@ -191,7 +191,7 @@ impl Plugin for ProtocolPlugin {
         // replication
         app.register_component::<WorldSize>();
         app.register_component::<Boat>();
-        app.register_component::<WeaponCounter>();
+        // app.register_component::<WeaponCounter>();
         app.register_component::<CustomTransform>()
             .add_prediction()
             .add_linear_interpolation();

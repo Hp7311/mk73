@@ -2,12 +2,15 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::ops::{Range, RangeInclusive};
+use std::{iter, slice};
 use std::sync::LazyLock;
+use bevy::ecs::query::{QueryData, QueryFilter};
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*};
 #[cfg(feature = "server")]
 #[cfg(false)]
 use lightyear::websocket::server::Identity;
+use serde::{Deserialize, Serialize};
 use crate::primitives::{Radian, Speed};
 use crate::primitives::{Mk48Rect, WidthHeight, ZIndex};
 
@@ -374,6 +377,71 @@ impl<T: std::fmt::Debug, E: std::fmt::Debug> ResultExt for Result<T, E> {
         }
         self
     }
+}
+
+/// const alternative to [`px`]
+pub const fn pixel(input: i32) -> Val {
+    Val::Px(input as f32)
+}
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, PartialOrd)]
+pub struct OrderedHashMap<K, V> {
+    vec: Vec<(K, V)>
+}
+
+impl<K, V> OrderedHashMap<K, V> {
+    pub fn new() -> Self {
+        OrderedHashMap { vec: Vec::new() }
+    }
+    pub fn from_arr<const N: usize>(arr: [(K, V); N]) -> Self {
+        OrderedHashMap { vec: Vec::from(arr) }
+    }
+    pub fn push(&mut self, key: K, value: V) {
+        self.vec.push((key, value));
+    }
+    pub fn iter(&self) -> slice::Iter<'_, (K, V)> {
+        self.vec.iter()
+    }
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
+        self.vec.iter().map(|(k, _)| k)
+    }
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.vec.iter().map(|(_, v)| v)
+    }
+}
+
+impl<K: PartialEq, V> OrderedHashMap<K, V> {
+    pub fn get(&self, key: &K) -> Option<&V> {
+        self.vec.iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v)
+    }
+}
+
+/// Returns mutable access to specific item that appears in `children` first in `query`
+/// 
+/// Expand to
+/// ```ignore
+/// let entity = children.iter()
+///     .find(|e| query.get(*e).is_ok())
+///     .unwrap();
+/// query.get_mut(entity)
+/// ```
+/// 
+/// used to solve rust not passing this:
+/// ```ignore
+/// children.iter().find_map(|e| images.get_mut(e).ok())
+/// ```
+#[macro_export]
+macro_rules! get_mut {
+    ($children:expr, $query:expr) => {
+        {
+            let entity = $children.iter()
+                .find(|e| $query.get(*e).is_ok()).expect("Couldn't find any children in query");
+
+            $query.get_mut(entity).ok()
+        }
+    };
 }
 
 #[cfg(test)]

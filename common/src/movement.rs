@@ -177,7 +177,7 @@ impl Plugin for WeaponMovementPlugin {
     }
 }
 
-fn rotate_weapon(q: Query<(&mut Transform, &TargetRotation, &Weapon)>) {
+fn rotate_weapon(q: Query<(&mut Transform, &TargetRotation, &Weapon)>) {  // simply don't add TargetRotation for weapons e.g. shells
     for (mut transform, target, weapon) in q {
         let max_turn_radian = weapon.max_turn_radian();
         let current_rotation = transform.rotation.wrap_radian();

@@ -43,7 +43,7 @@ impl Plugin for InputBufferPlugin {
                     BoatState::Moving { locked: true },
                     BoatState::Moving { locked: false }
                 ))
-                // .run_if(resource_changed::<CursorPos>)  // this causes bug where player doesn't move cursor but presses LMB
+                // .run_if(input_free)
         );
         app.add_systems(Update, check_reached);
     }
