@@ -12,11 +12,10 @@
 //! move-to-target currently implemented as not setting [`ActionState`] to `None`
 //! maybe store the move-to-target vals in a client-local component once released LMB
 
-use bevy::prelude::*;
+use bevy::{input::common_conditions::input_pressed, prelude::*};
 use common::{Boat, eq, primitives::{
-    CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Speed,
-    WrapRadian as _,
-}, protocol::{Move, Rotate}, util::{add_circle_hud, calculate_from_proportion, get_rotate_radian}};
+    CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Speed, WrapRadian as _
+}, protocol::{Move, Rotate}, util::{add_circle_hud, calculate_from_proportion, get_rotate_radian, input_not_pressed}};
 use lightyear::{
     input::client::InputSystems,
     prelude::{
@@ -43,9 +42,23 @@ impl Plugin for InputBufferPlugin {
                     BoatState::Moving { locked: true },
                     BoatState::Moving { locked: false }
                 ))
+                .run_if(input_pressed(MouseButton::Left))
                 // .run_if(input_free)
         );
-        app.add_systems(Update, check_reached);
+        app.add_systems(FixedPreUpdate, (
+            // only reset rotation if reached
+            |mut rotate: Single<&mut ActionState<Rotate>, With<InputMarker<Rotate>>>, custom: Single<&CustomTransform, With<Controlled>>| {
+                if let Rotate(Some(input)) = rotate.0
+                    && eq!(input, custom.rotation, ?radian)
+                {
+                    debug!("Clearing Rotate input");
+                    rotate.0 = Rotate(None);
+                }
+            },
+            reset_input::<Move>
+        ).run_if(input_not_pressed(MouseButton::Left)));
+
+        // app.add_systems(FixedUpdate, (move_tf_others, update_tf_controlled).in_set(ClientMovementSet::ApplyToTransform));
     }
 }
 
@@ -134,6 +147,7 @@ struct Reversed(pub bool);
 /// clear [`ActionState<Rotate>`] if reached
 /// 
 /// note that we're not clearing ActionSpeed<Move> because of moving issues
+#[allow(dead_code)]
 fn check_reached(
     query: Single<(&CustomTransform, &mut ActionState<Rotate>), (With<Controlled>, Changed<CustomTransform>)>
 ) {
@@ -143,5 +157,30 @@ fn check_reached(
         && eq!(custom.rotation.0, target.0)
     {
         rotate.0.0 = None;
+    }
+}
+
+/// reset `T`'s actionstate to `T::default`
+fn reset_input<T>(
+    mut input: Single<&mut ActionState<T>, With<InputMarker<T>>>
+) where
+    T: Send + Sync + 'static + Default + PartialEq
+{
+    if input.0 != T::default() {
+        input.0 = T::default();
+    }
+}
+/// reset `T` to its default value if `condition` is met
+#[allow(dead_code)]
+fn reset_input_if<T>(
+    mut condition: impl FnMut(&T) -> bool + 'static
+) -> impl FnMut(Single<&mut ActionState<T>, With<InputMarker<T>>>)
+where 
+    T: Send + Sync + 'static + Default
+{
+    move |mut input| {
+        if condition(&input.0) {
+            input.0 = T::default();
+        }
     }
 }

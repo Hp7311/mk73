@@ -54,6 +54,7 @@ fn main() {
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client);
 
+    // app.add_systems(FixedUpdate, update_tf.in_set(ServerMovementSet::ApplyToTransform));
     // app.add_plugins(NetPlugin);
 
     app.run();
@@ -131,7 +132,7 @@ fn handle_connected_client(
             ..CustomTransform::default()
         },
         boat,
-        WeaponCounter::from_boat(&boat),  // TODO not replicated, will do messages to update
+        WeaponCounter::from_boat(&boat),  // notTODO not replicated, will do messages to update
         OCEAN_SURFACE,
         PlayerStats::new(0),
         
@@ -173,7 +174,8 @@ fn recv_new_z_index(
         // }
     // }
     for (z_update, mut z_index) in q {
-        let Some(target) = z_update.0.0 else { return; };
+        let Some(target) = z_update.0.0 else { continue; };
+        info!("Updating ZIndex to {:?}", target);
         *z_index = target;
     }
 }

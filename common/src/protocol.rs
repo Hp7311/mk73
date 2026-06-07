@@ -10,7 +10,7 @@ use lightyear::{
     prelude::{input::native::ActionState, *},
 };
 use serde::{Deserialize, Serialize};
-use crate::primitives::{Position, WeaponCounter, ZIndex};
+use crate::primitives::{Position, ZIndex};
 use crate::weapon::Weapon;
 use crate::world::WorldSize;
 
@@ -191,7 +191,7 @@ impl Plugin for ProtocolPlugin {
         // replication
         app.register_component::<WorldSize>();
         app.register_component::<Boat>();
-        // app.register_component::<WeaponCounter>();
+        app.register_component::<crate::primitives::WeaponCounter>();
         app.register_component::<CustomTransform>()
             .add_prediction()
             .add_linear_interpolation();

@@ -8,7 +8,7 @@ use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
 use common::{Boat, OCEAN_SURFACE, eq};
 use common::collision::{out_of_bound_point, out_of_bounds, square_does_not_intersects};
-use common::primitives::{CustomTransform, Mk48Rect, PlayerStats, Point, Radian, ZIndex, in_range};
+use common::primitives::{CustomTransform, Mk48Rect, PlayerStats, Point, Position, Radian, ZIndex, in_range};
 use common::protocol::{OilRigTransform as OilRig, PointTransform, SendToClient};
 use common::util::{avaliable_cords, point_in_square};
 use common::WorldSize;
@@ -35,6 +35,9 @@ impl Plugin for OilRigPlugin {
             );
     }
 }
+
+// observed that a rig wasn't spawning points once
+
 /// use [`rand::rng()`] to determine whether to spawn a new [`Point`]
 static SPAWN_POINT_VEC: LazyLock<Vec<bool>> = LazyLock::new(|| {
     #[cfg(debug_assertions)]
@@ -205,7 +208,7 @@ fn rig_spawn_points(
             ));
 
             point_amount.add(chosen_type.worth());
-        }
+        } 
     }
 }
 
@@ -220,9 +223,9 @@ fn move_points(
 ) {
     for (boats_in_range, mut point) in points_transform.iter_mut().filter_map(|point_info| {
         let boats_in_range = boats.iter()
-            .filter(|&(CustomTransform { position: boat_pos, ..}, boat, boat_depth)| {
+            .filter(|&(CustomTransform { position: Position(boat_pos), ..}, boat, boat_depth)| {
                 // info!(?boat_depth, ?point_info.depth);
-                in_range(boat_pos.0, point_info.position, boat.circle_hud_radius())
+                in_range(*boat_pos, point_info.position, boat.circle_hud_radius())
                     // TODO points should "lock in" to a boat once it starts to dive
                     && eq!(*boat_depth, point_info.depth, ?precision = 0.05)
             })

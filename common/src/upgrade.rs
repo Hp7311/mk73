@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use lightyear::prelude::*;
 
-use crate::{Boat, BoatClientId, SubKind, primitives::WeaponCounter, protocol::{UpgradeMessage, UpgradeRollback}};
+use crate::{Boat, primitives::WeaponCounter, protocol::{UpgradeMessage, UpgradeRollback}};
 
 
 /// - client
@@ -43,7 +43,7 @@ impl Plugin for UpgradePlugin {
 
 #[cfg(feature = "client")]
 mod client {
-    use crate::boat::CircleHud;
+    use crate::boat::{CircleHud, SubKind};
     use crate::{BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, circle_hud_mesh};
     use crate::protocol::{EntityOnServer, SendToServerOrdered};
     use crate::primitives::{MaybePushToSurface, UpgradeEvent, UpgradeRollbackEvent};
@@ -126,7 +126,7 @@ mod client {
 }
 #[cfg(feature = "server")]
 mod server {
-    use crate::{primitives::PlayerStats, protocol::SendToClient};
+    use crate::{primitives::PlayerStats, protocol::SendToClient, BoatClientId};
     use super::*;
 
     pub(super) fn recv_upgrade(
@@ -144,7 +144,7 @@ mod server {
                     mut boat, mut weapon_counter
                 )) = stats.get_mut(Entity::from_bits(entity_on_server.0)) {
                     if stat.can_upgrade(target) {
-                        trace!("Client {client_id:?} upgrading to {target:?}");
+                        debug!("Client {client_id:?} upgrading to {target:?}");
                         *stat.level_mut() = target.level();
                         upgrade_components(
                             target,

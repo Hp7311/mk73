@@ -33,7 +33,7 @@ pub struct MovementPlugin {
     pub move_weapon: bool
 }
 
-// FIXME sometimes jerky movement (maybe in debug mode?)
+// sometimes jerky movement (not recently observed) (maybe in debug mode?)
 // wow, private documented items can be seen from public
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
@@ -48,6 +48,8 @@ impl Plugin for MovementPlugin {
         }
     }
 }
+
+
 #[cfg(feature = "server")]
 mod server {
     use super::*;
@@ -90,7 +92,13 @@ fn rotate_inner(rotate_input: &ActionState<Rotate>, custom: &mut CustomTransform
 }
 
 fn move_inner(move_input: &ActionState<Move>, custom: &mut CustomTransform, boat: &Boat, world_size: &WorldSize) {
-    let Some(mut target) = move_input.0.0 else { return; };
+    // move no matter what to achieve free movement after released LMB
+    if !custom.move_position_checked(world_size, boat.render_size()) {
+        // maybe UI pop-up
+    }
+    let Some(mut target) = move_input.0.0 else {
+        return;
+    };
     validate_acceleration(&mut target, custom.speed, boat.acceleration());
 
     if validate_speed_cheating(&target, boat.max_speed(), boat.rev_max_speed()) == SpeedValidity::Error {
@@ -98,10 +106,6 @@ fn move_inner(move_input: &ActionState<Move>, custom: &mut CustomTransform, boat
         return;
     }
     custom.speed = target;
-
-    if !custom.move_position_checked(world_size, boat.render_size()) {
-        // maybe UI pop-up
-    }
 }
 
 /// validates client input against max turning degree

@@ -1,9 +1,8 @@
 mod helper;
 
-use std::{collections::HashMap, ops::Not, sync::LazyLock};
+use std::{ops::Not, sync::LazyLock};
 
-use proc_macro::{TokenStream};
-use proc_macro_crate::Error::CouldNotRead;
+use proc_macro::TokenStream;
 use proc_macro2::{Span, Ident, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{Data, DataEnum, DeriveInput, Expr, ExprLit, Lit, LitFloat, LitInt, Meta as SynMeta, MetaNameValue, Token, Variant, parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::Comma};

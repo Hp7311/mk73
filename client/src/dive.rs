@@ -34,9 +34,6 @@ impl Plugin for DivingPlugin {
             clear_z_update.run_if(in_state(DivingStatus::None))
         ).in_set(InputSystems::WriteClientInputs));
         app.add_observer(push_to_surface_on_upgrade);
-
-        // app.add_systems(FixedUpdate, debug_component!(ZIndex,,));
-        // app.add_systems(FixedUpdate, dbg_s);
     }
 }
 
@@ -103,6 +100,7 @@ fn update_diving_status(
     getter: Res<State<DivingStatus>>,
     transform: Single<&Transform, (With<Controlled>, With<Boat>)>,
 ) {
+    debug!("Just pressed R");
     // if buttons.just_pressed(KeyCode::KeyR) {  already set in .run_if
         let target = match getter.get() {
             DivingStatus::None => {
@@ -165,7 +163,7 @@ fn act_on_state(
         }
     }
 
-    info!("State: {:?}", diving_status.get());
+    trace!("State: {:?}, Depth: {:?}", diving_status.get(), z_index);
     // let amount = tcp_wrapper.write(&TcpClientRequest::NewZIndex(*z_index).to_bytes()).unwrap();
     // assert_eq!(amount, 4);
 
@@ -194,7 +192,7 @@ fn clear_z_update(mut z_update: Single<&mut ActionState<ZIndexUpdate>, With<Inpu
 
         if *f == 0 {
             z_update.0 = ZIndexUpdate(None);
-            // info!("Cleared");
+            debug!("Cleared ZIndexUpdate after 80 frames");
             FRAME_TO_CLEAR = None;
         }
     }
@@ -209,7 +207,7 @@ fn push_to_surface_on_upgrade(
 ) {
     if !transform.reached(OCEAN_SURFACE, DecimalPoint::Three)
     {
-        info!("Surfacing");
+        debug!("Surfacing after upgrading to a ship");
         setter.set(DivingStatus::PushingToSurface(trigger.last_boat));
     }
 }

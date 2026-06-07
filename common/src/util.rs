@@ -2,9 +2,8 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::ops::{Range, RangeInclusive};
-use std::{iter, slice};
+use std::slice;
 use std::sync::LazyLock;
-use bevy::ecs::query::{QueryData, QueryFilter};
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*};
 #[cfg(feature = "server")]
@@ -43,6 +42,9 @@ macro_rules! eq {
     ($x:expr, $y:expr, ?vec3, ?precision = $precision:expr) => {
         ($x - $y).abs().x < $precision && ($x - $y).abs().y < $precision && ($x - $y).abs().z < $precision
     };
+    ($x:expr, $y:expr, ?radian) => {
+        ($x - $y).abs() < $crate::primitives::Radian(0.001)
+    }
 }
 
 /// gets the rotation in radians according to `source` and `destination`
@@ -187,6 +189,13 @@ pub fn calculate_from_proportion(
 /// calculates the circle HUD by adding 7/10 of `length` to `length`
 pub fn add_circle_hud(length: f32) -> f32 {
     length * 0.7 + length
+}
+
+pub fn input_not_pressed<T>(input: T) -> impl FnMut(Res<ButtonInput<T>>) -> bool + Clone
+where
+    T: Clone + Eq + std::hash::Hash + Send + Sync + 'static
+{
+    move |buttons| !buttons.pressed(input.clone())
 }
 
 /// known Euclidean coordinates, known angle to be rotated, calculates the
