@@ -23,12 +23,13 @@ struct Vec2Data {
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let distance_to_origin = distance(in.world_position.xy, player_pos.value);
 
-    // discard the pixel
-    // if (distance_to_origin < radius.value) {
-    //     discard;
-    // }
-    // faster than `discard`
     let darkness = select(darkness.value, 0.0, distance_to_origin < radius.value);
+    // equivalent:
+    // if distance_to_origin < radius.value {
+    //      0.0
+    // } else {
+    //      darkness.value
+    // }
 
     return vec4<f32>(0.0, 0.0, 0.0, darkness);
 }

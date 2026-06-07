@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref};
+use std::collections::HashMap;
 
 use bevy::prelude::*;
 use common::{primitives::FetchSprite, util::InputExt};
@@ -16,7 +16,7 @@ impl Plugin for AssetPreloadPlugin {
     }
 }
 
-const FONT_PATHS: &[&str] = &[
+pub const FONT_PATHS: &[&str] = &[
     "Aileron-Regular.otf"
 ];
 

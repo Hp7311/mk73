@@ -8,6 +8,7 @@ use common::util::get_rotate_radian;
 use common::{Boat, CIRCLE_HUD, Weapon};
 use crate::FiresWeapon;
 use crate::asset::SpriteMap;
+use crate::ui::UpdateWeaponSelectionBarCount;
 
 /// movement in [`common::movement`]
 pub(crate) struct WeaponPlugin;
@@ -29,7 +30,7 @@ fn fire_weapon(
     _: On<FiresWeapon>,
     cursor_pos: Res<CursorPos>,
     mut sender: Single<&mut MessageSender<SpawnWeapon>>,
-    boat: Single<(&Transform, &WeaponCounter), (With<Controlled>, With<Boat>)>,
+    boat: Single<(&Transform, &mut WeaponCounter), (With<Controlled>, With<Boat>)>,
     client_id: Single<&LocalId>,
 
     mut commands: Commands,
@@ -37,19 +38,25 @@ fn fire_weapon(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>
 ) {
-    let (transform, weapon_counter) = boat.into_inner();
+    let (transform, mut weapon_counter) = boat.into_inner();
+    let Some(selected) = weapon_counter.selected_weapon else { return; };
     let mut msg = SpawnWeapon {
-        weapon: if let Some(weapon) = weapon_counter.selected_weapon {
-            weapon
-        } else {
-            return;
-        },
+        weapon: selected,
         position: transform.translation,  // currently starts at centre of boat
         starting_rotation: transform.rotation.wrap_radian(),
         end_rotation: get_rotate_radian(transform.translation.xy(), cursor_pos.0).wrap_radian(),
         entity_on_client: EntityOnClient(u64::MAX),
         client_id: client_id.0
     };
+
+    let Some(count) = weapon_counter.weapons.get_mut(&selected) else { panic!() };
+
+    if count.avaliable == 0 {
+        return;  // no weapons left
+    }
+    count.avaliable -= 1;
+
+    commands.trigger(UpdateWeaponSelectionBarCount);    
 
     msg.entity_on_client.0 = commands.spawn((
         Sprite {

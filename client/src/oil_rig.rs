@@ -17,7 +17,7 @@ fn spawn_rig(
     trigger: On<Add, OilRigTransform>,
     rigs: Query<&OilRigTransform>,
 
-    assert_server: Res<AssetServer>,
+    sprites: Res<SpriteMap>,
     mut commands: Commands
 ) {
     // NOTE client-inserted components get removed when server despawns the replicating entity
@@ -30,8 +30,9 @@ fn spawn_rig(
             ..default()
         },
         Sprite {
-            image: assert_server.load(OilRigTransform::file_name()),
+            image: sprites.image(),
             custom_size: Some(OilRigTransform::custom_size()),
+            texture_atlas: sprites.get(rig_info.clone()),
             ..default()
         },
         Name::new("Oil rig")

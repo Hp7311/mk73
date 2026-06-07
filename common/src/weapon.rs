@@ -43,7 +43,7 @@ pub enum Weapon {
     #[weapon_type = "RocketTorpedo"]
     #[max_speed = 388.8]
     #[json = "Rpk6"]
-    Vodopad,  // TODO associated 82R
+    Vodopad,  // todo associated 82R
     #[length = 1.6]
     #[weapon_type = "AntiAir"]
     #[max_speed = 1108]
@@ -54,7 +54,7 @@ pub enum Weapon {
     Brosok
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum WeaponType {
     Torpedo,
     Shell,
@@ -68,6 +68,9 @@ pub enum WeaponType {
 
 impl Weapon {
     pub fn acceleration(&self) -> Speed {
+        if matches!(self.weapon_type(), WeaponType::Shell | WeaponType::Rocket) {
+            return Speed::from_raw(f32::MAX)  // from raw to avoid overflow
+        }
         Speed::from_knots(match self {
             Weapon::Set65 => 10.0,
             _ => 10.0 // for now
@@ -75,6 +78,9 @@ impl Weapon {
     }
     /// turn speed
     pub fn max_turn_radian(&self) -> Radian {
+        if matches!(self.weapon_type(), WeaponType::Shell | WeaponType::Rocket) {
+            return Radian(f32::MAX)
+        }
         DEFAULT_MAX_TURN_DEG * match self {
             Self::Set65 => 3.0,
             _ => 3.0 // for now
@@ -83,7 +89,7 @@ impl Weapon {
 }
 
 impl WeaponType {
-    // TODO make a marker component on static weapons for perf
+    // todo make a marker component on static weapons for perf
     /// we're not moving static weapons for now
     pub fn is_static(&self) -> bool {
         matches!(self, Self::DepthCharge)

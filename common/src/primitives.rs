@@ -71,7 +71,7 @@ pub struct WeaponCounter {
     pub selected_weapon: Option<Weapon> // potential terry fox
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WeaponData {
     pub max: u16,
     pub avaliable: u16,
@@ -202,38 +202,38 @@ impl Mk48Rect {
 /// helper struct containing a raw speed
 ///
 /// all ops default to raw repensentation
-#[derive(
-    Serialize, Deserialize, Debug, Clone, Copy, Default, Deref, Component, PartialEq, Reflect,
-)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Deref, Component, PartialEq, Reflect)]
 pub struct Speed(f32);
 
 impl Speed {
     pub const ZERO: Self = Self(0.0);
-    const KNOTS_TO_RAW: f32 = 1.0 / 23.0;
-    const METERS_TO_RAW: f32 = 1.94384 / 23.0;
+    const MULTIPLIER: f32 = 23.0;
+    const KNOTS_TO_RAW: f32 = 1.0 / Self::MULTIPLIER;
+    const METERS_TO_RAW: f32 = 1.94384 / Self::MULTIPLIER;
     #[inline]
-    pub fn from_knots(knots: f32) -> Self {
+    pub const fn from_knots(knots: f32) -> Self {
         Speed(knots * Self::KNOTS_TO_RAW)
     }
+    /// from meters per sescond
     #[inline]
-    pub fn from_meter(meter: f32) -> Self {
+    pub const fn from_meter(meter: f32) -> Self {
         Speed(meter * Self::METERS_TO_RAW)
     }
-    pub fn from_raw(raw: f32) -> Self {
+    pub const fn from_raw(raw: f32) -> Self {
         Speed(raw)
     }
-    pub fn get_knots(&self) -> f32 {
+    pub const fn get_knots(&self) -> f32 {
         self.0 / Self::KNOTS_TO_RAW
     }
-    pub fn get_meters(&self) -> f32 {
+    pub const fn get_meters(&self) -> f32 {
         self.0 / Self::METERS_TO_RAW
     }
     #[inline]
-    pub fn get_raw(&self) -> f32 {
+    pub const fn get_raw(&self) -> f32 {
         self.0
     }
     /// with raw
-    pub fn overwrite(&mut self, with: Speed) {
+    pub const fn overwrite(&mut self, with: Speed) {
         *self = with;
     }
 }
@@ -411,6 +411,8 @@ impl WrapRadian for Radian {
 /// 
 /// ### Important
 /// only for the physics depth, NOT the rendering depth ([`Transform::translation`])
+/// 
+/// boats use this both for physics and rendering
 /// 
 /// also used for strong typing
 #[derive(Component, Serialize, Deserialize, PartialEq, Deref, PartialOrd, Copy, Clone, Debug, Default, Reflect)]

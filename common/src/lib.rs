@@ -11,6 +11,9 @@ mod upgrade;
 #[cfg(feature = "client")]
 mod shaders;
 
+// TODO smaller raw size to knots, smaller turning speed etc
+// TODO test these
+
 pub mod collision;
 pub mod primitives;
 pub mod protocol;

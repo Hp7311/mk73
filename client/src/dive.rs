@@ -34,10 +34,18 @@ impl Plugin for DivingPlugin {
             clear_z_update.run_if(in_state(DivingStatus::None))
         ).in_set(InputSystems::WriteClientInputs));
         app.add_observer(push_to_surface_on_upgrade);
+        app.add_systems(FixedUpdate, dbg_just_pressed.run_if(input_just_pressed(KeyCode::KeyR)));
     }
 }
 
-#[allow(clippy::needless_update)]  // wasm buffers
+fn dbg_just_pressed() {
+    info!("Just pressed R!");  /* sometimes doesn't dive even though pressed (maybe 2 presses for one like this
+    
+2026-06-07T16:38:55.877286Z  INFO client::dive: Just pressed R!
+2026-06-07T16:38:55.877467Z  INFO client::dive: Just pressed R!
+) */
+}
+#[allow(clippy::needless_update)]  // webgl paddings
 fn spawn_diving_overlay(
     mut commands: Commands,
     mut diving_overlay_material: ResMut<Assets<DivingOverlayShader>>,
@@ -55,7 +63,7 @@ fn spawn_diving_overlay(
                         player_pos: vec2(0.0, 0.0),
                         darkness: 0.0,
                         ..default()
-                    })),  // FIXME bug at edge
+                    }))
                 },
                 DivingOverlay,
                 Name::from("Diving overlay"),
@@ -65,16 +73,14 @@ fn spawn_diving_overlay(
 }
 
 fn update_diving_overlay(
-    boat: Single<(&CustomTransform, &Transform), (With<Boat>, With<Controlled>, Changed<CustomTransform>)>,
+    boat_tf: Single<&Transform, (With<Boat>, With<Controlled>, Changed<CustomTransform>)>,
     mut diving_overlay_material: ResMut<Assets<DivingOverlayShader>>,
-    overlay: Single<(&MeshMaterial2d<DivingOverlayShader>, &mut Transform), (With<DivingOverlay>, Without<Boat>)>,
+    overlay: Single<&MeshMaterial2d<DivingOverlayShader>, (With<DivingOverlay>, Without<Boat>)>,
 ) {
-    let (material_handle, mut transform) = overlay.into_inner();
+    let material_handle = overlay.into_inner();
     if let Some(diving_material) = diving_overlay_material.get_mut(material_handle) {
-        let (custom, boat_tf) = *boat;
-        diving_material.player_pos = custom.position.0;
-        transform.translation.x = boat_tf.translation.x;
-        transform.translation.y = boat_tf.translation.y;
+
+        diving_material.player_pos = boat_tf.translation.xy();
         (diving_material.radius, diving_material.darkness) = calculate_diving_overlay(
             boat_tf.translation.z_index(),
             OCEAN_FLOOR,

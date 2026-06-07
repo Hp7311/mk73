@@ -1,9 +1,9 @@
 use bevy::{input_focus::InputFocus, prelude::*};
 use bevy_inspector_egui::egui::emath::GuiRounding;
-use common::{Boat, MainCamera, Weapon, get_mut, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, Size, UpgradeEvent, UpgradeRollbackEvent, WeaponCounter}, protocol::{Move, Rotate}, util::pixel};
+use common::{Boat, MainCamera, Weapon, get_mut, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, Size, UpgradeEvent, UpgradeRollbackEvent, WeaponCounter, WeaponData}, protocol::{Move, Rotate}, util::pixel};
 use lightyear::prelude::{input::native::{ActionState, InputMarker}, *};
 
-use crate::{BoatState, asset::{FontMap, SpriteMap, SpriteUiMap}, weapon::ChangeWeapon};
+use crate::{BoatState, asset::{FONT_PATHS, FontMap, SpriteMap, SpriteUiMap}, weapon::ChangeWeapon};
 
 pub(crate) struct UiPlugin;
 
@@ -275,7 +275,9 @@ fn on_choose_upgrade(
     mut progress_bar: Single<&mut Visibility, (With<ProgressBar>, Without<UpgradeBar>)>,
 
     mut sprite: Single<&mut Sprite, With<Controlled>>,
-    sprites: Res<SpriteMap>
+    sprites: Res<SpriteMap>,
+
+    mut commands: Commands
 ) {
     // sprite.image = sprites.image();
     sprite.custom_size = Some(trigger.target.render_size());
@@ -286,6 +288,8 @@ fn on_choose_upgrade(
 
     **upgrade_bar = Visibility::Hidden;
     **progress_bar = Visibility::Visible;
+
+    commands.trigger(UpdateWeaponSelectionBar { target: trigger.target });
 }
 
 fn on_upgrade_rollback(
@@ -320,6 +324,9 @@ impl Plugin for WeaponUiPlugin {
         app.add_observer(spawn_weapon_selection_bar)
             .add_systems(Update, switch_weapon_selection_bar_brightness)
             .add_observer(change_weapon);
+
+        app.add_observer(update_selection_bar)
+            .add_observer(update_selection_bar_count);
     }
 }
 
@@ -335,8 +342,21 @@ struct WeaponSelectionIndividualImage;
 #[derive(Debug, Component)]
 struct WeaponSelectionIndividualBox(Weapon);
 
+#[derive(Event)]
+struct UpdateWeaponSelectionBar {
+    target: Boat
+}
+/// we're assuming that it's selected.aval -= 1
+#[derive(Event)]
+pub(crate) struct UpdateWeaponSelectionBarCount;
+
 #[derive(Debug, Component)]
 struct WeaponDataText;
+
+const FONT_SIZE: f32 = 15.0;
+const PADDING_TOP: i32 = 10;
+const ROW_GAP: i32 = 10;
+const PADDING: UiRect = UiRect::all(pixel(10)).with_left(pixel(5)).with_right(pixel(5));
 
 // technically UI stuff
 fn spawn_weapon_selection_bar(
@@ -364,72 +384,157 @@ fn spawn_weapon_selection_bar(
         },
         WeaponSelection,
     ));
-    let height = weapon_counter.weapons.keys().max_by(|this, other| {
-        Ord::cmp(
-            &sprites.get_size(**this).unwrap().height(),
-            &sprites.get_size(**other).unwrap().height()
-        )
-    }).unwrap();
-    let height = sprites.get_size(*height).unwrap().height() + PADDING_TOP as u32 * 2 + FONT_SIZE as u32 + ROW_GAP as u32;  // TODO .map().max()
-    const FONT_SIZE: f32 = 15.0;
-    const PADDING_TOP: i32 = 10;
-    const ROW_GAP: i32 = 10;
-    const PADDING: UiRect = UiRect::all(pixel(10)).with_left(pixel(5)).with_right(pixel(5));
+    let Some(height) = weapon_counter.weapons.keys().map(|this| {
+        sprites.get_size(*this).unwrap().height()
+    }).max() else {
+        return;  // hm
+    };
+    let height = get_weapon_selection_bar_height(height);
 
-    for (weapon, data) in weapon_counter.weapons.iter() {
-        base_entity.with_children(|parent| {
-            parent.spawn((
-                // box
-                Node {
-                    height: px(height),
-                    padding: PADDING,
-                    flex_direction: FlexDirection::Column,  // image and text vertical
-                    row_gap: px(ROW_GAP),  // so text doesn't get too close to image
-                    ..default()
-                },
-                BackgroundColor(if weapon_counter.selected_weapon.unwrap() == *weapon {
-                    PRESSED_BACKGROUND
-                } else {
-                    NORMAL_BACKGROUND
-                }),
-                Button,
-                WeaponSelectionIndividualBox(*weapon)
-            )).with_child((
-                // image
-                ImageNode {
-                    image: sprites.image(),
-                    texture_atlas: sprites.get(*weapon),
-                    color: NORMAL,
-                    ..default()
-                },
-                Node {
-                    position_type: PositionType::Relative,
-                    width: px(sprites.get_size(*weapon).unwrap().width()),
-                    height: px(sprites.get_size(*weapon).unwrap().height()),
-                    ..default()
-                },
-                WeaponSelectionIndividualImage
-            ))
-            .with_child((
-                Text::new(format!("{}/{}", data.avaliable, data.max)),  // using indent
-                TextFont {
-                    font: fonts.get_long_lived("Aileron-Regular.otf").unwrap(),
-                    font_size: FONT_SIZE,
-                    ..default()
-                },
-                TextColor(if weapon_counter.selected_weapon.unwrap() == *weapon {
-                    TEXT_SELECTED
-                } else {
-                    TEXT_LIGHT
-                }),
-                TextLayout {
-                    justify: Justify::Right,
-                    ..default()
-                },
-                WeaponDataText
-            ));
-        });
-    }
+    base_entity.with_children(|base| {
+        for &(weapon, data) in weapon_counter.weapons.iter() {
+            let settings = WeaponSelectionSettings {
+                height,
+                selected_weapon: weapon_counter.selected_weapon.unwrap(),
+                weapon,
+                data,
+                sprites: &sprites,
+                font: Some(fonts.get_long_lived(FONT_PATHS[0]).unwrap())
+            };
+            base.spawn(weapon_selection_bundle(settings));
+        }
+    });
+}
+
+struct WeaponSelectionSettings<'a> {
+    height: u32,
+    selected_weapon: Weapon,
+    weapon: Weapon,
+    data: WeaponData,
+    sprites: &'a SpriteUiMap,
+    font: Option<Handle<Font>>
+}
+
+fn weapon_selection_bundle(settings: WeaponSelectionSettings) -> impl Bundle {
+    let weapon = settings.weapon;
+    (
+        // box
+        Node {
+            height: px(settings.height),
+            padding: PADDING,
+            flex_direction: FlexDirection::Column,  // image and text vertical
+            row_gap: px(ROW_GAP),  // so text doesn't get too close to image
+            ..default()
+        },
+        BackgroundColor(if settings.selected_weapon == weapon {
+            PRESSED_BACKGROUND
+        } else {
+            NORMAL_BACKGROUND
+        }),
+        Button,
+        WeaponSelectionIndividualBox(weapon),
+        children![(
+            // image
+            ImageNode {
+                image: settings.sprites.image(),
+                texture_atlas: settings.sprites.get(weapon),
+                color: NORMAL,
+                ..default()
+            },
+            Node {
+                position_type: PositionType::Relative,
+                width: px(settings.sprites.get_size(weapon).unwrap().width()),
+                height: px(settings.sprites.get_size(weapon).unwrap().height()),
+                ..default()
+            },
+            WeaponSelectionIndividualImage
+        ), 
+        (
+            // avaliable/max text
+            Text::new(format!("{}/{}", settings.data.avaliable, settings.data.max)),  // using indent
+            TextFont {
+                font: settings.font.unwrap_or_default(),
+                font_size: FONT_SIZE,
+                ..default()
+            },
+            TextColor(if settings.selected_weapon == weapon {
+                TEXT_SELECTED
+            } else {
+                TEXT_LIGHT
+            }),
+            TextLayout {
+                justify: Justify::Right,
+                ..default()
+            },
+            WeaponDataText
+        )]
+    )
+}
+
+const fn get_weapon_selection_bar_height(largest_height: u32) -> u32 {
+    largest_height + PADDING_TOP as u32 * 2 + FONT_SIZE as u32 + ROW_GAP as u32
+}
+
+fn update_selection_bar(
+    trigger: On<UpdateWeaponSelectionBar>,
+    sprites: Res<SpriteUiMap>,
+    fonts: Res<FontMap>,
+    boat_query: Single<(&Boat, &WeaponCounter), With<Controlled>>,
+
+    base_entity: Single<Entity, With<WeaponSelection>>,
+    mut commands: Commands
+) {
+    let (boat, weapon_counter) = boat_query.into_inner();
+    assert_eq!(*boat, trigger.target); // somehow re-run the observer later...
+
+    let mut base_entity = commands.get_entity(*base_entity).unwrap();
+
+    let Some(height) = weapon_counter.weapons.keys().map(|this| {
+        sprites.get_size(*this).unwrap().height()
+    }).max() else {
+        return;  // hm
+    };
+    let height = get_weapon_selection_bar_height(height);
+
+    base_entity.despawn_children();
+
+    base_entity.with_children(|base| {
+        for &(weapon, data) in weapon_counter.weapons.iter() {
+            let settings = WeaponSelectionSettings {
+                height,
+                selected_weapon: weapon_counter.selected_weapon.unwrap(),
+                weapon,
+                data,
+                sprites: &sprites,
+                font: Some(fonts.get_long_lived(FONT_PATHS[0]).unwrap())
+            };
+
+            base.spawn(weapon_selection_bundle(settings));
+        }
+    });
+}
+
+fn update_selection_bar_count(
+    _trigger: On<UpdateWeaponSelectionBarCount>,
+    weapon_counter: Single<&WeaponCounter, With<Controlled>>,
+    container: Query<(&Children, &WeaponSelectionIndividualBox)>,
+    mut count: Query<&mut Text, With<WeaponDataText>>
+) -> Result {
+    let Some(selected) = weapon_counter.selected_weapon else {
+        return Err("No selected weapon, should be handled in firing weapon".into())
+    };
+    let Some((children, _)) = container.into_iter().find(|(_, c)| c.0 == selected) else {
+        return Err("No weapon selection of the currently selected weapon".into())
+    };
+    let mut text = get_mut!(children, count).unwrap();
+
+    let mut iter = text.0.split('/');
+    let (aval, max) = (iter.next().unwrap().parse::<u16>()?, iter.next().unwrap().parse::<u16>()?);
+    debug_assert_eq!(iter.next(), None);
+
+    text.0 = format!("{}/{}", aval - 1, max);
+
+    Ok(())
 }
 
 const TEXT_LIGHT: Color = Color::linear_rgba(1.0, 1.0, 1.0, 0.5);

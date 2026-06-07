@@ -64,7 +64,7 @@ pub fn derive_boat_methods(input: TokenStream) -> TokenStream {
 ///     Essex,  // "Essex"
 ///     #[json = "Akula")]
 ///     Cookies,  // "Akula"
-///     Shell_100x1000Mmr,  // "Mark18"
+///     Shell_100x1000Mmr,  // "Mark8"
 ///     // DoesNotExist  // compile error!
 /// }
 /// ```
@@ -165,6 +165,36 @@ fn impl_boat(ast: DeriveInput) -> proc_macro2::TokenStream {
 /// implement the FetchSprite trait either with default or with overwritten
 fn impl_fetch_sprite(ast: DeriveInput) -> TokenStream2 {
     let name = &ast.ident;
+    let trait_name = absolute_path("primitives::FetchSprite");
+
+    if let Data::Struct(_) = ast.data {
+        let fetch_sprite_str = if let Some(value) = ast.attrs.iter().find_map(|attr| {
+            if let SynMeta::NameValue(MetaNameValue { path, value, .. }) = &attr.meta
+                && path.is_ident("json")
+            {
+                Some(value)
+            } else {
+                None
+            }
+        }) {
+            if let Expr::Lit(lit) = value
+                && let Lit::Str(path) = &lit.lit
+            {
+                path.value()
+            } else {
+                bail!("Expected string")
+            }
+        } else {
+            name.to_string()
+        };
+        return quote!(
+            impl #trait_name for #name {
+                fn fetch_sprite_str(&self) -> impl AsRef<str> {
+                    #fetch_sprite_str
+                }
+            }
+        );
+    }
 
     let Data::Enum(data) = ast.data else {
         bail!("Only enums supported");
@@ -178,7 +208,7 @@ fn impl_fetch_sprite(ast: DeriveInput) -> TokenStream2 {
 
         if ident.to_string().starts_with("Shell_") {
             match_arms.push(quote! {
-                Self::#ident => "Mark18"
+                Self::#ident => "Mark8"
             });
             continue;
         }
@@ -218,7 +248,6 @@ fn impl_fetch_sprite(ast: DeriveInput) -> TokenStream2 {
         }
     }
 
-    let trait_name = absolute_path("primitives::FetchSprite");
 
     // remember to add , after arm
     quote!(

@@ -399,7 +399,7 @@ pub struct OrderedHashMap<K, V> {
 }
 
 impl<K, V> OrderedHashMap<K, V> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         OrderedHashMap { vec: Vec::new() }
     }
     pub fn from_arr<const N: usize>(arr: [(K, V); N]) -> Self {
@@ -417,11 +417,22 @@ impl<K, V> OrderedHashMap<K, V> {
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.vec.iter().map(|(_, v)| v)
     }
+    pub const fn len(&self) -> usize {
+        self.vec.len()
+    }
+    pub const fn is_empty(&self) -> bool {
+        self.vec.is_empty()
+    }
 }
 
 impl<K: PartialEq, V> OrderedHashMap<K, V> {
     pub fn get(&self, key: &K) -> Option<&V> {
         self.vec.iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v)
+    }
+    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+        self.vec.iter_mut()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v)
     }

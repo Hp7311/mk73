@@ -8,7 +8,7 @@ use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
 use common::{Boat, OCEAN_SURFACE, eq};
 use common::collision::{out_of_bound_point, out_of_bounds, square_does_not_intersects};
-use common::primitives::{CustomTransform, Mk48Rect, PlayerStats, Point, Position, Radian, ZIndex, in_range};
+use common::primitives::{CustomTransform, Mk48Rect, PlayerStats, Point, Position, Radian, Speed, ZIndex, in_range};
 use common::protocol::{OilRigTransform as OilRig, PointTransform, SendToClient};
 use common::util::{avaliable_cords, point_in_square};
 use common::WorldSize;
@@ -51,7 +51,7 @@ static SPAWN_POINT_VEC: LazyLock<Vec<bool>> = LazyLock::new(|| {
 const SPAWN_POINT_RADIUS_MAX: f32 = 100.0;
 
 /// speed at which a point moves toward a ship's HUD center
-const POINT_SPEED: f32 = 2.0;
+const POINT_SPEED: Speed = Speed::from_knots(40.0);
 
 
 #[derive(Resource, Deref, DerefMut)]
@@ -243,7 +243,7 @@ fn move_points(
             point.position = point.position.move_towards(
                 // safety: we know from the len check above
                 *unsafe { boats_in_range.get_unchecked(0) },
-                POINT_SPEED,
+                POINT_SPEED.get_raw(),
             );
             continue;
         }
@@ -253,7 +253,7 @@ fn move_points(
             Vec2::distance_squared(point.position, *boat_position) as u32
         }).unwrap_unchecked() };
 
-        point.position = point.position.move_towards(*boat_position, POINT_SPEED);
+        point.position = point.position.move_towards(*boat_position, POINT_SPEED.get_raw());  // TODO acceleration
     }
 }
 

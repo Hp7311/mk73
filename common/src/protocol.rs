@@ -2,13 +2,14 @@
 
 use std::f32::consts::{FRAC_PI_2, PI};
 use crate::{
-    OCEAN_SURFACE, OIL_RIG_Z, POINTS_Z, boat::Boat, primitives::{CustomTransform, DisplayScore, LastSpeed, PlayerStats, Point, Radian, Speed, TargetRotation}
+    OCEAN_SURFACE, OIL_RIG_Z, POINTS_Z, boat::Boat, primitives::{CustomTransform, DisplayScore, LastSpeed, PlayerStats, Point, Radian, Size, Speed, TargetRotation}
 };
 use bevy::{ecs::entity::MapEntities, prelude::*};
 use lightyear::{
     input::{native::plugin::InputPlugin},
     prelude::{input::native::ActionState, *},
 };
+use macros::{FetchSprite};
 use serde::{Deserialize, Serialize};
 use crate::primitives::{Position, ZIndex};
 use crate::weapon::Weapon;
@@ -65,17 +66,20 @@ impl Ease for CustomTransform {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Component)] // component to store it in server
+#[derive(FetchSprite, Serialize, Deserialize, Debug, PartialEq, Clone, Component)] // component to store it in server
+#[json = "Hq"]  // or OilPlatform
 pub struct OilRigTransform {
     pub position: Vec2,
     pub rotation: Radian
 }
 
+impl Size for OilRigTransform {
+    fn size(&self) -> Vec2 {
+        vec2(100.0, 100.0)  // inferred from being approx half the size of 055
+    }
+}
 impl OilRigTransform {
     pub const SPRITE_SIZE: f32 = 1024.0 * 0.3;
-    pub fn file_name() -> &'static str {
-        "oil_platform.png"
-    }
     /// ### For [`Transform`] only
     pub fn z_index_transform() -> f32 {
         *OCEAN_SURFACE + OIL_RIG_Z
