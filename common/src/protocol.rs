@@ -164,6 +164,7 @@ pub enum WeaponRollBack {
         rotation: Radian,
         entity: EntityOnClient
     },
+    /// client should +1 on the weaponcounter
     Despawn {
         entity: EntityOnClient
     }
@@ -178,6 +179,7 @@ pub(crate) struct UpgradeMessage {
 pub(crate) struct UpgradeRollback {
     pub target: Boat
 }
+
 // client sends updates to controlling boat's Z-index(physical depth) to the server as a Message
 //
 // requires [`EntityOnServer`] to be given and correctly represent the boat's entity on the server world
@@ -195,7 +197,6 @@ impl Plugin for ProtocolPlugin {
         // replication
         app.register_component::<WorldSize>();
         app.register_component::<Boat>();
-        app.register_component::<crate::primitives::WeaponCounter>();
         app.register_component::<CustomTransform>()
             .add_prediction()
             .add_linear_interpolation();
@@ -255,41 +256,95 @@ impl Plugin for ProtocolPlugin {
 }
 
 pub mod tcp {
-    use super::EntityOnServer;
-    use crate::primitives::ZIndex;
+    use std::collections::VecDeque;
+    use crate::util::VecDequeStartsWith;
 
     /// more strongly typed request-parsing and writing
     pub enum TcpClientRequest {
-        /// marker: 4 bytes read
-        NewZIndex(ZIndex),
-        /// to identify a TCP stream on server with the client
-        /// 
-        /// marker: 8 bytes read
-        ControlledBoatOnServer(EntityOnServer)
+        AvaliableClientId
     }
 
+    pub enum TcpServerResponse {
+        AvaliableClientId(u64)
+    }
+    pub enum ParseResult<T> {
+        AllFilled(Vec<T>),
+        SomeFilled {
+            aval: Vec<T>,
+            extra: Vec<u8>
+        }
+    }
     impl TcpClientRequest {
+        const NEXT_CLIENT_ID_IDENTIFIER: &[u8] = b"next_client_id";
         /// buf is a buffer of current read, ideally a Vec that is cleared every read but that's not possible due to read_to_end waiting for EOF
         /// 
         /// ### Panics
         /// if `read_len > buf.len()`
         #[cfg(feature = "server")]
-        pub fn try_from_buf(buf: &[u8], read_len: usize) -> Option<Self> {
-            let full_buf = buf.split_at(read_len).0;
-            match read_len {
-                4 => Some(Self::NewZIndex(ZIndex(
-                    f32::from_be_bytes(full_buf.try_into().unwrap())
-                ))),
-                8 => Some(Self::ControlledBoatOnServer(EntityOnServer(
-                    u64::from_be_bytes(full_buf.try_into().unwrap())
-                ))),
-                _ => None
+        pub fn try_parse(buf: &[u8], read_len: usize) -> ParseResult<Self> {
+            let mut buf = buf.split_at(read_len).0.to_vec();
+            let mut ret = vec![];
+            
+            loop {
+                if buf.starts_with(Self::NEXT_CLIENT_ID_IDENTIFIER) {
+                    ret.push(Self::AvaliableClientId);
+                    for _ in 0..Self::NEXT_CLIENT_ID_IDENTIFIER.len() {
+                        buf.remove(0);
+                    }
+                } else if buf.is_empty() {
+                    break;
+                } else {
+                    return ParseResult::SomeFilled {
+                        aval: ret,
+                        extra: buf
+                    }
+                }
             }
+
+            ParseResult::AllFilled(ret)
         }
         pub fn to_bytes(&self) -> Vec<u8> {
             match self {
-                Self::NewZIndex(z) => z.to_be_bytes().to_vec(),
-                Self::ControlledBoatOnServer(e) => e.0.to_be_bytes().to_vec()
+                Self::AvaliableClientId => Self::NEXT_CLIENT_ID_IDENTIFIER.to_vec()
+            }
+        }
+    }
+    impl TcpServerResponse {
+        const ID_BYTE_LEN: usize = 8;
+        const ID_HEADER: &[u8] = b"next_client_id";
+        pub fn try_parse(buf: &[u8], read_len: usize) -> ParseResult<Self> {
+            let mut buf = VecDeque::from(buf.split_at(read_len).0.to_owned());
+            let mut ret = vec![];
+            
+            loop {
+                if buf.starts_with(Self::ID_HEADER) {
+                    let mut id = [0; Self::ID_BYTE_LEN];
+                    for i in 0..Self::ID_BYTE_LEN {
+                        if let Some(byte) = buf.pop_front() {
+                            id[i] = byte;
+                        } else {
+                            return ParseResult::SomeFilled {
+                                aval: ret,
+                                extra: id[..i].to_vec()
+                            }
+                        }
+                    }
+                    ret.push(Self::AvaliableClientId(u64::from_be_bytes(id)));
+                } else if buf.is_empty() {
+                    break
+                } else {
+                    return ParseResult::SomeFilled {
+                        aval: ret,
+                        extra: buf.into()
+                    }
+                }
+            }
+
+            ParseResult::AllFilled(ret)
+        }
+        pub fn to_bytes(&self) -> Vec<u8> {
+            match self {
+                Self::AvaliableClientId(id) => id.to_be_bytes().to_vec()
             }
         }
     }

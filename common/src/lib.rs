@@ -19,6 +19,8 @@ pub mod primitives;
 pub mod protocol;
 pub mod util;
 pub use movement::MovementPlugin;
+#[cfg(feature = "server")]
+pub use upgrade::UpgradeSet;
 pub use upgrade::UpgradePlugin;
 pub use weapon::{Weapon, WeaponType};
 pub use boat::{Boat, SubKind, CircleHud, BoatClientId, BoatReverseNegative, BoatReversePositive};

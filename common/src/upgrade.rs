@@ -37,10 +37,18 @@ impl Plugin for UpgradePlugin {
         app.add_observer(client::on_upgrade)
             .add_systems(Update, client::recv_rollback);
         #[cfg(feature = "server")]
-        app.add_systems(Update, server::recv_upgrade);
+        {
+            app.configure_sets(FixedUpdate, (
+                UpgradeSet::UpdateComponents,
+                UpgradeSet::HandleWeapons
+            ).chain());
+            app.add_systems(FixedUpdate, server::recv_upgrade.in_set(UpgradeSet::UpdateComponents));
+        }
     }
 }
 
+#[cfg(feature = "server")]
+pub use server::UpgradeSet;
 #[cfg(feature = "client")]
 mod client {
     use crate::boat::{CircleHud, SubKind};
@@ -68,7 +76,7 @@ mod client {
         mut commands: Commands
     ) {
         let target = trigger.target;
-        trace!("Upgrade to {target:?}");
+        debug!("Upgrading to {target:?}");
         server_sender.send::<SendToServerOrdered>(UpgradeMessage {
             target,
             entity_on_server: *entity_on_server.into_inner()
@@ -129,6 +137,13 @@ mod server {
     use crate::{primitives::PlayerStats, protocol::SendToClient, BoatClientId};
     use super::*;
 
+    /// making sure that the WeaponCounter is correct when listens for messsages from client firing weapon
+    #[derive(Debug, SystemSet, Hash, Eq, Clone, PartialEq)]
+    pub enum UpgradeSet {
+        UpdateComponents,
+        HandleWeapons,
+    }
+
     pub(super) fn recv_upgrade(
         readers: Query<&mut MessageReceiver<UpgradeMessage>>,
         mut sender: ServerMultiMessageSender,
@@ -162,7 +177,7 @@ mod server {
                         ).unwrap();
                     }
                 } else {
-                    warn!("Invalid Entity ID");
+                    info!("Invalid Entity ID of boat on server requested");
                 }
             }
         }
@@ -175,5 +190,6 @@ fn upgrade_components(
     weapon_counter: &mut WeaponCounter,
 ) {
     *boat = target;
+    // TODO this would refill weapons every time upgrade
     *weapon_counter = WeaponCounter::from_boat(&target);
 }

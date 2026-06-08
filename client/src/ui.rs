@@ -415,6 +415,7 @@ struct WeaponSelectionSettings<'a> {
     font: Option<Handle<Font>>
 }
 
+// TODO just update index and despawn if necessary when upgrading
 fn weapon_selection_bundle(settings: WeaponSelectionSettings) -> impl Bundle {
     let weapon = settings.weapon;
     (
@@ -448,7 +449,7 @@ fn weapon_selection_bundle(settings: WeaponSelectionSettings) -> impl Bundle {
                 ..default()
             },
             WeaponSelectionIndividualImage
-        ), 
+        ),
         (
             // avaliable/max text
             Text::new(format!("{}/{}", settings.data.avaliable, settings.data.max)),  // using indent
@@ -519,7 +520,7 @@ fn update_selection_bar_count(
     weapon_counter: Single<&WeaponCounter, With<Controlled>>,
     container: Query<(&Children, &WeaponSelectionIndividualBox)>,
     mut count: Query<&mut Text, With<WeaponDataText>>
-) -> Result {
+) -> Result {  // TODO not determistic since we can't assume that this would always run before the updating weapon counter system
     let Some(selected) = weapon_counter.selected_weapon else {
         return Err("No selected weapon, should be handled in firing weapon".into())
     };

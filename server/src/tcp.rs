@@ -1,29 +1,91 @@
 //! custom networking backend
 #![allow(dead_code, reason = "No longer used")]
-use std::net::TcpStream;
-use std::sync::mpsc::{Receiver, Sender};
+use std::error::Error;
+use std::io::Write;
 use std::thread;
-use std::{io::Read, net::TcpListener, sync::mpsc};
+use std::{io::Read, net::TcpListener};
 
 use bevy::prelude::*;
-use common::protocol::tcp::TcpClientRequest;
-use common::{Boat, TCP_ADDR};
-use common::util::InputExt;
-use common::primitives::ZIndex;
+use common::protocol::tcp::{ParseResult, TcpClientRequest, TcpServerResponse};
+use common::TCP_ADDR;
+
+use crate::NEXT_CLIENT_ID;
 
 pub(crate) struct NetPlugin;
 
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
+        thread::spawn(|| -> Result<(), Box<dyn Error + Send + Sync>> {
+            let socket = TcpListener::bind(TCP_ADDR)?;
+
+            for stream in socket.incoming() {
+                let mut stream = stream?;
+
+                thread::spawn(move || -> Result<(), Box<dyn Error + Send + Sync>> {
+                    let mut buf = [0; 1000];
+                    let mut excess = vec![];
+                    while let Ok(read_len) = stream.read(&mut buf)
+                        && read_len != 0
+                    {
+                        let buf: &[u8] = if !excess.is_empty() {
+                            excess.extend(buf);
+                            &excess
+                        } else {
+                            &buf
+                        };
+                        match TcpClientRequest::try_parse(buf, read_len) {
+                            ParseResult::AllFilled(requests) => {
+                                excess.clear();
+                                for req in requests {
+                                    match req {
+                                        TcpClientRequest::AvaliableClientId => {
+                                            let mut guard = NEXT_CLIENT_ID.write().unwrap();
+                                            let response = TcpServerResponse::AvaliableClientId(*guard).to_bytes();
+                                            assert_eq!(stream.write(&response)?, response.len());
+                                            *guard += 1;
+                                        }
+                                    }
+                                }
+                            },
+                            ParseResult::SomeFilled { aval, extra } => {
+                                if aval.is_empty() && !excess.is_empty() {
+                                    excess.extend(extra);
+                                    continue;
+                                }
+                                excess.clear();  // checked that aval is not empty, therefore the last excess can be cleaned
+                                excess.extend(extra);
+                                for req in aval {
+                                    match req {
+                                        TcpClientRequest::AvaliableClientId => {
+                                            let mut guard = NEXT_CLIENT_ID.write().unwrap();
+                                            let response = TcpServerResponse::AvaliableClientId(*guard).to_bytes();
+                                            assert_eq!(stream.write(&response)?, response.len());
+                                            *guard += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(())
+                });
+            }
+            Ok(())
+        });
+        app.add_systems(Startup, setup);/*
             .add_systems(FixedUpdate, (
                 read_request,
                 spawn_receiver_for_client,
                 move_client_request_rx
-            ));
+            )); */
     }
 }
 
+fn setup() {
+
+}
+/*
 /// receives data from a client
 /// 
 /// - spawned as a random entity via [`SpawnClientRequestReceiver`]
@@ -164,4 +226,4 @@ impl StreamWrapper {
     fn remote_addr(&self) -> String {
         self.0.peer_addr().map(|a| a.to_string()).unwrap_or("N/A".to())
     }
-}
+} */

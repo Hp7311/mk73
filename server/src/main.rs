@@ -2,7 +2,7 @@ mod oil_rig;
 mod weapon;
 mod tcp;
 
-use std::time::Duration;
+use std::{sync::RwLock, time::Duration};
 
 #[cfg(not(feature = "gui"))]
 use bevy::app::ScheduleRunnerPlugin;
@@ -60,6 +60,8 @@ fn main() {
     app.run();
 }
 
+static NEXT_CLIENT_ID: RwLock<u64> = RwLock::new(0);
+
 /// starts the server
 fn setup(mut commands: Commands) {
     let netcode_config = NetcodeConfig {
@@ -73,12 +75,6 @@ fn setup(mut commands: Commands) {
         .spawn((
             NetcodeServer::new(netcode_config),
             LocalAddr(SERVER_ADDR),
-            // WebSocketServerIo {
-            //     #[cfg(debug_assertions)]
-            //     config: ServerConfig::builder()
-            //         .with_bind_address(SERVER_ADDR)
-            //         .with_no_encryption(),
-            // },
             WebTransportServerIo {
                 certificate: {
                     let runtime = tokio::runtime::Runtime::new().unwrap();

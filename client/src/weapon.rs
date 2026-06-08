@@ -54,7 +54,7 @@ fn fire_weapon(
     if count.avaliable == 0 {
         return;  // no weapons left
     }
-    count.avaliable -= 1;
+    count.avaliable -= 1;  // FIXME upgrade glitch
 
     commands.trigger(UpdateWeaponSelectionBarCount);    
 
@@ -124,10 +124,18 @@ fn change_weapon(
     mut weapon_counter: Single<&mut WeaponCounter, With<Controlled>>
 ) {
     debug_assert_matches!(weapon_counter.selected_weapon, Some(_));
+    debug!("Changing selected weapon from {:?} to {:?}", weapon_counter.selected_weapon.unwrap(), trigger.target);
     weapon_counter.selected_weapon = Some(trigger.target);
 }
-fn rollback(mut reader: Single<&mut MessageReceiver<WeaponRollBack>>, mut commands: Commands, mut weapons: Query<&mut Transform, With<Weapon>>) {
+fn rollback(
+    mut reader: Single<&mut MessageReceiver<WeaponRollBack>>,
+    mut commands: Commands,
+    mut weapons: Query<&mut Transform, With<Weapon>>,
+    types: Query<&Weapon>,
+    mut counter: Single<&mut WeaponCounter, With<Controlled>>
+) {
     for msg in reader.receive() {
+        info!("Rolling back weapon");
         match msg {
             WeaponRollBack::Transform {
                 position,
@@ -141,6 +149,10 @@ fn rollback(mut reader: Single<&mut MessageReceiver<WeaponRollBack>>, mut comman
             WeaponRollBack::Despawn { entity} => {
                 if let Ok(mut weapon) = commands.get_entity(Entity::from_bits(entity.0)) {
                     weapon.despawn();
+                    let weapon = types.get(Entity::from_bits(entity.0)).unwrap();
+                    let mut count = counter.weapons.get_mut(weapon).unwrap();
+                    count.avaliable += 1;
+                    assert!(count.avaliable <= count.max);
                 }
             }
         }

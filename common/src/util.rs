@@ -1,5 +1,6 @@
 //! utility functions independent to game
 
+use std::collections::VecDeque;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::ops::{Range, RangeInclusive};
 use std::slice;
@@ -218,6 +219,25 @@ macro_rules! add_dbg_app {
     };
 }
 
+pub trait VecDequeStartsWith {
+    type Inside;
+    fn starts_with(&self, needle: &[Self::Inside]) -> bool;
+}
+
+impl<T: PartialEq> VecDequeStartsWith for VecDeque<T> {
+    type Inside = T;
+    fn starts_with(&self, needle: &[Self::Inside]) -> bool {
+        let (front, back) = self.as_slices();
+
+        if needle.len() <= front.len() {
+            front.starts_with(needle)
+        } else {
+            let (front_needle, back_needle) = needle.split_at(front.len());
+
+            front == front_needle && back.starts_with(back_needle)
+        }
+    }
+}
 /// prints number of a entity with specified query filter passed in to console
 /// filter defaults to [`With`]
 /// ## Example

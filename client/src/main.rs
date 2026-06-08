@@ -14,6 +14,7 @@ mod asset;
 use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
+use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
