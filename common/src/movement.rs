@@ -99,12 +99,16 @@ fn move_inner(move_input: &ActionState<Move>, custom: &mut CustomTransform, boat
     let Some(mut target) = move_input.0.0 else {
         return;
     };
-    validate_acceleration(&mut target, custom.speed, boat.acceleration());
+    validate_acceleration(
+        &mut target,
+        custom.speed,
+        boat.acceleration(),
+    );
 
-    if validate_speed_cheating(&target, boat.max_speed(), boat.rev_max_speed()) == SpeedValidity::Error {
-        warn!(?boat);
-        return;
-    }
+    // if validate_speed_cheating(&target, boat.max_speed(), boat.rev_max_speed()) == SpeedValidity::Error {
+    //     warn!(?boat, target = target.get_knots());
+    //     return;
+    // }
     custom.speed = target;
 }
 
@@ -124,7 +128,11 @@ fn validate_max_turn(target: &mut Radian, current_rotation: Radian, max_turn: Ra
 // should we clear to None after applying? if we don't we can use it for moving to target but maybe bandwidth
 
 /// check if intended speed greater than acceleration
-fn validate_acceleration(target: &mut Speed, current_speed: Speed, acceleration: Speed) {
+fn validate_acceleration(
+    target: &mut Speed,
+    current_speed: Speed,
+    acceleration: Speed,
+) {
     let diff = *target - current_speed;
     if diff > acceleration {
         *target = current_speed + acceleration;
@@ -132,8 +140,10 @@ fn validate_acceleration(target: &mut Speed, current_speed: Speed, acceleration:
         *target = current_speed - acceleration;
     }
 }
+// FIXME playerscore clearing to 0 on upgrade with points around sometimes (???????)
 
 #[derive(PartialEq)]
+#[allow(dead_code)]
 enum SpeedValidity {
     Error,
     Normal
@@ -143,16 +153,17 @@ enum SpeedValidity {
 /// should be run after validating acceleration
 /// - `reverse_max_speed` assumes positive from [`Boat`]
 #[must_use = "Result may be a err value which should be handled"]
+#[allow(dead_code)]
 fn validate_speed_cheating(target: &Speed, max_speed: Speed, reverse_max_speed: Speed) -> SpeedValidity {
     if *target > max_speed {
-        error!(
+        warn!(
             "Got speed {} greater than max speed {}",
             target.get_knots(),
             max_speed.get_knots()
         );
         SpeedValidity::Error
     } else if *target < - reverse_max_speed {
-        error!(
+        warn!(
             "Got speed {} lesser than reverse max speed {}",
             target.get_knots(),
             - reverse_max_speed.get_knots()

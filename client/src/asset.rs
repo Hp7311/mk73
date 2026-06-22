@@ -83,7 +83,7 @@ impl FontMap {
     }   
 }
 
-#[derive(Debug, Resource)]
+#[derive(Debug, Resource, Clone)]  // cloning only clones the Vec of names
 pub struct SpriteMap {
     image: Handle<Image>,
     /// in sync with [`atlas::textures`](TextureAtlasLayout::textures)

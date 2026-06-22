@@ -66,6 +66,11 @@ pub enum Boat {
     #[level = 2]
     #[length = 57]
     Zubr,
+    #[armanents(Shell_300x1400Mmr, 8, default)]
+    #[max_speed = 19.4]
+    #[level = 3]
+    #[length = 138.4]
+    Espana,
     #[armanents(Set65, 4, default)]  // or maybe 6?
     #[armanents(BrahMos, 4)]
     #[armanents(Vodopad, 4)]
@@ -103,6 +108,7 @@ impl Boat {
             Self::Momi => SurfaceShip,
             Self::TypeViic => Submarine,
             Self::Zubr => HoverCraft,
+            Self::Espana => SurfaceShip,
             Self::Yasen => Submarine
         }
     }

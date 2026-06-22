@@ -150,7 +150,7 @@ fn rollback(
                 if let Ok(mut weapon) = commands.get_entity(Entity::from_bits(entity.0)) {
                     weapon.despawn();
                     let weapon = types.get(Entity::from_bits(entity.0)).unwrap();
-                    let mut count = counter.weapons.get_mut(weapon).unwrap();
+                    let count = counter.weapons.get_mut(weapon).unwrap();
                     count.avaliable += 1;
                     assert!(count.avaliable <= count.max);
                 }

@@ -1,6 +1,7 @@
 //! utility functions independent to game
 
 use std::collections::VecDeque;
+use std::iter::FromFn;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::ops::{Range, RangeInclusive};
 use std::slice;
@@ -45,6 +46,9 @@ macro_rules! eq {
     };
     ($x:expr, $y:expr, ?radian) => {
         ($x - $y).abs() < $crate::primitives::Radian(0.001)
+    };
+    ($x:expr, $y:expr, ?radian, ?precision = $precision:expr) => {
+        ($x - $y).abs() < $crate::primitives::Radian($precision)
     }
 }
 
@@ -192,7 +196,7 @@ pub fn add_circle_hud(length: f32) -> f32 {
     length * 0.7 + length
 }
 
-pub fn input_not_pressed<T>(input: T) -> impl FnMut(Res<ButtonInput<T>>) -> bool + Clone
+pub fn input_not_pressed<T>(input: T) -> impl Fn(Res<ButtonInput<T>>) -> bool + Clone
 where
     T: Clone + Eq + std::hash::Hash + Send + Sync + 'static
 {
@@ -484,6 +488,27 @@ macro_rules! get_mut {
     };
 }
 
+/// impl of `itertools::zip_longest`
+/// 
+/// return type iterates over Option<I1::Item> and Option<I2::Item>,
+/// terminating when both hit None
+#[allow(clippy::type_complexity)]
+pub fn zip_longest<I1, I2>(
+    first: I1,
+    second: I2
+) -> FromFn<impl FnMut() -> Option<(Option<I1::Item>, Option<I2::Item>)>>
+where
+    I1: IntoIterator, I2: IntoIterator
+{
+    let mut first = first.into_iter();
+    let mut second = second.into_iter();
+    std::iter::from_fn(move || {
+        match (first.next(), second.next()) {
+            (None, None) => None,
+            (a, b) => Some((a, b))
+        }
+    })
+}
 #[cfg(test)]
 mod tests {
     use crate::primitives::WrapZIndex;

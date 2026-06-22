@@ -18,6 +18,7 @@ serde = { workspace = true }
 rustls-pemfile = "2"
 macros = { path = "./macros", features = ["common_ty"] }
 strum = { version = "0.28.0", features = ["derive"] }
+tungstenite = {workspace = true}
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"]}

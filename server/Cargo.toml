@@ -14,4 +14,7 @@ common = { path = "../common", features = ["server"]}
 macros = { path = "../common/macros" }
 rand = "0.10"
 serde = { version = "1.0.228", features = ["derive"] }
-tokio = { version = "1.52.3", features = ["rt"] }
+tokio = { workspace = true }
+tungstenite = {workspace = true }
+actix-web = "4"
+tap = { workspace = true }

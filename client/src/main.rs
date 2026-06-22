@@ -8,17 +8,15 @@ mod weapon;
 mod boat;
 mod oil_rig;
 mod ui;
-mod tcp;
 mod asset;
 
 use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
-use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use common::UpgradePlugin;
+use common::{TCP_ADDR, UpgradePlugin};
 use common::protocol::ZIndexUpdate;
 use common::{
     Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, WorldPlugin,
@@ -53,6 +51,8 @@ const DEFAULT_MAX_ZOOM: f32 = 2.0;
 const TIME_TO_LAUNCH_WEAPON: Duration = Duration::from_millis(200);
 
 fn main() -> AppExit {
+    #[cfg(target_family = "wasm")]
+    console_error_panic_hook::set_once();
     let mut app = App::new();
 
     app.add_plugins(
@@ -109,14 +109,23 @@ fn main() -> AppExit {
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect);
 
-    // app.add_plugins(NetPlugin);
+    // app.add_systems(FixedUpdate, debug_component!(PlayerStats,,))
     app.run()
 }
 
 const DIGEST: &str = include_str!("../../cert/digest.txt");
 
 fn setup(mut commands: Commands) {
-    let client_id = rand::random_range(0..100);
+    // let client_id = rand::random_range(0..100);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let client_id = rt.block_on(async {
+        let resp = reqwest::get(format!("http://{}/client_id", TCP_ADDR))
+            .await.unwrap()
+            .bytes()
+            .await.unwrap();
+
+        u64::from_be_bytes(resp.as_ref().try_into().unwrap())
+    });
     let auth = Authentication::Manual {
         server_addr: SERVER_ADDR,
         client_id,

@@ -54,7 +54,7 @@ mod client {
     use crate::boat::{CircleHud, SubKind};
     use crate::{BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, circle_hud_mesh};
     use crate::protocol::{EntityOnServer, SendToServerOrdered};
-    use crate::primitives::{MaybePushToSurface, UpgradeEvent, UpgradeRollbackEvent};
+    use crate::primitives::{MaybePushToSurface, PlayerStats, UpgradeEvent, UpgradeRollbackEvent};
     use super::*;
 
     #[allow(clippy::too_many_arguments)]
@@ -64,7 +64,7 @@ mod client {
         mut server_sender: Single<&mut MessageSender<UpgradeMessage>>,
         entity_on_server: Single<&EntityOnServer, With<Controlled>>,
 
-        query: Single<(&mut Boat, &mut WeaponCounter), With<Controlled>>,
+        query: Single<(&mut Boat, &mut WeaponCounter, &mut PlayerStats), With<Controlled>>,
 
         mut meshes: ResMut<Assets<Mesh>>,
         circle_hud: Single<&Mesh2d, With<CircleHud>>,
@@ -82,8 +82,9 @@ mod client {
             entity_on_server: *entity_on_server.into_inner()
         });
 
-        let (mut boat, mut weapon_counter) = query.into_inner();
+        let (mut boat, mut weapon_counter, mut player_stats) = query.into_inner();
 
+        *player_stats.level_mut() = target.level();
         if boat.sub_kind() == SubKind::Submarine && target.sub_kind() != SubKind::Submarine {  // maybe add depth to sub diving
             commands.trigger(MaybePushToSurface { last_boat: *boat });
         }

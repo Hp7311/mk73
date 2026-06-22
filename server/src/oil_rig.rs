@@ -227,7 +227,7 @@ fn move_points(
                 // info!(?boat_depth, ?point_info.depth);
                 in_range(*boat_pos, point_info.position, boat.circle_hud_radius())
                     // TODO points should "lock in" to a boat once it starts to dive
-                    && eq!(*boat_depth, point_info.depth, ?precision = 0.05)
+                    && eq!(*boat_depth, point_info.depth, ?precision = PointTransform::PRECISION_TO_BOAT_Z)
             })
             .map(|(CustomTransform { position, ..}, ..)| position.0)
             .collect::<Vec<_>>();
@@ -270,7 +270,10 @@ fn points_obsorbed_despawn(
     for (point_transform, point, parent_rig, id) in points_transform.iter() {
         if let Some((mut player_stats, client_id)) = boats
             .iter_mut()
-            .find(|&(custom, z_index, ..)| eq!(custom.position.extend(*z_index), point_transform.to_actual_translation(), ?vec3))
+            .find(|&(custom, z_index, ..)| {
+                // info!("Z-Index: {:?}", z_index);
+                eq!(custom.position.extend(*z_index), point_transform.to_actual_translation(), ?vec3, ?precision = PointTransform::PRECISION_TO_BOAT_Z)
+            })
             .map(|(_, _, stats, client_id)| (stats, client_id))
         {
             commands.get_entity(id).unwrap().despawn();
@@ -279,6 +282,7 @@ fn points_obsorbed_despawn(
             
             // client spawns UI and collects user input
             // TODO is this pointless? we're doing this to avoid checking display() every frame on client
+            trace!("Despawned a point");
             sender.send::<_, SendToClient>(
                 &player_stats.display(),
                 &server,

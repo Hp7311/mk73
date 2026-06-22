@@ -1,11 +1,11 @@
 mod oil_rig;
 mod weapon;
-mod tcp;
+mod net;
 
 use std::{sync::RwLock, time::Duration};
 
 #[cfg(not(feature = "gui"))]
-use bevy::app::ScheduleRunnerPlugin;
+use bevy::app::{ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
 use bevy::{diagnostic::{DiagnosticsPlugin, LogDiagnosticsPlugin}, log::LogPlugin, prelude::*, state::app::StatesPlugin};
 use common::{
     Boat, BoatClientId, MovementPlugin, OCEAN_SURFACE, PROTOCOL_ID, SERVER_ADDR, UpgradePlugin, WorldPlugin, primitives::{CustomTransform, PlayerStats, Position, WeaponCounter, ZIndex}, protocol::{Move, ProtocolPlugin, Rotate}
@@ -31,6 +31,7 @@ fn main() {
         // headless plugins
         MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f32(1.0 / 60.0))),
         DiagnosticsPlugin,
+        TerminalCtrlCHandlerPlugin,
         LogDiagnosticsPlugin::default(),
         LogPlugin::default(),
         StatesPlugin,
@@ -55,7 +56,7 @@ fn main() {
         .add_observer(handle_connected_client);
 
     // app.add_systems(FixedUpdate, update_tf.in_set(ServerMovementSet::ApplyToTransform));
-    // app.add_plugins(NetPlugin);
+    net::backend_actix();
 
     app.run();
 }
@@ -171,7 +172,7 @@ fn recv_new_z_index(
     // }
     for (z_update, mut z_index) in q {
         let Some(target) = z_update.0.0 else { continue; };
-        info!("Updating ZIndex to {:?}", target);
+        trace!("Updating ZIndex to {:?}", target);
         *z_index = target;
     }
 }

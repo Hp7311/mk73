@@ -24,7 +24,7 @@ use lightyear::{
     },
 };
 use common::util::in_states_2;
-use crate::BoatState;
+use crate::{BoatState, ui::AfterUpgradeDontClearMoveState};
 
 pub(crate) struct InputBufferPlugin;
 
@@ -47,18 +47,30 @@ impl Plugin for InputBufferPlugin {
         );
         app.add_systems(FixedPreUpdate, (
             // only reset rotation if reached
-            |mut rotate: Single<&mut ActionState<Rotate>, With<InputMarker<Rotate>>>, custom: Single<&CustomTransform, With<Controlled>>| {
+            |mut rotate: Single<&mut ActionState<Rotate>, With<InputMarker<Rotate>>>, custom: Single<&CustomTransform, (Changed<CustomTransform>, With<Controlled>)>| {
                 if let Rotate(Some(input)) = rotate.0
                     && eq!(input, custom.rotation, ?radian)
                 {
-                    debug!("Clearing Rotate input");
+                    trace!(old_input = ?input, "Clearing Rotate input");
                     rotate.0 = Rotate(None);
                 }
             },
-            reset_input::<Move>
+            reset_input::<Move>.run_if(in_state(AfterUpgradeDontClearMoveState::NoNeed))
         ).run_if(input_not_pressed(MouseButton::Left)));
 
-        // app.add_systems(FixedUpdate, (move_tf_others, update_tf_controlled).in_set(ClientMovementSet::ApplyToTransform));
+
+        app.add_systems(FixedPreUpdate, (|q: Single<(&CustomTransform, &Boat), With<Controlled>>, mut move_input: Single<&mut ActionState<Move>, With<InputMarker<Move>>>, mut state: ResMut<NextState<AfterUpgradeDontClearMoveState>>| {
+            let (custom, boat) = q.into_inner();
+            
+            if custom.speed > boat.max_speed() {  // excessive assignment after first...
+                move_input.0.0 = Some(boat.max_speed())
+            } else if custom.speed < - boat.rev_max_speed() {
+                move_input.0.0 = Some(- boat.rev_max_speed());
+            } else {
+                state.set(AfterUpgradeDontClearMoveState::NoNeed);
+            }
+        }).run_if(in_state(AfterUpgradeDontClearMoveState::Sure))
+        .in_set(InputSystems::WriteClientInputs));
     }
 }
 
@@ -142,7 +154,6 @@ fn buffer_move(
 /// used to communicate between rotate input buffering and moving input buffering
 #[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut, Resource)]
 struct Reversed(pub bool);
-
 
 /// clear [`ActionState<Rotate>`] if reached
 /// 

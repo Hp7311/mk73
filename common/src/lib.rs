@@ -58,6 +58,7 @@ const SERVER_PORT: u16 = 8000;
 const CLIENT_PORT: u16 = 8001;
 
 pub const TCP_ADDR: SocketAddr = ip_addr(Ipv4Addr::LOCALHOST, 9000);
+pub const TCP_WS_ADDR: &str = "ws://127.0.0.1:9000";
 
 const DEFAULT_MAX_TURN_DEG: crate::primitives::Radian = crate::primitives::Radian::from_deg(0.5);
 

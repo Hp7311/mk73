@@ -99,6 +99,7 @@ pub struct PointTransform {
 }
 
 impl PointTransform {
+    pub const PRECISION_TO_BOAT_Z: f32 = 0.05;
     pub fn new(position: Vec2, depth: ZIndex, point: Point) -> Self {
         Self {
             position,
@@ -256,8 +257,8 @@ impl Plugin for ProtocolPlugin {
 }
 
 pub mod tcp {
-    use std::collections::VecDeque;
-    use crate::util::VecDequeStartsWith;
+    use tungstenite::Message;
+
 
     /// more strongly typed request-parsing and writing
     pub enum TcpClientRequest {
@@ -267,84 +268,60 @@ pub mod tcp {
     pub enum TcpServerResponse {
         AvaliableClientId(u64)
     }
-    pub enum ParseResult<T> {
-        AllFilled(Vec<T>),
-        SomeFilled {
-            aval: Vec<T>,
-            extra: Vec<u8>
-        }
+
+    pub enum ParseError {
+        InvalidMessage(String),
+        InvalidHeader(Message),
+        /// invalid message type
+        NotExpected
     }
     impl TcpClientRequest {
-        const NEXT_CLIENT_ID_IDENTIFIER: &[u8] = b"next_client_id";
+        const NEXT_CLIENT_ID_IDENTIFIER: &str = "next_client_id";
         /// buf is a buffer of current read, ideally a Vec that is cleared every read but that's not possible due to read_to_end waiting for EOF
         /// 
         /// ### Panics
         /// if `read_len > buf.len()`
         #[cfg(feature = "server")]
-        pub fn try_parse(buf: &[u8], read_len: usize) -> ParseResult<Self> {
-            let mut buf = buf.split_at(read_len).0.to_vec();
-            let mut ret = vec![];
+        pub fn try_parse(message: Message) -> Option<Self> {
             
-            loop {
-                if buf.starts_with(Self::NEXT_CLIENT_ID_IDENTIFIER) {
-                    ret.push(Self::AvaliableClientId);
-                    for _ in 0..Self::NEXT_CLIENT_ID_IDENTIFIER.len() {
-                        buf.remove(0);
-                    }
-                } else if buf.is_empty() {
-                    break;
-                } else {
-                    return ParseResult::SomeFilled {
-                        aval: ret,
-                        extra: buf
-                    }
-                }
+            bevy::prelude::debug!(?message);
+            if let Message::Text(text) = message
+                && text.as_str() == Self::NEXT_CLIENT_ID_IDENTIFIER
+            {
+                Some(Self::AvaliableClientId)
+            } else {
+                None
             }
-
-            ParseResult::AllFilled(ret)
         }
-        pub fn to_bytes(&self) -> Vec<u8> {
+        pub fn to_msg(&self) -> Message {
             match self {
-                Self::AvaliableClientId => Self::NEXT_CLIENT_ID_IDENTIFIER.to_vec()
+                Self::AvaliableClientId => Message::Text(Self::NEXT_CLIENT_ID_IDENTIFIER.into())
             }
         }
     }
     impl TcpServerResponse {
-        const ID_BYTE_LEN: usize = 8;
-        const ID_HEADER: &[u8] = b"next_client_id";
-        pub fn try_parse(buf: &[u8], read_len: usize) -> ParseResult<Self> {
-            let mut buf = VecDeque::from(buf.split_at(read_len).0.to_owned());
-            let mut ret = vec![];
-            
-            loop {
-                if buf.starts_with(Self::ID_HEADER) {
-                    let mut id = [0; Self::ID_BYTE_LEN];
-                    for i in 0..Self::ID_BYTE_LEN {
-                        if let Some(byte) = buf.pop_front() {
-                            id[i] = byte;
-                        } else {
-                            return ParseResult::SomeFilled {
-                                aval: ret,
-                                extra: id[..i].to_vec()
-                            }
-                        }
-                    }
-                    ret.push(Self::AvaliableClientId(u64::from_be_bytes(id)));
-                } else if buf.is_empty() {
-                    break
-                } else {
-                    return ParseResult::SomeFilled {
-                        aval: ret,
-                        extra: buf.into()
-                    }
-                }
-            }
+        const ID_HEADER: &str = "next_client_id";
+        pub fn try_parse(message: Message) -> Result<Self, ParseError> {
 
-            ParseResult::AllFilled(ret)
+            bevy::prelude::debug!(?message);
+            if let Message::Text(ref text) = message
+                && let text = text.as_str()
+            {
+                if text.starts_with(Self::ID_HEADER) {
+                    let resp = text.split_at(Self::ID_HEADER.len()).1;
+                    let id = resp.parse().map_err(|_| ParseError::InvalidMessage("Expected u64".to_owned()))?;
+
+                    Ok(Self::AvaliableClientId(id))
+                } else {
+                    Err(ParseError::InvalidHeader(message))
+                }
+            } else {
+                Err(ParseError::NotExpected)
+            }
         }
-        pub fn to_bytes(&self) -> Vec<u8> {
+        pub fn to_msg(&self) -> Message {
             match self {
-                Self::AvaliableClientId(id) => id.to_be_bytes().to_vec()
+                Self::AvaliableClientId(id) => Message::Text(format!("{}{id}", Self::ID_HEADER).into())
             }
         }
     }

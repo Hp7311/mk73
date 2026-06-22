@@ -498,7 +498,7 @@ pub struct PlayerStats {
 }
 
 impl PlayerStats {
-    pub fn  new(score: u32) -> Self {
+    pub fn new(score: u32) -> Self {
         Self {
             score,
             // no matter the score
@@ -541,7 +541,11 @@ impl PlayerStats {
         }
         let min = self.level.required_score();
         let next_level = self.level + 1;
-        let diff = self.score - min;
+        trace!(stat = ?self);
+        let diff = self.score.checked_sub(min).unwrap_or_else(|| {
+            error!(?self.score, ?min);
+            0
+        });
 
         let percent = diff as f32 / (next_level.required_score() - min) as f32;
         let percent = percent * 100.0;
@@ -567,6 +571,8 @@ impl Level {
     pub const MAX: Self = Self::Ten;
     
     /// all avaliable boats for a level
+    /// 
+    /// determinstic order by order in which `Boat` is defined
     pub fn avaliable_boats(&self) -> impl Iterator<Item = Boat> {
         Boat::iter().filter(|boat| boat.level() == *self)
     }
@@ -638,6 +644,14 @@ pub enum DisplayScore {
     NewLevel(Level)
 }
 
+impl DisplayScore {
+    pub fn unwrap_percent(self) -> Percent {
+        match self {
+            Self::Percent(p) => p,
+            _ => panic!("Called unwrap percent on {self:?}")
+        }
+    }
+}
 /// Represents a [`u8`] from receiving [`DisplayScore::Percent`]
 pub type Percent = u8;
 
@@ -845,6 +859,7 @@ pub trait Size {
 #[derive(Debug, Event)]
 #[cfg(feature = "client")]
 pub struct UpgradeEvent {
+    /// the sprite that user clicked on
     pub target: Boat
 }
 
