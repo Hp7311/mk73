@@ -3,8 +3,8 @@ resolver = "2"
 members = ["client", "common", "server", "common/macros"]
 
 [workspace.dependencies]
-bevy = {version = "0.18", features = ["debug", "track_location", "pan_camera", "dynamic_linking", "serialize"]}
-lightyear = { version = "0.26", features = ["netcode", "webtransport", "input_native"]}
+bevy = {version = "0.19", features = ["debug", "track_location", "pan_camera", "dynamic_linking", "serialize"]}
+lightyear = { version = "0.28", features = ["netcode", "webtransport", "input_native"]}
 serde = { version = "1", features = ["rc"] }
 tungstenite = "0.29"
 tokio = { version = "1.52.3", features = ["rt"] }

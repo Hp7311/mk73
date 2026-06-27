@@ -435,6 +435,9 @@ impl<K, V> OrderedHashMap<K, V> {
     pub fn iter(&self) -> slice::Iter<'_, (K, V)> {
         self.vec.iter()
     }
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, (K, V)> {
+        self.vec.iter_mut()
+    }
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.vec.iter().map(|(k, _)| k)
     }
@@ -462,6 +465,30 @@ impl<K: PartialEq, V> OrderedHashMap<K, V> {
     }
 }
 
+impl<K, V> IntoIterator for OrderedHashMap<K, V> {
+    type Item = (K, V);
+    type IntoIter = vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.vec.into_iter()
+    }
+}
+impl<'a, K, V> IntoIterator for &'a OrderedHashMap<K, V> {
+    type Item = &'a (K, V);
+    type IntoIter = slice::Iter<'a, (K, V)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.vec.iter()
+    }
+}
+impl<'a, K, V> IntoIterator for &'a mut OrderedHashMap<K, V> {
+    type Item = &'a mut(K, V);
+    type IntoIter = slice::IterMut<'a, (K, V)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.vec.iter_mut()
+    }
+}
 /// Returns mutable access to specific item that appears in `children` first in `query`
 /// 
 /// Expand to
@@ -474,7 +501,7 @@ impl<K: PartialEq, V> OrderedHashMap<K, V> {
 /// 
 /// used to solve rust not passing this:
 /// ```ignore
-/// children.iter().find_map(|e| images.get_mut(e).ok())
+/// children.iter().find_map(|e| query.get_mut(e).ok())
 /// ```
 #[macro_export]
 macro_rules! get_mut {

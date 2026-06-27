@@ -86,14 +86,6 @@ impl WeaponCounter {
     }
 }
 
-// #[derive(Debug, Resource)]
-// pub struct BlockInput(pub bool);  // TODO
-
-// /// .run_if for movement, fire weapon systems etc
-// pub fn input_free(res: Res<BlockInput>) -> bool {
-//     !res.0
-// }
-
 // maybe Trait on Rect？
 /// useful helpers like getting corners and large bounding box
 #[derive(Debug, Clone, Copy)]
@@ -543,7 +535,7 @@ impl PlayerStats {
         let next_level = self.level + 1;
         trace!(stat = ?self);
         let diff = self.score.checked_sub(min).unwrap_or_else(|| {
-            error!(?self.score, ?min);
+            error!(?self, ?min);
             0
         });
 

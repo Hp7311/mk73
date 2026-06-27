@@ -196,30 +196,30 @@ pub struct ProtocolPlugin;
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
         // replication
-        app.register_component::<WorldSize>();
-        app.register_component::<Boat>();
-        app.register_component::<CustomTransform>()
-            .add_prediction()
+        app.component::<WorldSize>().replicate();
+        app.component::<Boat>().replicate();
+        app.component::<CustomTransform>()
+            .predict()
             .add_linear_interpolation();
-        app.register_component::<ZIndex>();
+        app.component::<ZIndex>().replicate();
 
-        app.register_component::<EntityOnServer>();
+        app.component::<EntityOnServer>().replicate();
 
         // app.register_message::<NewZIndex>().add_direction(NetworkDirection::ClientToServer);
 
-        app.register_component::<OilRigTransform>();
-        app.register_component::<PointTransform>().add_linear_interpolation();
+        app.component::<OilRigTransform>().replicate();
+        app.component::<PointTransform>().add_linear_interpolation();
 
-        app.register_component::<PlayerStats>();
+        app.component::<PlayerStats>().replicate();
         app.register_message::<DisplayScore>().add_direction(NetworkDirection::ServerToClient);
 
         // MUST register these two for every input
         app.add_plugins(InputPlugin::<Rotate>::default());
         app.add_plugins(InputPlugin::<Move>::default());
         app.add_plugins(InputPlugin::<ZIndexUpdate>::default());
-        app.register_component::<ActionState<Rotate>>();
-        app.register_component::<ActionState<Move>>();
-        app.register_component::<ActionState<ZIndexUpdate>>();
+        app.component::<ActionState<Rotate>>().replicate();
+        app.component::<ActionState<Move>>().replicate();
+        app.component::<ActionState<ZIndexUpdate>>().replicate();
 
         app.register_message::<SpawnWeapon>().add_direction(NetworkDirection::ClientToServer);
         app.register_message::<WeaponRollBack>().add_direction(NetworkDirection::ServerToClient);
@@ -227,10 +227,10 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<UpgradeMessage>().add_direction(NetworkDirection::ClientToServer);
         app.register_message::<UpgradeRollback>().add_direction(NetworkDirection::ServerToClient);
 
-        app.register_component::<Weapon>();
-        app.register_component::<Transform>();
-        app.register_component::<LastSpeed>();
-        app.register_component::<TargetRotation>();
+        app.component::<Weapon>().replicate();
+        app.component::<Transform>().replicate();
+        app.component::<LastSpeed>().replicate();
+        app.component::<TargetRotation>().replicate();
 
         app.add_channel::<SendToClient>(ChannelSettings {
             mode: ChannelMode::UnorderedReliable(ReliableSettings::default()),

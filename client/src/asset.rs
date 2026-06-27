@@ -9,16 +9,10 @@ pub(crate) struct AssetPreloadPlugin;
 impl Plugin for AssetPreloadPlugin {
     fn build(&self, app: &mut App) {
         app
-            .insert_resource(FontMap(HashMap::new()))
-
-            .add_systems(Startup, (init_spritesheet, init_sprite_ui_sheet))
-            .add_systems(Startup, init_font);
+            .add_systems(Startup, (init_spritesheet, init_sprite_ui_sheet));
     }
 }
 
-pub const FONT_PATHS: &[&str] = &[
-    "Aileron-Regular.otf"
-];
 
 /// Stores assets by their path,
 /// 
@@ -51,36 +45,6 @@ fn init_sprite_ui_sheet(
 
     let map = SpriteUiMap::new(sprite, &mut textures);
     commands.insert_resource(map);
-}
-#[derive(Debug, Resource)]
-pub struct FontMap(HashMap<&'static str, Handle<Font>>);
-
-fn init_font(mut map: ResMut<FontMap>, asset_server: Res<AssetServer>) {
-    for &path in FONT_PATHS {
-        if map.0.insert(path, asset_server.load(path)).is_some() {
-            warn!("Re-inserting font at {}", path);
-        }
-    }
-}
-
-#[allow(dead_code)]
-impl FontMap {
-    /// doesn't move out of internal [`HashMap`] therefore keeping the Asset even if the returned handle is droppeed
-    pub fn get_long_lived(&self, path: &str) -> Option<Handle<Font>> {
-        self.0.get(path).cloned()
-    }
-    /// moves asset out herefore the Asset will be dropped if the returned handle is droppeed
-    /// 
-    /// ### Warning
-    /// trying to access a [`Handle`] again would return None,
-    /// 
-    /// only use this method if you're absolutely sure you only need the Sprite once
-    pub fn get(&mut self, path: &str) -> Option<Handle<Font>> {
-        self.0.remove(path)
-    }
-    pub fn id(&self, path: &str) -> Option<AssetId<Font>> {
-        self.0.get(path).map(|s| s.id())
-    }   
 }
 
 #[derive(Debug, Resource, Clone)]  // cloning only clones the Vec of names

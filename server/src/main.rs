@@ -100,10 +100,8 @@ fn setup(mut commands: Commands) {
 fn handle_new_client(connecting_client: On<Add, LinkOf>, mut commands: Commands) {
     commands
         .entity(connecting_client.entity)
-        .insert(ReplicationSender::default());
+        .insert(ReplicationSender);
 }
-
-// TODO seperate CustomTransform?
 
 /// connected client. spawns the main boat entity
 fn handle_connected_client(

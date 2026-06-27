@@ -15,6 +15,7 @@ use lightyear::prelude::Controlled;
 
 pub(crate) struct DivingPlugin;
 
+// TODO observers has .run_if in 0.19   
 impl Plugin for DivingPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<DivingStatus>();
@@ -78,7 +79,7 @@ fn update_diving_overlay(
     overlay: Single<&MeshMaterial2d<DivingOverlayShader>, (With<DivingOverlay>, Without<Boat>)>,
 ) {
     let material_handle = overlay.into_inner();
-    if let Some(diving_material) = diving_overlay_material.get_mut(material_handle) {
+    if let Some(diving_material) = diving_overlay_material.get_mut(material_handle).as_deref_mut() {
 
         diving_material.player_pos = boat_tf.translation.xy();
         (diving_material.radius, diving_material.darkness) = calculate_diving_overlay(

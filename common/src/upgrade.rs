@@ -84,7 +84,7 @@ mod client {
 
         let (mut boat, mut weapon_counter, mut player_stats) = query.into_inner();
 
-        *player_stats.level_mut() = target.level();
+        // *player_stats.level_mut() = target.level();
         if boat.sub_kind() == SubKind::Submarine && target.sub_kind() != SubKind::Submarine {  // maybe add depth to sub diving
             commands.trigger(MaybePushToSurface { last_boat: *boat });
         }
@@ -94,7 +94,7 @@ mod client {
             &mut weapon_counter
         );
 
-        if let Some(mesh) = meshes.get_mut(*circle_hud) {
+        if let Some(mesh) = meshes.get_mut(*circle_hud).as_deref_mut() {
             let circle_hud_radius = target.circle_hud_radius();
             *mesh = circle_hud_mesh(circle_hud_radius).into();
             // assume Z is CIRCLE_HUD
@@ -123,7 +123,7 @@ mod client {
 
             upgrade_components(target, &mut boat, &mut weapon_counter);
 
-            if let Some(mesh) = meshes.get_mut(*circle_hud) {
+            if let Some(mesh) = meshes.get_mut(*circle_hud).as_deref_mut() {
                 let circle_hud_radius = target.circle_hud_radius();
                 *mesh = circle_hud_mesh(circle_hud_radius).into();
                 // assume Z is CIRCLE_HUD

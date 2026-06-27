@@ -1,9 +1,9 @@
-use bevy::{input_focus::InputFocus, prelude::*};
+use bevy::{ecs::{query::QueryData, schedule::ScheduleConfigs}, input_focus::InputFocus, prelude::*};
 use bevy_inspector_egui::egui::emath::GuiRounding;
 use common::{Boat, Weapon, get_mut, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, Size, UpgradeEvent, UpgradeRollbackEvent, WeaponCounter, WeaponData}, protocol::{Move, Rotate}, util::{pixel, zip_longest}};
 use lightyear::prelude::{input::native::{ActionState, InputMarker}, *};
 
-use crate::{BoatState, asset::{FONT_PATHS, FontMap, SpriteMap, SpriteUiMap}, weapon::ChangeWeapon};
+use crate::{BoatState, asset::{SpriteMap, SpriteUiMap}, weapon::ChangeWeapon};
 
 pub(crate) struct UiPlugin;
 
@@ -21,7 +21,27 @@ impl Plugin for UiPlugin {
         app.add_plugins(WeaponUiPlugin);
 
         app.insert_state(AfterUpgradeDontClearMoveState::NoNeed);
+
+        // app.add_systems(FixedUpdate, stats_test);
+        app.insert_resource(BlockInput(false));
+        app.add_observer(update_block_input.run_if(resource_equals(BlockInput(false))));
     }
+}
+
+#[derive(Resource, PartialEq)]
+pub struct BlockInput(pub bool);
+
+pub fn update_block_input(_trigger: On<Pointer<Click>>, mut block_input: ResMut<BlockInput>) {
+    // should BlockInput target Hovered?
+    // block_input.0 = query.into_iter().find(|i| matches!(i, Interaction::Hovered | Interaction::Pressed)).is_some();
+    block_input.0 = true;
+}
+pub fn input_free(block_input: Res<BlockInput>) -> bool {
+    !block_input.0
+}
+
+fn stats_test(stats: Single<&PlayerStats, With<Controlled>>) {
+    info!("Stats: {:?}", *stats);
 }
 
 /// shows the [`UpgradeBar`]
@@ -31,8 +51,7 @@ impl Plugin for UiPlugin {
 /// diff with [`UpgradeEvent`]:
 ///     - triggered if [`DisplayScore::NewLevel`] is sent **and** [`UpgradeBar`] is hidden (which is hidden when user selects an upgrade)
 #[derive(Debug, Event)]
-struct ShowUpgrade;/* FIXME say we have enough score for lvl 3, we upgrade to lvl 2, current impl shows 0% to lvl 3 then only shows 
-lvl 3's upgrade menu if player's score updates */
+struct ShowUpgrade;
 
 fn recv_stats_update(
     mut rx: Single<&mut MessageReceiver<DisplayScore>>,
@@ -71,7 +90,6 @@ pub struct ProgressBar;
 
 pub(super) fn spawn_progress_bar(
     mut commands: Commands,
-    fonts: Res<FontMap>,
     current_level: Option<Single<&PlayerStats>>
 ) {
     let next_level = current_level.map(|c| c.level() + 1).unwrap_or(Level::Two);
@@ -100,9 +118,9 @@ pub(super) fn spawn_progress_bar(
             ..default()
         },
         TextFont {
-            font: fonts.get_long_lived("Aileron-Regular.otf").unwrap(),
-            font_size: 15.0,
-            weight: FontWeight::BOLD,
+            font: FontSource::SansSerif,
+            font_size: FONT_SIZE,
+            weight: FontWeight::NORMAL,
             ..default()
         },
         Text(format!("0% to level {}", next_level)),
@@ -154,17 +172,16 @@ pub(super) fn update_percent(
 /// display next-level boats with observers on clicking on one of them
 #[derive(Debug, Component)]
 struct UpgradeBar;
+#[derive(Debug, Component)]
+struct UpgradeText;
 
 /// spawns upgrade bar text and set visibility to hidden
-fn spawn_upgrade_bar(
-    fonts: Res<FontMap>,
-    mut commands: Commands,
-) {
+fn spawn_upgrade_bar(mut commands: Commands) {
     commands
         .spawn((
             Node {
                 // pushes first boat down
-                padding: UiRect::top(Val::Px(50.0)),
+                // padding: UiRect::top(Val::Px(50.0)),
                 margin: UiRect {
                     // center by X-axis
                     left: Val::Auto,
@@ -178,17 +195,24 @@ fn spawn_upgrade_bar(
             },
             #[cfg(debug_assertions)]
             Outline::new(Val::Px(1.0), Val::ZERO, Color::BLACK),
-            TextLayout {
-                justify: Justify::Center,
-                ..default()
-            },
-            TextFont {
-                font: fonts.get_long_lived("Aileron-Regular.otf").unwrap(),
-                font_size: 15.0,
-                weight: FontWeight::BOLD,
-                ..default()
-            },
-            Text("Upgrade to level N/A".to_owned()),
+            children![(
+                Node {
+                    padding: UiRect::top(px(10)).with_bottom(px(10)),
+                    ..default()
+                },
+                TextLayout {
+                    justify: Justify::Center,
+                    ..default()
+                },
+                TextFont {
+                    font: FontSource::SansSerif,
+                    font_size: FONT_SIZE,
+                    weight: FontWeight::MEDIUM,
+                    ..default()
+                },
+                Text("Upgrade to level N/A".to_owned()),
+                UpgradeText
+            )],
             Name::new("UpgradeBar"),
             UpgradeBar,
             Visibility::Hidden,
@@ -276,7 +300,7 @@ fn on_choose_upgrade(
     mut upgrade_bar: Single<&mut Visibility, With<UpgradeBar>>,
     mut progress_bar: Single<&mut Visibility, (With<ProgressBar>, Without<UpgradeBar>)>,
 
-    boat_q: Single<(&mut Sprite, &PlayerStats), With<Controlled>>,
+    boat_q: Single<(&mut Sprite, &mut PlayerStats), With<Controlled>>,
     sprites: Res<SpriteMap>,
 
     percent: Single<(&mut Text, &mut BackgroundGradient), With<ProgressBar>>,
@@ -297,9 +321,10 @@ fn on_choose_upgrade(
         debug!("gradually_decrease");
     }
 
-    let (mut sprite, stats) = boat_q.into_inner();
+    let (mut sprite, mut stats) = boat_q.into_inner();
     // debug_assert_eq!(trigger.target.level(), stats.level() + 1); reasoning for ignoring: the updating PlayerStats observer may run before this system
     
+    // *stats.level_mut() = trigger.target.level();
     debug!(upgrade_target = ?trigger.target, "Chose upgrade");
     let multiple_upgrades = 'multiple_upgrade: {
         let DisplayScore::NewLevel(max) = stats.display() else {
@@ -321,7 +346,7 @@ fn on_choose_upgrade(
             false
         }
     };
-    // sprite.image = sprites.image();
+    sprite.image = sprites.image();
     sprite.custom_size = Some(trigger.target.render_size());
     let Some(ref mut texture_atlas) = sprite.texture_atlas else {
         panic!()
@@ -333,6 +358,7 @@ fn on_choose_upgrade(
         **progress_bar = Visibility::Visible;
 
         let (mut text, mut background) = percent.into_inner();
+        dbg!(&stats);
         debug!("Updating percent after upgrade to {}", stats.display().unwrap_percent());
         update_percent(stats.display().unwrap_percent(), trigger.target.level(), &mut text, &mut background);
     }
@@ -362,22 +388,7 @@ fn receive_other_boat_update(
         sprite.custom_size = Some(boat.render_size());
     }
 }
-/*
-#[derive(Debug)]
-struct Borrows<'a>(&'a u8);
-fn bar() {
-    let mut f = Borrows(&3);
-    {
-        let b= foo_shared(&f);
-        dbg!(b);
-    }
-    let a = &mut f;
-    dbg!(a);
-}
-fn foo<'a>(f: &'a mut Borrows<'a>) -> &'a mut Borrows<'a> {
-    f
-}
-fn foo_shared<'a>(f: &'a Borrows<'a>) -> &'a Borrows<'a> { f }*/
+
 /* [common/src/primitives.rs:544:9] self = PlayerStats {
     score: 0,
     level: Two,
@@ -389,44 +400,11 @@ attempt to subtract with overflow
 &&
 Displaying wrong upgrade text (+1) when logs say it's correct
 
-logs:
-
-2026-06-15T17:26:45.245219Z  INFO client::ui: You clicked Zubr!
-2026-06-15T17:26:45.245373Z  INFO client::ui: Multiple updates
-2026-06-15T17:26:45.245402Z  INFO client::ui: Showed upgrade of level 3
-[client/src/ui.rs:417:13] child = Some(
-    244v1,
-)
-[client/src/ui.rs:417:13] boat = None
-[client/src/ui.rs:417:13] child = Some(
-    299v0,
-)
-[client/src/ui.rs:417:13] boat = None
-[client/src/ui.rs:417:13] child = Some(
-    300v0,
-)
-[client/src/ui.rs:417:13] boat = None
-2026-06-15T17:26:45.246679Z  INFO client: PlayerStats: PlayerStats { score: 100, level: Two }
-2026-06-15T17:26:45.262169Z  INFO client: PlayerStats: PlayerStats { score: 109, level: Two }
-2026-06-15T17:26:45.262491Z  INFO client::ui: msg=NewLevel(Three)
-2026-06-15T17:26:45.262519Z  INFO client::ui: msg=NewLevel(Three)
-2026-06-15T17:26:45.262528Z  INFO client::ui: msg=NewLevel(Three)
-2026-06-15T17:26:45.262532Z  INFO client::ui: msg=NewLevel(Three)
-2026-06-15T17:26:45.262634Z  INFO client::ui: Showed upgrade of level 3
-[client/src/ui.rs:417:13] child = Some(
-    244v1,
-)
-[client/src/ui.rs:417:13] boat = None
-[client/src/ui.rs:417:13] child = Some(
-    299v0,
-)
-[client/src/ui.rs:417:13] boat = None
-[client/src/ui.rs:417:13] child = Some(
-    300v0,
-)
-[client/src/ui.rs:417:13] boat = None
-
-redundant 
+2026-06-25T19:19:47.261584Z DEBUG client::ui: Chose upgrade upgrade_target=Zubr
+2026-06-25T19:19:47.261596Z ERROR common::primitives: self.score=0 min=30
+2026-06-25T19:19:47.261607Z ERROR common::primitives: self.score=0 min=30
+2026-06-25T19:19:47.261614Z DEBUG client::ui: Updating percent after upgrade to 0
+2026-06-25T19:19:47.261620Z ERROR common::primitives: self.score=0 min=30
 */
 
 /// sets
@@ -456,12 +434,13 @@ fn update_upgrade_ui(
             update_percent(0, target_level, &mut text, &mut linear_gradient);
         }
 
-        let (mut vis, mut text) = world.query_filtered::<(&mut Visibility, &mut Text), With<UpgradeBar>>().single_mut(world).unwrap();
+        let mut vis = world.query_filtered::<&mut Visibility, With<UpgradeBar>>().single_mut(world).unwrap();
 
         if unhide_upgrade_ui {
             *vis = Visibility::Visible;
         }
 
+        let mut text = world.query_filtered::<&mut Text, With<UpgradeText>>().single_mut(world).unwrap();
         text.0 = format!("Upgrade to level {}", target_level);
 
         let children = world.query_filtered::<&Children, With<UpgradeBar>>()
@@ -470,6 +449,12 @@ fn update_upgrade_ui(
         let entity = world.query_filtered::<Entity, With<UpgradeBar>>().single(world).unwrap();
 
         for (child, boat) in zip_longest(children, target_level.avaliable_boats()) {
+            if let Some(child) = child
+                && world.entity(child).contains::<UpgradeText>()
+            {
+                // is the upgrade text
+                continue;
+            }
             match (child, boat) {
                 (Some(child), Some(boat)) => {
                     debug!("Updating {child}'s sprite and associated boat");
@@ -541,7 +526,14 @@ pub(crate) struct UpdateWeaponSelectionBarCount;
 #[derive(Debug, Component)]
 struct WeaponDataText;
 
-const FONT_SIZE: f32 = 15.0;
+const FONT_SIZE: FontSize = FontSize::Px(15.0);
+const FONT_SIZE_PX: f32 = {
+    if let FontSize::Px(p) = FONT_SIZE {
+        p
+    } else {
+        panic!("Expected pixel")
+    }
+};
 const PADDING_TOP: i32 = 10;
 const ROW_GAP: i32 = 10;
 const PADDING: UiRect = UiRect::all(pixel(10)).with_left(pixel(5)).with_right(pixel(5));
@@ -552,7 +544,6 @@ fn spawn_weapon_selection_bar(
     weapon_counter: Single<(Entity, &WeaponCounter), With<Controlled>>,
     mut commands: Commands,
     sprites: Res<SpriteUiMap>,
-    fonts: Res<FontMap>
 ) {
     if weapon_counter.0 != trigger.entity {
         return;  // other's
@@ -587,7 +578,6 @@ fn spawn_weapon_selection_bar(
                 weapon,
                 data,
                 sprites: &sprites,
-                font: Some(fonts.get_long_lived(FONT_PATHS[0]).unwrap())
             };
             base.spawn(weapon_selection_bundle(settings));
         }
@@ -599,11 +589,9 @@ struct WeaponSelectionSettings<'a> {
     selected_weapon: Weapon,
     weapon: Weapon,
     data: WeaponData,
-    sprites: &'a SpriteUiMap,
-    font: Option<Handle<Font>>
+    sprites: &'a SpriteUiMap
 }
 
-// TODO just update index and despawn if necessary when upgrading
 fn weapon_selection_bundle(settings: WeaponSelectionSettings) -> impl Bundle {
     let weapon = settings.weapon;
     (
@@ -642,8 +630,9 @@ fn weapon_selection_bundle(settings: WeaponSelectionSettings) -> impl Bundle {
             // avaliable/max text
             Text::new(format!("{}/{}", settings.data.avaliable, settings.data.max)),    // dyn ????? lets just refill weapon on upgrade for now
             TextFont {
-                font: settings.font.unwrap_or_default(),
+                font: FontSource::SansSerif,
                 font_size: FONT_SIZE,
+                style: FontStyle::Normal,
                 ..default()
             },
             TextColor(if settings.selected_weapon == weapon {  // dyn
@@ -661,31 +650,97 @@ fn weapon_selection_bundle(settings: WeaponSelectionSettings) -> impl Bundle {
 }
 
 const fn get_weapon_selection_bar_height(largest_height: u32) -> u32 {
-    largest_height + PADDING_TOP as u32 * 2 + FONT_SIZE as u32 + ROW_GAP as u32
+    largest_height + PADDING_TOP as u32 * 2 + FONT_SIZE_PX as u32 + ROW_GAP as u32
 }
 
+#[derive(Debug, QueryData)]
+#[query_data(mutable)]
+struct WeaponSelectionIndividualData<'a> {
+    node: &'a mut Node,
+    background: &'a mut BackgroundColor,
+    identifier: &'a mut WeaponSelectionIndividualBox,
+    children: &'a Children
+}
+#[derive(Debug, QueryData)]
+#[query_data(mutable)]
+struct WeaponSelectionIndividualImageData<'a> {
+    node: &'a mut Node,
+    image: &'a mut ImageNode,
+}
+#[derive(Debug, QueryData)]
+#[query_data(mutable)]
+struct WeaponSelectionIndividualTextData<'a> {
+    text: &'a mut Text
+}
+/// on upgrade
 fn update_selection_bar(
     trigger: On<UpdateWeaponSelectionBar>,
     sprites: Res<SpriteUiMap>,
-    fonts: Res<FontMap>,
     boat_query: Single<(&Boat, &WeaponCounter), With<Controlled>>,
 
-    base_entity: Single<Entity, With<WeaponSelection>>,
+    base_entity: Single<(Entity, &Children), With<WeaponSelection>>,
+    mut individual_weapon: Query<WeaponSelectionIndividualData, With<WeaponSelectionIndividualBox>>,
+    mut images: Query<WeaponSelectionIndividualImageData, (With<WeaponSelectionIndividualImage>, Without<WeaponSelectionIndividualBox>)>,
+    mut texts: Query<WeaponSelectionIndividualTextData, With<WeaponDataText>>,
     mut commands: Commands
 ) {
     let (boat, weapon_counter) = boat_query.into_inner();
     assert_eq!(*boat, trigger.target); // somehow re-run the observer later...
 
-    let mut base_entity = commands.get_entity(*base_entity).unwrap();
-
+    
     let Some(height) = weapon_counter.weapons.keys().map(|this| {
         sprites.get_size(*this).unwrap().height()
     }).max() else {
         return;  // hm
     };
     let height = get_weapon_selection_bar_height(height);
+    
+    let (base, children) = base_entity.into_inner();
+    // dbg!(&weapon_counter);
+    for (child, weapon) in zip_longest(children, trigger.target.armanents()) {
+        match (child, weapon) {
+            (Some(child), Some((weapon, data))) => {
+                let mut individual_weapon = individual_weapon.get_mut(*child).unwrap();
+                individual_weapon.node.height = px(height);
+                // may run into issues about wapon counter not updated
+                if weapon_counter.selected_weapon == Some(weapon) {
+                    individual_weapon.background.0 = PRESSED_BACKGROUND;
+                } else if individual_weapon.background.0 == PRESSED_BACKGROUND {
+                    individual_weapon.background.0 = NORMAL_BACKGROUND
+                }
+                individual_weapon.identifier.0 = weapon;
 
-    base_entity.despawn_children();
+                {
+                    let mut image = get_mut!(individual_weapon.children, images).unwrap();
+                    image.image.texture_atlas = sprites.get(weapon);
+                    let size = sprites.get_size(weapon).unwrap();
+                    image.node.width = px(size.width());
+                    image.node.height = px(size.height());
+                }
+                {
+                    let mut text = get_mut!(individual_weapon.children, texts).unwrap();
+                    *text.text = Text::new(format!("{}/{}", data.avaliable, data.max));
+                }
+            }
+            (Some(excess), None) => {
+                commands.entity(*excess)
+                    .despawn();
+            }
+            (None, Some((weapon, data))) => {
+                let settings = WeaponSelectionSettings {
+                    height,
+                    selected_weapon: weapon_counter.selected_weapon.unwrap(),
+                    weapon,
+                    data,
+                    sprites: &sprites,
+                };
+                commands.entity(base)
+                    .with_child(weapon_selection_bundle(settings));
+            }
+            (None, None) => unreachable!()
+        }
+    }
+    /*base_entity.despawn_children();
 
     base_entity.with_children(|base| {
         for &(weapon, data) in weapon_counter.weapons.iter() {
@@ -700,7 +755,7 @@ fn update_selection_bar(
             // TODo
             base.spawn(weapon_selection_bundle(settings));
         }
-    });
+    });*/
 }
 
 fn update_selection_bar_count(
@@ -708,11 +763,13 @@ fn update_selection_bar_count(
     weapon_counter: Single<&WeaponCounter, With<Controlled>>,
     container: Query<(&Children, &WeaponSelectionIndividualBox)>,
     mut count: Query<&mut Text, With<WeaponDataText>>
-) -> Result {  // TODO not determistic since we can't assume that this would always run before the updating weapon counter system
+) -> Result {  // not determistic since we can't assume that this would always run before the updating weapon counter system
     let Some(selected) = weapon_counter.selected_weapon else {
         return Err("No selected weapon, should be handled in firing weapon".into())
     };
     let Some((children, _)) = container.into_iter().find(|(_, c)| c.0 == selected) else {
+        dbg!(container.iter().collect::<Vec<_>>());
+        dbg!(selected);
         return Err("No weapon selection of the currently selected weapon".into())
     };
     let mut text = get_mut!(children, count).unwrap();
@@ -768,7 +825,7 @@ fn switch_weapon_selection_bar_brightness(
                 {
                     continue;  // no excessive event fires
                 }
-                input_focus.set(entity);
+                input_focus.set(entity, bevy::input_focus::FocusCause::Pressed);
                 commands.trigger(ChangeWeapon { target: *weapon });
                 // colouring done in fn change_weapon to avoid ambiguity
                 button.set_changed();
@@ -777,7 +834,7 @@ fn switch_weapon_selection_bar_brightness(
                 if background.0 == PRESSED_BACKGROUND {
                     continue;  // already pressing
                 }
-                input_focus.set(entity);
+                input_focus.set(entity, bevy::input_focus::FocusCause::Navigated);
                 image.color = HOVER;
                 background.0 = HOVER_BACKGROUND;
                 button.set_changed();
@@ -830,6 +887,19 @@ fn change_weapon(
     text_color.0 = TEXT_SELECTED;
 }
 
+pub trait InputEnabled<M> {
+    fn normal_input(self) -> ScheduleConfigs<Box<dyn System<Out = (), In = ()> + 'static>>;
+}
+
+impl<T, M> InputEnabled<M> for T
+where 
+    T: IntoScheduleConfigs<Box<dyn System<Out = (), In = ()>>, M>
+{
+    fn normal_input(self) -> ScheduleConfigs<Box<dyn System<Out = (), In = ()> + 'static>> {
+        self.run_if(input_free)
+    }
+}
+
 #[allow(dead_code)]
 struct DbgPlugin;
 
@@ -855,7 +925,8 @@ fn spawn_dbg_gui(mut commands: Commands) {
     commands.spawn((
         Text::new("RotateInput: None\nSpeedInput: None\nState: Stopped\nPosition: None\nAltitude: None\nRotation: None\nSpeed: None\nScore: None"),
         TextFont {
-            font_size: 15.0,
+            font: FontSource::Monospace,
+            font_size: FONT_SIZE,
             ..default()
         },
         Node {
