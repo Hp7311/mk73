@@ -34,8 +34,10 @@ pub struct UpgradePlugin;
 impl Plugin for UpgradePlugin {
     fn build(&self, app: &mut App) {
         #[cfg(feature = "client")]
-        app.add_observer(client::on_upgrade)
-            .add_systems(Update, client::recv_rollback);
+        {
+            app.add_observer(client::on_upgrade)
+                .add_systems(FixedUpdate, client::recv_rollback);
+        }
         #[cfg(feature = "server")]
         {
             app.configure_sets(FixedUpdate, (
@@ -50,12 +52,20 @@ impl Plugin for UpgradePlugin {
 #[cfg(feature = "server")]
 pub use server::UpgradeSet;
 #[cfg(feature = "client")]
+pub use client::UpgradeEventCommonFinished;
+#[cfg(feature = "client")]
 mod client {
     use crate::boat::{CircleHud, SubKind};
     use crate::{BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, circle_hud_mesh};
     use crate::protocol::{EntityOnServer, SendToServerOrdered};
     use crate::primitives::{MaybePushToSurface, PlayerStats, UpgradeEvent, UpgradeRollbackEvent};
     use super::*;
+
+    /// the updatng of components have finished (in `common`)
+    #[derive(Debug, Event)]
+    pub struct UpgradeEventCommonFinished {
+        pub target: Boat
+    }
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn on_upgrade(
@@ -84,7 +94,7 @@ mod client {
 
         let (mut boat, mut weapon_counter, mut player_stats) = query.into_inner();
 
-        // *player_stats.level_mut() = target.level();
+        *player_stats.level_mut() = target.level();
         if boat.sub_kind() == SubKind::Submarine && target.sub_kind() != SubKind::Submarine {  // maybe add depth to sub diving
             commands.trigger(MaybePushToSurface { last_boat: *boat });
         }
@@ -103,6 +113,8 @@ mod client {
         }
 
         boat_type.0 = target.sub_kind();
+
+        commands.trigger(UpgradeEventCommonFinished { target });
     }
     #[allow(clippy::too_many_arguments)]
     pub(super) fn recv_rollback(

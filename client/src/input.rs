@@ -15,7 +15,7 @@
 use bevy::{input::common_conditions::input_pressed, prelude::*};
 use common::{Boat, eq, primitives::{
     CursorPos, CustomTransform, FlipRadian as _, NormalizeRadian as _, Speed, WrapRadian as _
-}, protocol::{Move, Rotate}, util::{add_circle_hud, calculate_from_proportion, get_rotate_radian, input_not_pressed}};
+}, protocol::{Move, Rotate}, util::{InputEnabled, add_circle_hud, calculate_from_proportion, get_rotate_radian, input_not_pressed}};
 use lightyear::{
     input::client::InputSystems,
     prelude::{
@@ -37,13 +37,13 @@ impl Plugin for InputBufferPlugin {
         app.add_systems(
             FixedPreUpdate,
             (buffer_rotate, buffer_move)
-                .in_set(InputSystems::WriteClientInputs)
                 .run_if(in_states_2(
                     BoatState::Moving { locked: true },
                     BoatState::Moving { locked: false }
                 ))
                 .run_if(input_pressed(MouseButton::Left))
-                // .run_if(input_free)
+                .normal_input()
+                .in_set(InputSystems::WriteClientInputs)
         );
         app.add_systems(FixedPreUpdate, (
             // only reset rotation if reached

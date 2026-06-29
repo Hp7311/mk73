@@ -6,6 +6,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::ops::{Range, RangeInclusive};
 use std::slice;
 use std::sync::LazyLock;
+use bevy::ecs::schedule::ScheduleConfigs;
 // remember high test coverage
 use bevy::{math::ops::atan2, prelude::*};
 #[cfg(feature = "server")]
@@ -535,6 +536,43 @@ where
             (a, b) => Some((a, b))
         }
     })
+}
+
+
+pub trait InputEnabled<M> {
+    /// equivalent of `.run_if(input_free)`
+    /// 
+    /// when a system/observer can only be run when the user is NOT interacting with UI
+    fn normal_input(self) -> ScheduleConfigs<Box<dyn System<Out = (), In = ()> + 'static>>;
+}
+
+impl<T, M> InputEnabled<M> for T
+where 
+    T: IntoScheduleConfigs<Box<dyn System<Out = (), In = ()>>, M>
+{
+    fn normal_input(self) -> ScheduleConfigs<Box<dyn System<Out = (), In = ()> + 'static>> {
+        self.run_if(input_free)
+    }
+}
+
+#[derive(Resource, PartialEq)]
+pub struct BlockInput(pub bool);
+
+pub fn input_free(block_input: Res<BlockInput>) -> bool {
+    !block_input.0
+}
+
+#[macro_export]
+macro_rules! log_on_add {
+    (<$target:ty>) => {
+        |trigger: On<Add, $target>, query: Query<&$target>| {
+            let Ok(comp) = query.get(trigger.entity) else {
+                error!("{} was added but not found", stringify!($target));
+                return;
+            };
+            debug!("{} was added: {:?}", stringify!($target), comp);
+        } 
+    };
 }
 #[cfg(test)]
 mod tests {

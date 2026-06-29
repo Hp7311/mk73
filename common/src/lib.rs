@@ -21,6 +21,8 @@ pub mod util;
 pub use movement::MovementPlugin;
 #[cfg(feature = "server")]
 pub use upgrade::UpgradeSet;
+#[cfg(feature = "client")]
+pub use upgrade::UpgradeEventCommonFinished;
 pub use upgrade::UpgradePlugin;
 pub use weapon::{Weapon, WeaponType};
 pub use boat::{Boat, SubKind, CircleHud, BoatClientId, BoatReverseNegative, BoatReversePositive};

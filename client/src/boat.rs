@@ -28,7 +28,9 @@ fn spawn_boat(
     let (&boat, &custom) = boats.get(trigger.entity).unwrap();
     let controls = controlled.get(trigger.entity).is_ok();
 
+    info!("new boat");
     if !controls {
+        info!("doesnt control");
         commands.get_entity(trigger.entity).unwrap()
             .insert(BoatBundleNotControl {
                 transform: Transform {

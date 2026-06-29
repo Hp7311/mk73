@@ -26,6 +26,7 @@ use crate::weapon::WeaponPlugin;
 
 fn main() {
     let mut app = App::new();
+    
     #[cfg(not(feature = "gui"))]
     app.add_plugins((
         // headless plugins
@@ -55,7 +56,6 @@ fn main() {
         .add_observer(handle_new_client)
         .add_observer(handle_connected_client);
 
-    // app.add_systems(FixedUpdate, update_tf.in_set(ServerMovementSet::ApplyToTransform));
     net::backend_actix();
 
     app.run();
@@ -115,11 +115,14 @@ fn handle_connected_client(
         return;
     };
 
+
     let boat = Boat::Yasen;
     let position = vec2(
         rand::random_range(-200.0..200.0),
         rand::random_range(-200.0..200.0),
     );
+
+    info!("Spawning ship");
 
     let mut entity_commands = commands.spawn((
         CustomTransform {
@@ -127,7 +130,7 @@ fn handle_connected_client(
             ..CustomTransform::default()
         },
         boat,
-        WeaponCounter::from_boat(&boat),  // notTODO not replicated, will do messages to update
+        WeaponCounter::from_boat(&boat),  // not replicated, will do messages to update
         OCEAN_SURFACE,
         PlayerStats::new(0),
         
@@ -140,11 +143,6 @@ fn handle_connected_client(
         ActionState::<Rotate>::default(),
         ActionState::<Move>::default(),
         ActionState::<ZIndexUpdate>::default(),
-
-        // children![(
-        //     OCEAN_SURFACE,
-        //     Replicate::to_clients(NetworkTarget::AllExceptSingle(client_id))
-        // )],
         
         ControlledBy {
             owner: entity,

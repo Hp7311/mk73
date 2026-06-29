@@ -199,21 +199,21 @@ impl Plugin for ProtocolPlugin {
         app.component::<WorldSize>().replicate();
         app.component::<Boat>().replicate();
         app.component::<CustomTransform>()
+            .replicate()
             .predict()
             .add_linear_interpolation();
         app.component::<ZIndex>().replicate();
 
         app.component::<EntityOnServer>().replicate();
 
-        // app.register_message::<NewZIndex>().add_direction(NetworkDirection::ClientToServer);
-
         app.component::<OilRigTransform>().replicate();
-        app.component::<PointTransform>().add_linear_interpolation();
+        app.component::<PointTransform>().replicate()
+            .add_linear_interpolation();
 
         app.component::<PlayerStats>().replicate();
         app.register_message::<DisplayScore>().add_direction(NetworkDirection::ServerToClient);
 
-        // MUST register these two for every input
+        // // MUST register these two for every input
         app.add_plugins(InputPlugin::<Rotate>::default());
         app.add_plugins(InputPlugin::<Move>::default());
         app.add_plugins(InputPlugin::<ZIndexUpdate>::default());
@@ -228,10 +228,12 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<UpgradeRollback>().add_direction(NetworkDirection::ServerToClient);
 
         app.component::<Weapon>().replicate();
-        app.component::<Transform>().replicate();
+        // USED BY WEAPONS
+        app.component::<Transform>().replicate_filtered::<With<Weapon>>();
         app.component::<LastSpeed>().replicate();
         app.component::<TargetRotation>().replicate();
 
+        // --- various channels
         app.add_channel::<SendToClient>(ChannelSettings {
             mode: ChannelMode::UnorderedReliable(ReliableSettings::default()),
             ..default()

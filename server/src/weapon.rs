@@ -55,6 +55,8 @@ fn recv_spawning(
                 TargetRotation(msg.end_rotation),
                 LastSpeed(Speed::ZERO),
 
+                // replicated to all but the controlling client, controlling client
+                // simulates weapon locally without server intervention
                 Replicate::to_clients(NetworkTarget::AllExceptSingle(msg.client_id))
             ));
         }

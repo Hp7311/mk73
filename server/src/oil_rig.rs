@@ -3,7 +3,7 @@ use std::{f32::consts::PI, ops::Range};
 use std::sync::LazyLock;
 use bevy::prelude::*;
 use lightyear::link::server::Server;
-use lightyear::prelude::{InterpolationTarget, NetworkTarget, Replicate, ServerMultiMessageSender};
+use lightyear::prelude::{NetworkTarget, Replicate, ServerMultiMessageSender};
 use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
 use common::{Boat, OCEAN_SURFACE, eq};
@@ -204,7 +204,7 @@ fn rig_spawn_points(
                     point: chosen_type
                 },
                 Replicate::to_clients(NetworkTarget::All),
-                InterpolationTarget::to_clients(NetworkTarget::All)
+                // InterpolationTarget::to_clients(NetworkTarget::All)
             ));
 
             point_amount.add(chosen_type.worth());

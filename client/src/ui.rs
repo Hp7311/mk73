@@ -1,6 +1,6 @@
-use bevy::{ecs::{query::QueryData, schedule::ScheduleConfigs}, input_focus::InputFocus, prelude::*};
+use bevy::{ecs::{query::QueryData}, input_focus::InputFocus, prelude::*};
 use bevy_inspector_egui::egui::emath::GuiRounding;
-use common::{Boat, Weapon, get_mut, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, Size, UpgradeEvent, UpgradeRollbackEvent, WeaponCounter, WeaponData}, protocol::{Move, Rotate}, util::{pixel, zip_longest}};
+use common::{Boat, UpgradeEventCommonFinished, Weapon, get_mut, primitives::{CustomTransform, DisplayScore, Level, Percent, PlayerStats, Size, UpgradeEvent, UpgradeRollbackEvent, WeaponCounter, WeaponData}, protocol::{Move, Rotate}, util::{BlockInput, pixel, zip_longest}};
 use lightyear::prelude::{input::native::{ActionState, InputMarker}, *};
 
 use crate::{BoatState, asset::{SpriteMap, SpriteUiMap}, weapon::ChangeWeapon};
@@ -22,26 +22,31 @@ impl Plugin for UiPlugin {
 
         app.insert_state(AfterUpgradeDontClearMoveState::NoNeed);
 
-        // app.add_systems(FixedUpdate, stats_test);
         app.insert_resource(BlockInput(false));
-        app.add_observer(update_block_input.run_if(resource_equals(BlockInput(false))));
+        
+        // pre update because:
+        // uh
+        app.add_systems(FixedPreUpdate, update_block_input_to_true.run_if(resource_equals(BlockInput(false))))
+            // post update because:
+            // if a interaction finished before the current frame, systems may catch the event and see BlockInput(false)
+            .add_systems(FixedPostUpdate, update_block_input_to_false.run_if(resource_equals(BlockInput(true))));
     }
 }
 
-#[derive(Resource, PartialEq)]
-pub struct BlockInput(pub bool);
-
-pub fn update_block_input(_trigger: On<Pointer<Click>>, mut block_input: ResMut<BlockInput>) {
+fn update_block_input_to_true(interactions: Query<&Interaction, Changed<Interaction>>, mut block_input: ResMut<BlockInput>) {
     // should BlockInput target Hovered?
-    // block_input.0 = query.into_iter().find(|i| matches!(i, Interaction::Hovered | Interaction::Pressed)).is_some();
-    block_input.0 = true;
+    if interactions.into_iter().find(|i| matches!(i, Interaction::Pressed)).is_some() {
+        trace!("Interacting with UI, blocking gameplay actions");
+        block_input.0 = true;
+    }
 }
-pub fn input_free(block_input: Res<BlockInput>) -> bool {
-    !block_input.0
-}
-
-fn stats_test(stats: Single<&PlayerStats, With<Controlled>>) {
-    info!("Stats: {:?}", *stats);
+fn update_block_input_to_false(interactions: Query<&Interaction, Changed<Interaction>>, mut block_input: ResMut<BlockInput>) {
+    // if any changes to hovered/none
+    // still checking because Changed records all mutable derefs
+    if interactions.into_iter().find(|i| matches!(i, Interaction::Hovered | Interaction::None)).is_some() {
+        trace!("Finished interacting with the UI, re-enabling gameplay actions");
+        block_input.0 = false;
+    }
 }
 
 /// shows the [`UpgradeBar`]
@@ -240,6 +245,7 @@ macro_rules! spawn_upgrade_ui_boat {
             },
             #[cfg(debug_assertions)]
             Outline::new(Val::Px(1.0), Val::ZERO, Color::BLACK),
+            Button,  // to block user input
             UpgradeOption($boat),
             $image
         )).observe(click_upgrade_observer)
@@ -295,7 +301,7 @@ pub(crate) enum AfterUpgradeDontClearMoveState {
 // hide the upgradebar and disable click detections (possibly despawn?)
 // un-hide progressbar
 fn on_choose_upgrade(
-    trigger: On<UpgradeEvent>,
+    trigger: On<UpgradeEventCommonFinished>,
 
     mut upgrade_bar: Single<&mut Visibility, With<UpgradeBar>>,
     mut progress_bar: Single<&mut Visibility, (With<ProgressBar>, Without<UpgradeBar>)>,
@@ -321,10 +327,10 @@ fn on_choose_upgrade(
         debug!("gradually_decrease");
     }
 
-    let (mut sprite, mut stats) = boat_q.into_inner();
+    let (mut sprite, stats) = boat_q.into_inner();
     // debug_assert_eq!(trigger.target.level(), stats.level() + 1); reasoning for ignoring: the updating PlayerStats observer may run before this system
     
-    // *stats.level_mut() = trigger.target.level();
+    // *stats.level_mut() = trigger.target.level();  // in common
     debug!(upgrade_target = ?trigger.target, "Chose upgrade");
     let multiple_upgrades = 'multiple_upgrade: {
         let DisplayScore::NewLevel(max) = stats.display() else {
@@ -448,13 +454,11 @@ fn update_upgrade_ui(
             .unwrap_or(vec![]);  // start with empty children
         let entity = world.query_filtered::<Entity, With<UpgradeBar>>().single(world).unwrap();
 
-        for (child, boat) in zip_longest(children, target_level.avaliable_boats()) {
-            if let Some(child) = child
-                && world.entity(child).contains::<UpgradeText>()
-            {
-                // is the upgrade text
-                continue;
-            }
+        let filtered_children = children
+            .into_iter()
+            .filter(|child| !world.entity(*child).contains::<UpgradeText>())
+            .collect::<Vec<_>>();
+        for (child, boat) in zip_longest(filtered_children, target_level.avaliable_boats()) {
             match (child, boat) {
                 (Some(child), Some(boat)) => {
                     debug!("Updating {child}'s sprite and associated boat");
@@ -478,6 +482,7 @@ fn update_upgrade_ui(
                 }
                 (None, Some(boat)) => {
                     // spawn new ones
+                    debug!("Spawning new upgrade option");
                     world.commands().entity(entity)
                         .with_children(|parent| {
                             debug!(new_boat_entity = ?boat);
@@ -712,7 +717,12 @@ fn update_selection_bar(
 
                 {
                     let mut image = get_mut!(individual_weapon.children, images).unwrap();
-                    image.image.texture_atlas = sprites.get(weapon);
+                    if let Some(atlas) = &mut image.image.texture_atlas {
+                        atlas.index = sprites.get_index(weapon).unwrap();
+                    } else {
+                        warn!("Expected a texture atlas");
+                        image.image.texture_atlas = Some(sprites.get(weapon).unwrap());
+                    }
                     let size = sprites.get_size(weapon).unwrap();
                     image.node.width = px(size.width());
                     image.node.height = px(size.height());
@@ -740,22 +750,6 @@ fn update_selection_bar(
             (None, None) => unreachable!()
         }
     }
-    /*base_entity.despawn_children();
-
-    base_entity.with_children(|base| {
-        for &(weapon, data) in weapon_counter.weapons.iter() {
-            let settings = WeaponSelectionSettings {
-                height,
-                selected_weapon: weapon_counter.selected_weapon.unwrap(),
-                weapon,
-                data,
-                sprites: &sprites,
-                font: Some(fonts.get_long_lived(FONT_PATHS[0]).unwrap())
-            };
-            // TODo
-            base.spawn(weapon_selection_bundle(settings));
-        }
-    });*/
 }
 
 fn update_selection_bar_count(
@@ -887,18 +881,6 @@ fn change_weapon(
     text_color.0 = TEXT_SELECTED;
 }
 
-pub trait InputEnabled<M> {
-    fn normal_input(self) -> ScheduleConfigs<Box<dyn System<Out = (), In = ()> + 'static>>;
-}
-
-impl<T, M> InputEnabled<M> for T
-where 
-    T: IntoScheduleConfigs<Box<dyn System<Out = (), In = ()>>, M>
-{
-    fn normal_input(self) -> ScheduleConfigs<Box<dyn System<Out = (), In = ()> + 'static>> {
-        self.run_if(input_free)
-    }
-}
 
 #[allow(dead_code)]
 struct DbgPlugin;

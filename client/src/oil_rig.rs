@@ -22,7 +22,6 @@ fn spawn_rig(
 ) {
     // NOTE client-inserted components get removed when server despawns the replicating entity
     let Ok(rig_info) = rigs.get(trigger.entity) else { panic!() };
-
     commands.get_entity(trigger.entity).unwrap().insert((
         Transform {
             translation: rig_info.position.extend(OilRigTransform::z_index_transform()),
@@ -46,7 +45,6 @@ fn spawn_point(
     mut commands: Commands
 ) {
     let point_info = points.get(trigger.entity).unwrap();
-
     commands.get_entity(trigger.entity).unwrap()
         .insert((
             Sprite {

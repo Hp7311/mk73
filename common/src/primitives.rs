@@ -19,7 +19,7 @@ use crate::util::{InputExt, OrderedHashMap, move_with_rotation};
 use crate::world::WorldSize;
 
 /// note that this is not updated on client for boats that it doesn't control
-#[derive(Component, Debug, Copy, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Component, Serialize, Deserialize, PartialEq, Copy, Clone, Debug, Default, Reflect)]
 pub struct CustomTransform {
     /// along the `rotation`, negative if reversed
     pub speed: Speed,
@@ -449,7 +449,7 @@ impl GetZIndex for Vec3 {
         self.z.wrap_z()
     }
 }
-#[derive(Component, Debug, PartialEq, Copy, Clone, Default, Deref, Deserialize, Serialize)]
+#[derive(Component, Debug, PartialEq, Copy, Clone, Default, Deref, Deserialize, Serialize, Reflect)]
 pub struct Position(pub Vec2);
 
 impl AddAssign for Position {

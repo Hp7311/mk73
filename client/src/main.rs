@@ -10,13 +10,17 @@ mod oil_rig;
 mod ui;
 mod asset;
 
+use std::env::current_dir;
+use std::sync::LazyLock;
 use std::time::Duration;
 
-use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
+use bevy::camera_controller::pan_camera::{MousePanSettings, PanCamera, PanCameraPlugin};
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use common::{TCP_ADDR, UpgradePlugin};
+use common::primitives::{CustomTransform, PlayerStats, WeaponCounter};
+use common::util::BlockInput;
+use common::{BoatClientId, TCP_ADDR, UpgradePlugin, log_on_add};
 use common::protocol::ZIndexUpdate;
 use common::{
     Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, WorldPlugin,
@@ -98,8 +102,6 @@ fn main() -> AppExit {
 
     .add_systems(FixedUpdate, update_state)
     .add_systems(Update, move_camera)
-    //     Update,
-    //     boat_to_target.run_if(in_state(BoatState::Released))
 
     .add_systems(FixedUpdate, sync_z_index)
         
@@ -109,11 +111,22 @@ fn main() -> AppExit {
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect);
 
-    // app.add_systems(FixedUpdate, debug_component!(PlayerStats,,))
+    app.add_observer(log_on_add!(<Boat>))
+        .add_observer(log_on_add!(<CustomTransform>))  // N/A
+        .add_observer(log_on_add!(<ZIndex>))
+        .add_observer(log_on_add!(<PlayerStats>));
     app.run()
 }
 
-const DIGEST: &str = include_str!("../../cert/digest.txt");
+static DIGEST: LazyLock<String> = LazyLock::new(|| {
+    if current_dir().unwrap().ends_with("client") {
+        std::fs::read_to_string("../cert/digest.txt").unwrap()   
+    } else if current_dir().unwrap().ends_with("mk73") {
+        std::fs::read_to_string("cert/digest.txt").unwrap()
+    } else {
+        panic!("Must run from . or ./client, current_dir: {:?}", current_dir().unwrap())
+    }
+});
 
 fn setup(mut commands: Commands) {
     // let client_id = rand::random_range(0..100);
@@ -149,9 +162,9 @@ fn setup(mut commands: Commands) {
             Link::default(),
             NetcodeClient::new(auth, netcode_config).unwrap(),
             WebTransportClientIo {
-                certificate_digest: DIGEST.to_string()
+                certificate_digest: DIGEST.clone()
             },
-            ReplicationReceiver::default(),
+            ReplicationReceiver,
             PredictionManager::default()
         ))
         .id();
@@ -171,6 +184,10 @@ fn setup(mut commands: Commands) {
             key_up: None,
             key_rotate_ccw: None,
             key_rotate_cw: None,
+            mouse_pan_settings: MousePanSettings {
+                enabled: false,
+                button: MouseButton::Left,
+            },
             ..default()
         },
         MainCamera,
@@ -195,6 +212,7 @@ fn update_state(
     mut setter: ResMut<NextState<BoatState>>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
+    block_input: Res<BlockInput>,
     mut commands: Commands
 ) {
     match current_state.get() {
@@ -209,7 +227,7 @@ fn update_state(
             }
         }
         BoatState::Released => {
-            if mouse_button.just_pressed(MouseButton::Left) {
+            if mouse_button.just_pressed(MouseButton::Left) && !block_input.0 {
                 setter.set(BoatState::FiringWeapon(Duration::ZERO));
             }
         }
