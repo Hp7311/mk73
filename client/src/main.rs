@@ -18,9 +18,8 @@ use bevy::camera_controller::pan_camera::{MousePanSettings, PanCamera, PanCamera
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use common::primitives::{CustomTransform, PlayerStats, WeaponCounter};
 use common::util::BlockInput;
-use common::{BoatClientId, TCP_ADDR, UpgradePlugin, log_on_add};
+use common::{TCP_ADDR, UpgradePlugin};
 use common::protocol::ZIndexUpdate;
 use common::{
     Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, WorldPlugin,
@@ -52,6 +51,7 @@ compile_error! {"Should compile by trunk serve on production"}
 
 
 const DEFAULT_MAX_ZOOM: f32 = 2.0;
+
 const TIME_TO_LAUNCH_WEAPON: Duration = Duration::from_millis(200);
 
 fn main() -> AppExit {
@@ -67,7 +67,6 @@ fn main() -> AppExit {
                     fit_canvas_to_parent: true,
                     ..default()
                 }),
-                
                 ..default()
             })
             .set(AssetPlugin {
@@ -111,10 +110,6 @@ fn main() -> AppExit {
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect);
 
-    app.add_observer(log_on_add!(<Boat>))
-        .add_observer(log_on_add!(<CustomTransform>))  // N/A
-        .add_observer(log_on_add!(<ZIndex>))
-        .add_observer(log_on_add!(<PlayerStats>));
     app.run()
 }
 
@@ -234,6 +229,8 @@ fn update_state(
         BoatState::FiringWeapon(elapsed) => {
             let duration = *elapsed + time.delta();
 
+            
+            // TODO a lot of misses and moving when firing weapon
             if duration > TIME_TO_LAUNCH_WEAPON {
                 setter.set(BoatState::Moving { locked: false });
             } else if mouse_button.just_released(MouseButton::Left) {
@@ -245,7 +242,6 @@ fn update_state(
         }
     }
 }
-// TODO a lot of misses and moving when firing weapon
 
 /// using hack to achieve system to be only triggered when both
 /// [`ActionState<T>`] and [`Controlled`] added

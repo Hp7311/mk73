@@ -28,6 +28,7 @@ use crate::{BoatState, ui::AfterUpgradeDontClearMoveState};
 
 pub(crate) struct InputBufferPlugin;
 
+// TODO add keyboard WASD control
 impl Plugin for InputBufferPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Reversed>();
@@ -55,15 +56,18 @@ impl Plugin for InputBufferPlugin {
                     rotate.0 = Rotate(None);
                 }
             },
-            reset_input::<Move>.run_if(in_state(AfterUpgradeDontClearMoveState::NoNeed))
+            reset_input::<Move>
+                .run_if(in_state(AfterUpgradeDontClearMoveState::NoNeed))
+                // don't clear if not reached yet
+                .run_if(|input: Single<&ActionState<Move>, With<InputMarker<Move>>>, custom: Single<&CustomTransform, With<Controlled>>| input.0.0.is_some() && eq!(custom.speed.get_raw(), input.0.0.unwrap().get_raw()))
         ).run_if(input_not_pressed(MouseButton::Left)));
 
 
         app.add_systems(FixedPreUpdate, (|q: Single<(&CustomTransform, &Boat), With<Controlled>>, mut move_input: Single<&mut ActionState<Move>, With<InputMarker<Move>>>, mut state: ResMut<NextState<AfterUpgradeDontClearMoveState>>| {
             let (custom, boat) = q.into_inner();
             
+            move_input.0.0 = Some(boat.max_speed());
             if custom.speed > boat.max_speed() {  // excessive assignment after first...
-                move_input.0.0 = Some(boat.max_speed())
             } else if custom.speed < - boat.rev_max_speed() {
                 move_input.0.0 = Some(- boat.rev_max_speed());
             } else {

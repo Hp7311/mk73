@@ -196,7 +196,7 @@ pub struct ProtocolPlugin;
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
         // replication
-        app.component::<WorldSize>().replicate();
+        app.resource::<WorldSize>().replicate();
         app.component::<Boat>().replicate();
         app.component::<CustomTransform>()
             .replicate()

@@ -61,7 +61,7 @@ mod server {
             super::rotate_inner(action, &mut custom, boat)
         }
     }
-    pub fn move_(query: Query<(&ActionState<Move>, &mut CustomTransform, &Boat)>, world_size: Single<&WorldSize>) {
+    pub fn move_(query: Query<(&ActionState<Move>, &mut CustomTransform, &Boat)>, world_size: Res<WorldSize>) {
         for (action, mut custom, boat) in query {
             super::move_inner(action, &mut custom, boat, &world_size);
         }
@@ -79,7 +79,7 @@ mod client {
         let (action, mut custom, boat) = query.into_inner();
         super::rotate_inner(action, &mut custom, boat)
     }
-    pub fn move_(query: Single<(&ActionState<Move>, &mut CustomTransform, &Boat), With<Controlled>>, world_size: Single<&WorldSize>) {
+    pub fn move_(query: Single<(&ActionState<Move>, &mut CustomTransform, &Boat), With<Controlled>>, world_size: Res<WorldSize>) {
         let (action, mut custom, boat) = query.into_inner();
         super::move_inner(action, &mut custom, boat, world_size.into_inner());
     }

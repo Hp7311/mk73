@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 use std::iter::FromFn;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::ops::{Range, RangeInclusive};
+use std::ops::{Index, Range, RangeInclusive};
 use std::slice;
 use std::sync::LazyLock;
 use bevy::ecs::schedule::ScheduleConfigs;
@@ -247,7 +247,7 @@ impl<T: PartialEq> VecDequeStartsWith for VecDeque<T> {
 /// filter defaults to [`With`]
 /// ## Example
 ///
-/// ```norun
+/// ```ignore
 /// print_num!(&mut app, ActionState<Move>, InputMarker<Move>);
 /// // expands to:
 /// let system =  |query:Query<(), (With<ActionState<Move>>, With<InputMarker<Move>>)>| {
@@ -418,7 +418,7 @@ pub const fn pixel(input: i32) -> Val {
     Val::Px(input as f32)
 }
 
-#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub struct OrderedHashMap<K, V> {
     vec: Vec<(K, V)>
 }
@@ -453,11 +453,20 @@ impl<K, V> OrderedHashMap<K, V> {
     }
 }
 
+impl<K, V> Default for OrderedHashMap<K, V> {
+    fn default() -> Self {
+        Self { vec: Vec::new() }
+    }
+}
 impl<K: PartialEq, V> OrderedHashMap<K, V> {
     pub fn get(&self, key: &K) -> Option<&V> {
         self.vec.iter()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v)
+    }
+    pub fn get_index(&self, key: &K) -> Option<usize> {
+        self.vec.iter()
+            .position(|(k, _)| k == key)
     }
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
         self.vec.iter_mut()
@@ -488,6 +497,12 @@ impl<'a, K, V> IntoIterator for &'a mut OrderedHashMap<K, V> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.vec.iter_mut()
+    }
+}
+impl<K, V> Index<usize> for OrderedHashMap<K, V> {
+    type Output = (K, V);
+    fn index(&self, index: usize) -> &Self::Output {
+        self.vec.index(index)
     }
 }
 /// Returns mutable access to specific item that appears in `children` first in `query`
@@ -573,6 +588,37 @@ macro_rules! log_on_add {
             debug!("{} was added: {:?}", stringify!($target), comp);
         } 
     };
+}
+
+pub trait FloatExt {
+    /// discard numbers after floating point
+    /// ```
+    /// # use common::util::FloatExt;
+    /// let f = 3.2f32;
+    /// let g = 3.5f32;
+    /// let h = 3.9f32;
+    /// let i = 3.0f32;
+    /// 
+    /// assert_eq!(f.preserve_int(), 3.);
+    /// assert_eq!(g.preserve_int(), 3.);
+    /// assert_eq!(h.preserve_int(), 3.);
+    /// assert_eq!(i.preserve_int(), 3.);
+    /// ```
+    fn preserve_int(self) -> Self;
+}
+impl FloatExt for f32 {
+    fn preserve_int(self) -> Self {
+        let rounded = self.round();
+        if (self - rounded) < 0.0 {
+            if self.is_sign_positive() {
+                rounded - 1.0
+            } else {
+                rounded + 1.0
+            }
+        } else {
+            rounded
+        }
+    }
 }
 #[cfg(test)]
 mod tests {

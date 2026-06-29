@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use lightyear::prelude::*;
 
-use crate::{Boat, primitives::WeaponCounter, protocol::{UpgradeMessage, UpgradeRollback}};
+use crate::{Boat, primitives::{WeaponCounter, WeaponData}, protocol::{UpgradeMessage, UpgradeRollback}, util::{FloatExt, InputExt, OrderedHashMap}};
 
 
 /// - client
@@ -42,7 +42,7 @@ impl Plugin for UpgradePlugin {
         {
             app.configure_sets(FixedUpdate, (
                 UpgradeSet::UpdateComponents,
-                UpgradeSet::HandleWeapons
+                UpgradeSet::AfterRecvUpgrade
             ).chain());
             app.add_systems(FixedUpdate, server::recv_upgrade.in_set(UpgradeSet::UpdateComponents));
         }
@@ -154,7 +154,7 @@ mod server {
     #[derive(Debug, SystemSet, Hash, Eq, Clone, PartialEq)]
     pub enum UpgradeSet {
         UpdateComponents,
-        HandleWeapons,
+        AfterRecvUpgrade,
     }
 
     pub(super) fn recv_upgrade(
@@ -202,7 +202,41 @@ fn upgrade_components(
     boat: &mut Boat,
     weapon_counter: &mut WeaponCounter,
 ) {
+    // compute the weapon counter
+    let selected_weapon = weapon_counter.selected_weapon.and_then(|selected| {
+        if selected != boat.default_weapon().expect("Some when expected None on default/selected weapon") {
+            let i = boat.armanents().get_index(&selected).unwrap();
+            let ratio = i as f32 / boat.armanents().len() as f32;
+            let new_selected = target.armanents().len() as f32 * ratio;
+            let new_selected = new_selected.preserve_int() as usize;
+            dbg!(new_selected);
+            
+            Some(target.armanents()[new_selected].0)
+        } else {
+            target.default_weapon()
+        }
+    });
+    let mut weapons = OrderedHashMap::new();
+
+    {
+        let ratio =
+            weapon_counter.weapons.values().map(|d| d.avaliable).sum::<u16>().to::<f32>()
+            / weapon_counter.weapons.values().map(|d| d.max).sum::<u16>().to::<f32>();
+        
+        for (weapon, data) in target.armanents() {
+            let avaliable = data.max.to::<f32>() * ratio;
+            let avaliable = avaliable.preserve_int() as u16;
+            weapons.push(weapon, WeaponData {
+                avaliable,
+                max: data.max
+            });
+        }
+    }
+
+    *weapon_counter = WeaponCounter {
+        selected_weapon,
+        weapons,
+    };
+
     *boat = target;
-    // TODO this would refill weapons every time upgrade
-    *weapon_counter = WeaponCounter::from_boat(&target);
 }

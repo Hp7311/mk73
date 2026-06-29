@@ -6,7 +6,7 @@ use lightyear::link::server::Server;
 use lightyear::prelude::{NetworkTarget, Replicate, ServerMultiMessageSender};
 use rand::{RngExt, rngs::ThreadRng, seq::IndexedRandom};
 
-use common::{Boat, OCEAN_SURFACE, eq};
+use common::{Boat, OCEAN_SURFACE, UpgradeSet, eq};
 use common::collision::{out_of_bound_point, out_of_bounds, square_does_not_intersects};
 use common::primitives::{CustomTransform, Mk48Rect, PlayerStats, Point, Position, Radian, Speed, ZIndex, in_range};
 use common::protocol::{OilRigTransform as OilRig, PointTransform, SendToClient};
@@ -31,7 +31,11 @@ impl Plugin for OilRigPlugin {
             .add_systems(Update, spawn_rigs)
             .add_systems(
                 FixedUpdate,
-                (rig_spawn_points, move_points, points_obsorbed_despawn)
+                (
+                    rig_spawn_points,
+                    move_points,
+                    points_obsorbed_despawn.in_set(UpgradeSet::AfterRecvUpgrade)  // only system rn that upgrades PlayerStats, also sending update to client, can't afford to be incorrect
+                )
             );
     }
 }
@@ -66,7 +70,7 @@ fn spawn_rigs(
     time: Res<Time>,
 
     mut commands: Commands,
-    world_size: Single<&WorldSize>,
+    world_size: Res<WorldSize>,
     spawned_rigs: Query<&PointTransform>
 ) {
     timer.tick(time.delta());
@@ -168,7 +172,7 @@ fn spawn_random_rig(
 fn rig_spawn_points(
     mut commands: Commands,
     rigs: Query<(&mut PointAmount, &OilRig, Entity)>,
-    world_size: Single<&WorldSize>,
+    world_size: Res<WorldSize>,
 ) {
     let mut rng = rand::rng();
 

@@ -60,16 +60,22 @@ struct ShowUpgrade;
 
 fn recv_stats_update(
     mut rx: Single<&mut MessageReceiver<DisplayScore>>,
-    current: Single<&PlayerStats>,
+    current: Single<&PlayerStats, With<Controlled>>,
     upgrade_bar: Single<&Visibility, With<UpgradeBar>>,
     mut commands: Commands,
     mut progress_bar: Single<(&mut Text, &mut BackgroundGradient), With<ProgressBar>>,
 ) {
     let mut upgrade_bar_vis = **upgrade_bar;
     for msg in rx.receive() {
-        debug!(progression_update = ?msg);
+        debug!(stats_update = ?msg);
         match msg {
             DisplayScore::NewLevel(_target) => {
+                #[cfg(debug_assertions)]
+                if current.level() == _target {
+                    // this does happen sometimes
+                    warn!("Server behind on updates (not expected since we used UpgradeSet to make upgrade components run before )");
+                    continue;
+                }
                 // only show upgrade if upgrade bar is not visible right now
                 if upgrade_bar_vis == Visibility::Hidden {
                     commands.trigger(ShowUpgrade);
@@ -364,7 +370,6 @@ fn on_choose_upgrade(
         **progress_bar = Visibility::Visible;
 
         let (mut text, mut background) = percent.into_inner();
-        dbg!(&stats);
         debug!("Updating percent after upgrade to {}", stats.display().unwrap_percent());
         update_percent(stats.display().unwrap_percent(), trigger.target.level(), &mut text, &mut background);
     }
@@ -702,7 +707,7 @@ fn update_selection_bar(
     
     let (base, children) = base_entity.into_inner();
     // dbg!(&weapon_counter);
-    for (child, weapon) in zip_longest(children, trigger.target.armanents()) {
+    for (child, weapon) in zip_longest(children, weapon_counter.weapons.iter().copied()) {
         match (child, weapon) {
             (Some(child), Some((weapon, data))) => {
                 let mut individual_weapon = individual_weapon.get_mut(*child).unwrap();

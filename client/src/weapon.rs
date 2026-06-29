@@ -56,7 +56,7 @@ fn fire_weapon(
     }
     count.avaliable -= 1;  // oldFIXME upgrade glitch
 
-    debug!("Firing {selected:?} with {count:?}");
+    debug!("Firing {selected:?} ({:?} left)", count.avaliable);
     commands.trigger(UpdateWeaponSelectionBarCount);    
 
     msg.entity_on_client.0 = commands.spawn((

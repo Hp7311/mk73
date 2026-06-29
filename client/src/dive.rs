@@ -15,7 +15,7 @@ use lightyear::prelude::Controlled;
 
 pub(crate) struct DivingPlugin;
 
-// TODO observers has .run_if in 0.19   
+// TODO add UI for diving
 impl Plugin for DivingPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<DivingStatus>();
@@ -107,7 +107,6 @@ fn update_diving_status(
     getter: Res<State<DivingStatus>>,
     transform: Single<&Transform, (With<Controlled>, With<Boat>)>,
 ) {
-    debug!("Just pressed R");
     // if buttons.just_pressed(KeyCode::KeyR) {  already set in .run_if
         let target = match getter.get() {
             DivingStatus::None => {

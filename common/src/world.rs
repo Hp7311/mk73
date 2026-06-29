@@ -47,7 +47,7 @@ impl Plugin for WorldPlugin {
 }
 
 // TODO make this a resource when lightyear re-adds it
-#[derive(Component, Debug, Copy, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Resource, Debug, Copy, Clone, Deserialize, Serialize, PartialEq)]
 pub struct WorldSize {
     current_expand: u32,
     player_num: u32,
