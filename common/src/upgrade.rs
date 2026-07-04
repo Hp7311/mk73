@@ -53,6 +53,8 @@ impl Plugin for UpgradePlugin {
 pub use server::UpgradeSet;
 #[cfg(feature = "client")]
 pub use client::UpgradeEventCommonFinished;
+#[cfg(all(feature = "server", not(feature = "client")))]
+pub use server::UpgradeEventCommonFinished;
 #[cfg(feature = "client")]
 mod client {
     use crate::boat::{CircleHud, SubKind};
@@ -145,6 +147,7 @@ mod client {
         }
     }
 }
+
 #[cfg(feature = "server")]
 mod server {
     use crate::{primitives::PlayerStats, protocol::SendToClient, BoatClientId};
@@ -157,12 +160,18 @@ mod server {
         AfterRecvUpgrade,
     }
 
+    #[derive(Debug, EntityEvent)]
+    pub struct UpgradeEventCommonFinished {
+        pub entity: Entity,
+    }
     pub(super) fn recv_upgrade(
         readers: Query<&mut MessageReceiver<UpgradeMessage>>,
         mut sender: ServerMultiMessageSender,
         server: Single<&Server>,
     
-        mut stats: Query<(&mut PlayerStats, &BoatClientId, &mut Boat, &mut WeaponCounter)>
+        mut stats: Query<(&mut PlayerStats, &BoatClientId, &mut Boat, &mut WeaponCounter)>,
+
+        mut commands: Commands
     ) {
         for mut reader in readers {
             for UpgradeMessage { target, entity_on_server } in reader.receive() {
@@ -179,6 +188,10 @@ mod server {
                             &mut boat,
                             &mut weapon_counter
                         );
+
+                        commands.trigger(UpgradeEventCommonFinished {
+                            entity: Entity::from_bits(entity_on_server.0)
+                        });
                     } else {
                         info!("Client {client_id:?}'s upgrade to {target:?} rejected");
                         sender.send::<_, SendToClient>(

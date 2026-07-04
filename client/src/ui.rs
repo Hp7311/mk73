@@ -529,9 +529,12 @@ struct WeaponSelectionIndividualBox(Weapon);
 struct UpdateWeaponSelectionBar {
     target: Boat
 }
-/// we're assuming that it's selected.aval -= 1
+
+/// UI event that updates the UI Display of aval/max of a weapon
 #[derive(Event)]
-pub(crate) struct UpdateWeaponSelectionBarCount;
+pub(crate) struct UpdateWeaponSelectionBarCount {
+    pub target_weapon: Weapon,
+}
 
 #[derive(Debug, Component)]
 struct WeaponDataText;
@@ -758,26 +761,20 @@ fn update_selection_bar(
 }
 
 fn update_selection_bar_count(
-    _trigger: On<UpdateWeaponSelectionBarCount>,
+    trigger: On<UpdateWeaponSelectionBarCount>,
     weapon_counter: Single<&WeaponCounter, With<Controlled>>,
     container: Query<(&Children, &WeaponSelectionIndividualBox)>,
-    mut count: Query<&mut Text, With<WeaponDataText>>
+    mut text: Query<&mut Text, With<WeaponDataText>>
 ) -> Result {  // not determistic since we can't assume that this would always run before the updating weapon counter system
-    let Some(selected) = weapon_counter.selected_weapon else {
-        return Err("No selected weapon, should be handled in firing weapon".into())
-    };
-    let Some((children, _)) = container.into_iter().find(|(_, c)| c.0 == selected) else {
-        dbg!(container.iter().collect::<Vec<_>>());
-        dbg!(selected);
+    let target = trigger.target_weapon;
+    let Some((children, _)) = container.into_iter().find(|(_, c)| c.0 == target) else {
+        dbg!(container.iter().collect::<Vec<_>>(), target);
         return Err("No weapon selection of the currently selected weapon".into())
     };
-    let mut text = get_mut!(children, count).unwrap();
+    let WeaponData { max, avaliable } = weapon_counter.weapons.get(&target).expect("No present");
+    let mut text = get_mut!(children, text).unwrap();
 
-    let mut iter = text.0.split('/');
-    let (aval, max) = (iter.next().unwrap().parse::<u16>()?, iter.next().unwrap().parse::<u16>()?);
-    debug_assert_eq!(iter.next(), None);
-
-    text.0 = format!("{}/{}", aval - 1, max);
+    text.0 = format!("{}/{}", avaliable, max);
 
     Ok(())
 }
@@ -931,12 +928,13 @@ fn update_dbg_gui(
     state: Res<State<BoatState>>,
     custom: Single<&CustomTransform, With<Controlled>>,
     transform: Single<&Transform, With<Controlled>>,
-    player_score: Single<&PlayerStats, With<Controlled>>
+    player_score: Single<&PlayerStats, With<Controlled>>,
+    counter: Single<&WeaponCounter, With<Controlled>>
 ) {
     let state = format!("{:?}", state.into_inner()).split("State(").last().unwrap().to_owned();
 
     let new_text = format!(
-        "RotateInput: {}\nSpeedInput: {}\nState: {}\nPosition: {}\nAltitude: {}\nRotation: {}\nSpeed: {}\nScore: {}\nLevel: {:?}",
+        "RotateInput: {}\nSpeedInput: {}\nState: {}\nPosition: {}\nAltitude: {}\nRotation: {}\nSpeed: {}\nScore: {}\nLevel: {:?}\nWeaponCounter: {}",
         rotate.0.0.map(|r| r.to_degrees().round()).unwrap_or(0.0),
         moves.0.0.map(|r| r.get_knots().round()).unwrap_or(0.0),
         state.chars().take(state.len() - 1).collect::<String>(),
@@ -945,7 +943,8 @@ fn update_dbg_gui(
         custom.rotation.to_degrees().round(),
         custom.speed.get_knots().round(),
         player_score.score(),
-        player_score.level()
+        player_score.level(),
+        *counter
     );
 
     if new_text != text.0 {

@@ -1,9 +1,10 @@
 use std::debug_assert_matches;
 use bevy::color::palettes::css::LIME;
 use bevy::prelude::*;
+use common::macros::force_single;
 use lightyear::prelude::*;
 use common::primitives::{CursorPos, LastSpeed, MeshBundle, Size, Speed, TargetRotation, WeaponCounter, WrapRadian as _};
-use common::protocol::{SpawnWeapon, SendToServer, WeaponRollBack, EntityOnClient};
+use common::protocol::{EntityOnClient, ReloadWeapon, SendToServer, SpawnWeapon, WeaponRollBack};
 use common::util::get_rotate_radian;
 use common::{Boat, CIRCLE_HUD, Weapon};
 use crate::FiresWeapon;
@@ -23,6 +24,8 @@ impl Plugin for WeaponPlugin {
             .add_systems(Update, sync_weapon_marker);
         
         app.add_observer(change_weapon);
+
+        app.add_systems(Update, recv_reload);  // syncing weapon reloads aren't that scheduling sensitive
     }
 }
 
@@ -57,7 +60,7 @@ fn fire_weapon(
     count.avaliable -= 1;  // oldFIXME upgrade glitch
 
     debug!("Firing {selected:?} ({:?} left)", count.avaliable);
-    commands.trigger(UpdateWeaponSelectionBarCount);    
+    commands.trigger(UpdateWeaponSelectionBarCount { target_weapon: selected });  // TODO seeing as WeaponData and others are bundled together, Changed<T> doesn't work really well. triggering this event everywhere weapon data changes fro nwo...
 
     msg.entity_on_client.0 = commands.spawn((
         Sprite {
@@ -160,6 +163,25 @@ fn rollback(
     }
 }
 
+#[force_single]
+fn recv_reload(
+    #[force_single_skip(lazy)]
+    mut rx: Single<&mut MessageReceiver<ReloadWeapon>>,
+    #[force_single_skip(lazy)]
+    mut counter: Single<&mut WeaponCounter, With<Controlled>>,
+    mut commands: Commands
+) {
+    for ReloadWeapon { weapon } in rx.receive() {
+        let data = counter.weapons.get_mut(&weapon).unwrap();
+        data.avaliable += 1;
+        debug_assert!(data.avaliable <= data.max);
+        commands.trigger(UpdateWeaponSelectionBarCount {
+            target_weapon: weapon,
+        });
+
+        debug!("Received reload for weapon {weapon:?}");
+    }
+}
 
 const MARKER_OFFSET: Vec2 = vec2(0.0, 40.0);
 const MARKER_BOTTOM: Vec2 = vec2(0.0, -17.32);

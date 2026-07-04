@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumCount, EnumIter, IntoEnumIterator, VariantArray};
 use std::fmt;
 use std::ops::Mul;
+use std::time::{Duration, Instant};
 use std::{
     f32::consts::PI,
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
@@ -86,6 +87,19 @@ impl WeaponCounter {
     }
 }
 
+impl fmt::Display for WeaponCounter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format!(
+            "Controlled: {:?}\n",
+            self.selected_weapon
+        ))?;
+
+        for (weapon, data) in &self.weapons {
+            writeln!(f, "{:?}: {}", weapon, data.avaliable)?;
+        }
+        Ok(())
+    }
+}
 // maybe Trait on Rect？
 /// useful helpers like getting corners and large bounding box
 #[derive(Debug, Clone, Copy)]

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use proc_macro::TokenStream;
 use proc_macro_crate::FoundCrate;
 use serde::Deserialize;
 use syn::Path;

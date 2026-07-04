@@ -234,7 +234,9 @@ fn update_state(
             if duration > TIME_TO_LAUNCH_WEAPON {
                 setter.set(BoatState::Moving { locked: false });
             } else if mouse_button.just_released(MouseButton::Left) {
-                commands.trigger(FiresWeapon);
+                commands.trigger(FiresWeapon);  /* 
+2026-06-30T16:48:58.481663Z DEBUG client::weapon: Firing BrahMos (3 left)
+2026-06-30T16:48:58.481793Z DEBUG client::weapon: Firing BrahMos (2 left) ????? */ 
                 setter.set(BoatState::Released);
             } else {
                 setter.set(BoatState::FiringWeapon(duration));

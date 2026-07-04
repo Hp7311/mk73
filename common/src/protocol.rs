@@ -172,6 +172,11 @@ pub enum WeaponRollBack {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct ReloadWeapon {
+    pub weapon: Weapon,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct UpgradeMessage {
     pub target: Boat,
     pub entity_on_server: EntityOnServer
@@ -232,6 +237,8 @@ impl Plugin for ProtocolPlugin {
         app.component::<Transform>().replicate_filtered::<With<Weapon>>();
         app.component::<LastSpeed>().replicate();
         app.component::<TargetRotation>().replicate();
+
+        app.register_message::<ReloadWeapon>().add_direction(NetworkDirection::ServerToClient);
 
         // --- various channels
         app.add_channel::<SendToClient>(ChannelSettings {

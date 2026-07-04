@@ -2,7 +2,7 @@ mod oil_rig;
 mod weapon;
 mod net;
 
-use std::{sync::RwLock, time::Duration};
+use std::{sync::{LazyLock, RwLock}, time::{Duration, Instant}};
 
 #[cfg(not(feature = "gui"))]
 use bevy::app::{ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
@@ -21,8 +21,10 @@ use lightyear::{
     },
 };
 use common::protocol::{EntityOnServer, ZIndexUpdate};
-use crate::{oil_rig::OilRigPlugin};
+use crate::{oil_rig::OilRigPlugin, weapon::LastReloaded};
 use crate::weapon::WeaponPlugin;
+
+static FPS: LazyLock<Duration> = LazyLock::new(|| Duration::from_secs_f32(1.0 / 60.0));
 
 fn main() {
     let mut app = App::new();
@@ -30,7 +32,7 @@ fn main() {
     #[cfg(not(feature = "gui"))]
     app.add_plugins((
         // headless plugins
-        MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f32(1.0 / 60.0))),
+        MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(*FPS)),
         DiagnosticsPlugin,
         TerminalCtrlCHandlerPlugin,
         LogDiagnosticsPlugin::default(),
@@ -130,7 +132,8 @@ fn handle_connected_client(
             ..CustomTransform::default()
         },
         boat,
-        WeaponCounter::from_boat(&boat),  // not replicated, will do messages to update
+        WeaponCounter::from_boat(&boat),
+        LastReloaded(boat.armanents().keys().map(|k| (*k, None)).collect()),
         OCEAN_SURFACE,
         PlayerStats::new(0),
         

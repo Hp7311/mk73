@@ -5,7 +5,7 @@ use std::{ops::Not, sync::LazyLock};
 use proc_macro::TokenStream;
 use proc_macro2::{Span, Ident, TokenStream as TokenStream2};
 use quote::quote;
-use syn::{Data, DataEnum, DeriveInput, Expr, ExprLit, Lit, LitFloat, LitInt, Meta as SynMeta, MetaNameValue, Token, Variant, parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::Comma};
+use syn::{Data, DataEnum, DeriveInput, Expr, ExprLit, FnArg, ItemFn, Lit, LitFloat, LitInt, Meta as SynMeta, MetaList, MetaNameValue, Pat, Path, Token, Type, TypePath, Variant, parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::Comma};
 use helper::absolute_path;
 
 use crate::helper::SpriteSheet;
@@ -140,6 +140,134 @@ pub fn derive_max_speed(input: TokenStream) -> TokenStream {
     let ident = ast.ident;
 
     TokenStream::from(derive_max_speed_inner(variants, ident))
+}
+/// reload attribute in seconds
+#[proc_macro_derive(Reload, attributes(reload))]
+pub fn derive_weapon_reload(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
+    let Data::Enum(DataEnum { variants, .. }) = ast.data else {
+        panic!("Only enums supported")
+    };
+    let ident = ast.ident;
+
+    TokenStream::from(derive_weapon_reload_inner(variants, ident))
+}
+
+#[proc_macro_attribute]
+pub fn force_single(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as ItemFn);  // todo support methods, closures
+    let fn_name = ast.sig.ident;
+    let inputs = ast.sig.inputs;
+
+    let mut final_inputs = vec![];
+    let mut modified_inputs = vec![];
+    let mut lazy_skips = vec![];
+
+    for input in inputs {
+        let FnArg::Typed(mut arg) = input else { panic!() };
+
+        let skipped = arg.attrs.iter().position(|attr| attr.path().is_ident("force_single_skip"));
+
+        if let Type::Path(TypePath { path, .. }) = &*arg.ty
+            && let first = path.segments.first().unwrap()
+            && first.ident.to_string().ends_with("Single")
+            && skipped.is_none()
+        {
+            let Pat::Ident(pat) = *arg.pat else { panic!() };
+            let name = pat.ident;
+            let ty = arg.ty;
+
+            final_inputs.push(quote! {
+                #name: Option<#ty>
+            });
+            modified_inputs.push((name, pat.mutability.is_some()));
+        } else {
+            if let Some(skip_attr_pos) = skipped {
+                // lazy handling
+                if let SynMeta::List(MetaList { tokens, ..}) = &arg.attrs[skip_attr_pos].meta {
+                    if &*tokens.to_string() == "lazy" {    
+                        let Pat::Ident(pat) = &*arg.pat else { panic!() };
+                        let name = pat.ident.clone();
+                        let ty = arg.ty;
+                        lazy_skips.push((name.clone(), pat.mutability.is_some()));
+
+                        final_inputs.push(quote! {
+                            #name: Option<#ty>
+                        });
+
+                        continue;
+                    } else {
+                        panic!("Unexpected attr: {tokens}");
+                    }
+                }
+                arg.attrs.remove(skip_attr_pos);
+            }
+            final_inputs.push(quote! {
+                #arg
+            });
+        }
+    }
+
+
+    let mut added_body = quote! {};
+
+    let static_name = Ident::new(&format!("_{fn_name}_SYSTEM_RAN"), Span::mixed_site());
+    let statics = if !lazy_skips.is_empty() {
+        quote! {
+            static #static_name: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+        }
+    } else {
+        quote! {}
+    };
+
+    // lazy handling
+    for (ident, mutable) in lazy_skips {
+        let mutability = if mutable {
+            quote! {mut}
+        } else {
+            quote! {}
+        };
+        // TODO use one-time init smart ptr
+        added_body.extend(quote! {
+            let Some(#mutability #ident) = #ident else {
+                if *#static_name.lock().unwrap() == true {
+                    error!("System {} is going to be skipped when it already ran at least once", stringify!(#fn_name));
+                }
+                trace!("Skipping system {}", stringify!(#fn_name));
+                return;
+            };
+            *#static_name.lock().unwrap() = true;
+        });
+    }
+    for (modified, mutable) in modified_inputs {
+        let mutability = if mutable {
+            quote! {mut}
+        } else {
+            quote! {}
+        };
+        added_body.extend(quote! {
+            let #mutability #modified = #modified.unwrap();
+        });
+    }
+
+    let original_body = ast.block.stmts;  // construct stmt manually instead of quote ing
+
+    let body = quote! {
+        #added_body
+        #(#original_body)*
+    };
+
+    // re-construct
+    let ret = ast.sig.output;
+    quote! {
+        #statics
+
+        fn #fn_name(
+            #(#final_inputs),*
+        ) #ret {
+            #body
+        }
+    }.into()
 }
 fn impl_boat(ast: DeriveInput) -> proc_macro2::TokenStream {
     let name = &ast.ident;
@@ -651,6 +779,50 @@ fn derive_max_speed_inner(variants: Punctuated<Variant, Comma>, ident: Ident) ->
             /// 0 speed represents no speed
             pub fn max_speed(&self) -> #speed_path {
                 #speed_path::from_knots(match self {
+                    #(#match_arms),*
+                })
+            }
+        }
+    }
+}
+
+fn derive_weapon_reload_inner(variants: Punctuated<Variant, Comma>, ident: Ident) -> TokenStream2 {
+    let mut match_arms = vec![];
+    let duration_path = syn::parse_str::<Path>("::std::time::Duration").unwrap();
+
+    for variant in variants {
+        let ident = variant.ident;
+
+        if let Some(reload) = variant.attrs.into_iter().find_map(|attr| {
+            if let SynMeta::NameValue(meta) = attr.meta
+                && meta.path.is_ident("reload")
+                && let Expr::Lit(lit) = meta.value
+            {
+                Some(lit.lit)
+            } else {
+                None
+            }
+        }) {
+            let reload = 
+                if let Lit::Float(f) = reload {
+                    f.base10_parse::<f32>().unwrap()
+                } else if let Lit::Int(int) = reload {
+                    int.base10_parse::<f32>().unwrap()  // TODO apply this to others instead of parsing to int then casting
+                } else {
+                    bail!(?span = ident.span(), "Expected float or integer");
+                };
+            match_arms.push(quote! {
+                Self::#ident => #reload
+            });
+        } else {
+            bail!(?span = ident.span(), "Expected #[reload = <float>] attr");
+        }
+    }
+
+    quote! {
+        impl #ident {
+            pub fn reload(&self) -> #duration_path {
+                #duration_path::from_secs_f32(match self {
                     #(#match_arms),*
                 })
             }

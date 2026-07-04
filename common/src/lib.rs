@@ -21,7 +21,6 @@ pub mod util;
 pub use movement::MovementPlugin;
 #[cfg(feature = "server")]
 pub use upgrade::UpgradeSet;
-#[cfg(feature = "client")]
 pub use upgrade::UpgradeEventCommonFinished;
 pub use upgrade::UpgradePlugin;
 pub use weapon::{Weapon, WeaponType};
@@ -31,6 +30,7 @@ pub use boat::BoatType;
 pub use world::{WorldPlugin, WorldSize};
 
 pub use macros::BoatImpl;
+pub use macros;
 
 pub const SERVER_ADDR: SocketAddr = ip_addr(Ipv4Addr::LOCALHOST, SERVER_PORT);
 #[cfg(feature = "client")]
