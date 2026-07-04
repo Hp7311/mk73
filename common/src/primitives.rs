@@ -636,7 +636,18 @@ impl Add<u8> for Level {
         Level::iter().find(|l| l.to_u8() == target).unwrap()
     }
 }
+impl Sub<u8> for Level {
+    type Output = Self;
+    /// # Panics
+    /// if resulting level smaller than Level one
+    /// or if `rhs` is smaller than `self`
+    fn sub(self, rhs: u8) -> Self::Output {
+        let target = self.to_u8() - rhs;
+        assert!(target >= Level::One.to_u8(), "Smaller than level 1");
 
+        Level::iter().find(|l| l.to_u8() == target).unwrap()
+    }
+}
 /// sent to client on score change by [`PlayerStats::display`]
 #[derive(Debug, Deserialize, Serialize)]
 pub enum DisplayScore {
@@ -830,11 +841,7 @@ impl WidthHeight {
         }
     }
     pub(crate) fn max_side(&self) -> f32 {
-        if self.width > self.height {
-            self.width
-        } else {
-            self.height
-        }
+        f32::max(self.width, self.height)
     }
 }
 

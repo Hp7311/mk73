@@ -18,9 +18,27 @@ use crate::primitives::{Mk48Rect, WidthHeight, ZIndex};
 
 /// can just chain [`run_if`](IntoScheduleConfigs::run_if)s..
 pub fn in_states_2<T: States>(first: T, second: T)  -> impl Fn(Res<State<T>>) -> bool {
-    move |state| *state.get() == first || *state.get() == second
+    move |state| *state.get() == first || *state.get() == second 
 }
-
+pub fn check_state<S: States>(
+    state: Res<State<S>>,
+    options: &[S]
+) -> bool {
+    options.contains(state.get())
+}
+#[macro_export]
+macro_rules! in_one_of_states {
+    ($( $option:expr ),+) => {
+        move |current| -> bool {
+            $crate::util::check_state(
+                current,
+                &[$(
+                    $option
+                ),+]
+            )
+        }
+    };
+}
 pub fn not_in_state<T: States>(not: T) -> impl Fn(Res<State<T>>) -> bool {
     move |state| *state.get() != not
 }
@@ -570,6 +588,7 @@ where
     }
 }
 
+// FIXME still buggy, consider using HTML in production OR use sets and figure about the schedules
 #[derive(Resource, PartialEq)]
 pub struct BlockInput(pub bool);
 
@@ -620,6 +639,63 @@ impl FloatExt for f32 {
         }
     }
 }
+
+#[derive(Debug, Hash, PartialEq, Eq)]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right
+}
+pub trait BoatMoveInputExt {
+    /// implementor should panic if not moving
+    fn move_pressed(&self) -> bool;
+}
+
+pub trait KeyboardInputExt {
+    fn all_moved(&self) -> Vec<Direction>;
+    fn stop_pressed(&self) -> bool;
+}
+impl BoatMoveInputExt for ButtonInput<MouseButton> {
+    fn move_pressed(&self) -> bool {
+        self.pressed(MouseButton::Left)
+    }
+}
+impl BoatMoveInputExt for ButtonInput<KeyCode> {
+    fn move_pressed(&self) -> bool {
+        !self.all_moved().is_empty()
+    }
+}
+impl KeyboardInputExt for ButtonInput<KeyCode> {
+    fn all_moved(&self) -> Vec<Direction> {
+        let mut ret = vec![];
+        if self.pressed(KeyCode::KeyW) {
+            ret.push(Direction::Up)
+        }
+        if self.pressed(KeyCode::KeyS) {
+            ret.push(Direction::Down)
+        }
+        if self.pressed(KeyCode::KeyA) {
+            ret.push(Direction::Left)
+        }
+        if self.pressed(KeyCode::KeyD) {
+            ret.push(Direction::Right)
+        }
+
+        ret
+    }
+    fn stop_pressed(&self) -> bool {
+        self.pressed(KeyCode::KeyX)
+    }
+}
+
+/// the user has not pressed the key (usually X) that
+/// forces the boat to stop ignoring any attempt to
+/// move 
+pub fn not_stopped(input: Res<ButtonInput<KeyCode>>) -> bool {
+    !input.stop_pressed()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::primitives::WrapZIndex;

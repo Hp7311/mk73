@@ -1,5 +1,10 @@
 use bevy::{color::palettes::css::GRAY, prelude::*};
-use common::{Boat, BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, CircleHud, OCEAN_SURFACE, circle_hud_mesh, primitives::{CustomTransform, MeshBundle, Size, WeaponCounter}, util::OrderedHashMap};
+use common::{
+    Boat, BoatReverseNegative, BoatReversePositive, BoatType, CIRCLE_HUD, CircleHud, OCEAN_SURFACE,
+    circle_hud_mesh,
+    primitives::{CustomTransform, MeshBundle, Size, WeaponCounter},
+    util::OrderedHashMap,
+};
 use lightyear::prelude::*;
 
 use crate::asset::SpriteMap;
@@ -17,7 +22,7 @@ impl Plugin for BoatPlugin {
 #[allow(clippy::too_many_arguments)]
 fn spawn_boat(
     trigger: On<Add, CustomTransform>,
-    boats: Query<(&Boat, &CustomTransform)>,  //  &EntityOnServer // legacy custom TCP impl
+    boats: Query<(&Boat, &CustomTransform)>, //  &EntityOnServer // legacy custom TCP impl
     controlled: Query<(), (With<Boat>, With<Controlled>)>,
 
     mut commands: Commands,
@@ -31,7 +36,9 @@ fn spawn_boat(
     info!("new boat");
     if !controls {
         info!("doesnt control");
-        commands.get_entity(trigger.entity).unwrap()
+        commands
+            .get_entity(trigger.entity)
+            .unwrap()
             .insert(BoatBundleNotControl {
                 transform: Transform {
                     translation: custom.position.0.extend(*OCEAN_SURFACE),
@@ -41,15 +48,16 @@ fn spawn_boat(
                 sprite: Sprite {
                     image: sprites.image(),
                     custom_size: Some(boat.render_size()),
-                    texture_atlas: sprites.get(boat),  
+                    texture_atlas: sprites.get(boat),
                     ..default()
-                }
+                },
             });
         return;
     }
 
     commands
-        .get_entity(trigger.entity).unwrap()
+        .get_entity(trigger.entity)
+        .unwrap()
         // .insert(OCEAN_SURFACE)
         .insert(BoatBundle {
             boat,
@@ -67,45 +75,54 @@ fn spawn_boat(
                 translation: custom.position.extend(OCEAN_SURFACE),
                 rotation: custom.rotation.to_quat(),
                 ..default()
-            }
+            },
         })
         .with_children(|parent| {
             let circle_hud_radius = boat.circle_hud_radius();
             let reverse_indicator_length = 10.0;
 
-            parent.spawn((
-                MeshBundle {
-                    mesh: Mesh2d(meshes.add(circle_hud_mesh(circle_hud_radius))),
-                    materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
-                },
-                Transform::from_xyz(0.0, 0.0, *CIRCLE_HUD),
-                CircleHud
-            ))
-            .insert(children![
-                // reverse indicators
-                (
-                    Transform::from_translation(
-                        BoatReversePositive::relative_pos(circle_hud_radius)
-                            .extend(*CIRCLE_HUD)
-                    ),
+            parent
+                .spawn((
                     MeshBundle {
-                        mesh: Mesh2d(meshes.add(BoatReversePositive::mesh(reverse_indicator_length))),
-                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY)))
+                        mesh: Mesh2d(meshes.add(circle_hud_mesh(circle_hud_radius))),
+                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY))),
                     },
-                    BoatReversePositive
-                ),
-                (
-                    Transform::from_translation(
-                        BoatReverseNegative::relative_pos(circle_hud_radius)
-                            .extend(*CIRCLE_HUD)
+                    Transform::from_xyz(0.0, 0.0, *CIRCLE_HUD),
+                    CircleHud,
+                ))
+                .insert(children![
+                    // reverse indicators
+                    (
+                        Transform::from_translation(
+                            BoatReversePositive::relative_pos(circle_hud_radius)
+                                .extend(*CIRCLE_HUD)
+                        ),
+                        MeshBundle {
+                            mesh: Mesh2d(
+                                meshes.add(BoatReversePositive::mesh(reverse_indicator_length))
+                            ),
+                            materials: MeshMaterial2d(
+                                materials.add(ColorMaterial::from_color(GRAY))
+                            )
+                        },
+                        BoatReversePositive
                     ),
-                    MeshBundle {
-                        mesh: Mesh2d(meshes.add(BoatReverseNegative::mesh(reverse_indicator_length))),
-                        materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(GRAY)))
-                    },
-                    BoatReverseNegative
-                )
-            ]);
+                    (
+                        Transform::from_translation(
+                            BoatReverseNegative::relative_pos(circle_hud_radius)
+                                .extend(*CIRCLE_HUD)
+                        ),
+                        MeshBundle {
+                            mesh: Mesh2d(
+                                meshes.add(BoatReverseNegative::mesh(reverse_indicator_length))
+                            ),
+                            materials: MeshMaterial2d(
+                                materials.add(ColorMaterial::from_color(GRAY))
+                            )
+                        },
+                        BoatReverseNegative
+                    )
+                ]);
         })
         .insert(Name::new("Client's boat"));
 
@@ -115,7 +132,6 @@ fn spawn_boat(
 
     commands.insert_resource(BoatType(boat.sub_kind()));
 }
-
 
 // is it better to directly manipulate Transform
 /// for all boats regardless of control
@@ -128,7 +144,6 @@ fn sync_transform_from_custom(
         transform.rotation = custom.rotation.to_quat();
     }
 }
-
 
 #[derive(Bundle, Debug, Clone)]
 struct BoatBundle {

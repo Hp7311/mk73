@@ -8,15 +8,13 @@ pub(crate) struct AssetPreloadPlugin;
 
 impl Plugin for AssetPreloadPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .add_systems(Startup, (init_spritesheet, init_sprite_ui_sheet));
+        app.add_systems(Startup, (init_spritesheet, init_sprite_ui_sheet));
     }
 }
 
-
 /// Stores assets by their path,
-/// 
-/// 
+///
+///
 /// Asset system:
 /// - [`Assets<Image>`]
 ///     - `Vec` of loaded images
@@ -28,7 +26,7 @@ impl Plugin for AssetPreloadPlugin {
 fn init_spritesheet(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    mut textures: ResMut<Assets<TextureAtlasLayout>>
+    mut textures: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     let sprite = asset_server.load("spritesheet.webp");
 
@@ -39,7 +37,7 @@ fn init_spritesheet(
 fn init_sprite_ui_sheet(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    mut textures: ResMut<Assets<TextureAtlasLayout>>
+    mut textures: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     let sprite = asset_server.load("sprites_css.png");
 
@@ -47,12 +45,12 @@ fn init_sprite_ui_sheet(
     commands.insert_resource(map);
 }
 
-#[derive(Debug, Resource, Clone)]  // cloning only clones the Vec of names
+#[derive(Debug, Resource, Clone)] // cloning only clones the Vec of names
 pub struct SpriteMap {
     image: Handle<Image>,
     /// in sync with [`atlas::textures`](TextureAtlasLayout::textures)
     names: Vec<String>,
-    atlas: Handle<TextureAtlasLayout>
+    atlas: Handle<TextureAtlasLayout>,
 }
 
 /// returns None if not found
@@ -62,26 +60,31 @@ impl SpriteMap {
         let sheet = SpriteSheet::new();
         let (names, atlas) = sheet.to_texture_atlas_names();
         let atlas = textures.add(atlas);
-        
+
         let names = names.into_iter().map(ToOwned::to_owned).collect();
 
         Self {
             image,
             names,
-            atlas
+            atlas,
         }
     }
     /// e.g. the default `name` for [`Boat::Yasen`](common::Boat::Yasen) is its identifier "Yasen"
     pub fn get(&self, name: impl FetchSprite) -> Option<TextureAtlas> {
-        let index = self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())?;
+        let index = self
+            .names
+            .iter()
+            .position(|n| n == name.fetch_sprite_str().as_ref())?;
 
         Some(TextureAtlas {
-            index, 
-            layout: self.atlas.clone()
+            index,
+            layout: self.atlas.clone(),
         })
     }
     pub fn get_index(&self, name: impl FetchSprite) -> Option<usize> {
-        self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())
+        self.names
+            .iter()
+            .position(|n| n == name.fetch_sprite_str().as_ref())
     }
     /// sets texture atlas to given name, returns None if not found
     #[allow(dead_code)]
@@ -103,7 +106,7 @@ pub struct SpriteUiMap {
     names: Vec<String>,
     atlas: Handle<TextureAtlasLayout>,
     /// stores the actual atlas without Handle (references)
-    _atlas: TextureAtlasLayout
+    _atlas: TextureAtlasLayout,
 }
 
 impl SpriteUiMap {
@@ -111,31 +114,39 @@ impl SpriteUiMap {
         let sheet = SpriteUiSheet::new();
         let (names, atlas) = sheet.to_texture_atlas_names();
         let atlas_handle = textures.add(atlas.clone());
-        
+
         let names = names.into_iter().map(ToOwned::to_owned).collect();
 
         Self {
             image,
             names,
             atlas: atlas_handle,
-            _atlas: atlas
+            _atlas: atlas,
         }
     }
     pub fn get(&self, name: impl FetchSprite) -> Option<TextureAtlas> {
-        let index = self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())?;
+        let index = self
+            .names
+            .iter()
+            .position(|n| n == name.fetch_sprite_str().as_ref())?;
 
         Some(TextureAtlas {
-            index, 
-            layout: self.atlas.clone()
+            index,
+            layout: self.atlas.clone(),
         })
     }
     pub fn get_size(&self, name: impl FetchSprite) -> Option<URect> {
-        let position = self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())?;
+        let position = self
+            .names
+            .iter()
+            .position(|n| n == name.fetch_sprite_str().as_ref())?;
 
         self._atlas.textures.get(position).copied()
     }
     pub fn get_index(&self, name: impl FetchSprite) -> Option<usize> {
-        self.names.iter().position(|n| n == name.fetch_sprite_str().as_ref())
+        self.names
+            .iter()
+            .position(|n| n == name.fetch_sprite_str().as_ref())
     }
     pub fn image(&self) -> Handle<Image> {
         self.image.clone()
@@ -144,7 +155,7 @@ impl SpriteUiMap {
 #[derive(Debug, Deserialize)]
 pub struct SpriteSheet {
     pub frames: HashMap<String, SheetCell>,
-    pub meta: Meta
+    pub meta: Meta,
 }
 
 impl SpriteSheet {
@@ -170,10 +181,13 @@ impl SpriteSheet {
             textures.push(cell.frame.to::<URect>());
         }
 
-        (names, TextureAtlasLayout {
-            size: self.meta.size.into(),
-            textures
-        })
+        (
+            names,
+            TextureAtlasLayout {
+                size: self.meta.size.into(),
+                textures,
+            },
+        )
     }
 }
 
@@ -185,21 +199,20 @@ pub struct SheetCell {
     pub trimmed: bool,
     pub frame: Rect4,
     pub sprite_source_size: Rect4,
-    pub source_size: Rect2
+    pub source_size: Rect2,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Meta {
     /// whole sprite size
-    pub size: Rect2
+    pub size: Rect2,
 }
-
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct SpriteUiSheet {
     width: u32,
     height: u32,
-    sprites: HashMap<String, RectPoint>
+    sprites: HashMap<String, RectPoint>,
 }
 
 impl SpriteUiSheet {
@@ -217,10 +230,13 @@ impl SpriteUiSheet {
             rects.push(rect.to::<URect>());
         }
 
-        (names, TextureAtlasLayout {
-            size: uvec2(self.width, self.height),
-            textures: rects
-        })
+        (
+            names,
+            TextureAtlasLayout {
+                size: uvec2(self.width, self.height),
+                textures: rects,
+            },
+        )
     }
 }
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -228,13 +244,13 @@ pub struct Rect4 {
     pub x: u32,
     pub y: u32,
     pub w: u32,
-    pub h: u32
+    pub h: u32,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
 pub struct Rect2 {
     pub w: u32,
-    pub h: u32
+    pub h: u32,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -242,17 +258,14 @@ pub struct RectPoint {
     x: u32,
     y: u32,
     width: u32,
-    height: u32
+    height: u32,
 }
 impl From<RectPoint> for URect {
     fn from(value: RectPoint) -> Self {
         let min = uvec2(value.x, value.y);
         let max = uvec2(min.x + value.width, min.y + value.height);
 
-        URect {
-            min,
-            max
-        }
+        URect { min, max }
     }
 }
 impl From<Rect2> for UVec2 {
@@ -265,9 +278,6 @@ impl From<Rect4> for URect {
         let min = uvec2(value.x, value.y);
         let max = uvec2(min.x + value.w, min.y + value.h);
 
-        URect {
-            min,
-            max 
-        }
+        URect { min, max }
     }
 }

@@ -145,10 +145,19 @@ fn validate_acceleration(
 #[derive(PartialEq)]
 #[allow(dead_code)]
 enum SpeedValidity {
-    Error,
+    PositiveErr,
+    NegativeErr,
     Normal
 }
 
+/* FIXME security vulneribility
+fix:
+when player upgrades, the server inserts AllowLargerSpeed if current speed is larger than target boat's bounds
+if that component exists, validate_speed_cheating is ignored
+AllowLargerSpeed contains the deadline at which the boat is expected to reach
+when deadline + 2 frames is reached, AllowLargerSpeed is removed, therefore
+any out-of-bound would be snapped back
+*/
 /// sanity check: speed upper + lower bound
 /// should be run after validating acceleration
 /// - `reverse_max_speed` assumes positive from [`Boat`]
@@ -161,14 +170,14 @@ fn validate_speed_cheating(target: &Speed, max_speed: Speed, reverse_max_speed: 
             target.get_knots(),
             max_speed.get_knots()
         );
-        SpeedValidity::Error
+        SpeedValidity::PositiveErr
     } else if *target < - reverse_max_speed {
         warn!(
             "Got speed {} lesser than reverse max speed {}",
             target.get_knots(),
             - reverse_max_speed.get_knots()
         );
-        SpeedValidity::Error
+        SpeedValidity::NegativeErr
     } else {
         SpeedValidity::Normal
     }

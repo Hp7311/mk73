@@ -7,8 +7,7 @@ pub(crate) struct OilRigPlugin;
 
 impl Plugin for OilRigPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(spawn_rig)
-            .add_observer(spawn_point);
+        app.add_observer(spawn_rig).add_observer(spawn_point);
         app.add_systems(Update, sync_point_transform);
     }
 }
@@ -18,13 +17,17 @@ fn spawn_rig(
     rigs: Query<&OilRigTransform>,
 
     sprites: Res<SpriteMap>,
-    mut commands: Commands
+    mut commands: Commands,
 ) {
     // NOTE client-inserted components get removed when server despawns the replicating entity
-    let Ok(rig_info) = rigs.get(trigger.entity) else { panic!() };
+    let Ok(rig_info) = rigs.get(trigger.entity) else {
+        panic!()
+    };
     commands.get_entity(trigger.entity).unwrap().insert((
         Transform {
-            translation: rig_info.position.extend(OilRigTransform::z_index_transform()),
+            translation: rig_info
+                .position
+                .extend(OilRigTransform::z_index_transform()),
             rotation: rig_info.rotation.to_quat(),
             ..default()
         },
@@ -34,7 +37,7 @@ fn spawn_rig(
             texture_atlas: sprites.get(rig_info.clone()),
             ..default()
         },
-        Name::new("Oil rig")
+        Name::new("Oil rig"),
     ));
 }
 
@@ -42,26 +45,23 @@ fn spawn_point(
     trigger: On<Add, Point>,
     points: Query<&Point>,
     sprites: Res<SpriteMap>,
-    mut commands: Commands
+    mut commands: Commands,
 ) {
     let point_info = points.get(trigger.entity).unwrap();
-    commands.get_entity(trigger.entity).unwrap()
-        .insert((
-            Sprite {
-                // points get spawned VERY frequently
-                image: sprites.image(),
-                custom_size: Some(Point::custom_size()),
-                texture_atlas: sprites.get(point_info.point),
-                ..default()
-            },
-            Transform::from_translation(point_info.to_translation()),
-            Name::new("Point")
-        ));
+    commands.get_entity(trigger.entity).unwrap().insert((
+        Sprite {
+            // points get spawned VERY frequently
+            image: sprites.image(),
+            custom_size: Some(Point::custom_size()),
+            texture_atlas: sprites.get(point_info.point),
+            ..default()
+        },
+        Transform::from_translation(point_info.to_translation()),
+        Name::new("Point"),
+    ));
 }
 
-fn sync_point_transform(
-    points: Query<(&Point, &mut Transform), Changed<Point>>,
-) {
+fn sync_point_transform(points: Query<(&Point, &mut Transform), Changed<Point>>) {
     for (tf, mut transform) in points {
         // important
         transform.translation = tf.to_translation();

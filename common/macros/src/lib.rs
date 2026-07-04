@@ -3,9 +3,9 @@ mod helper;
 use std::{ops::Not, sync::LazyLock};
 
 use proc_macro::TokenStream;
-use proc_macro2::{Span, Ident, TokenStream as TokenStream2};
+use proc_macro2::{Ident, Literal, Span, TokenStream as TokenStream2};
 use quote::quote;
-use syn::{Data, DataEnum, DeriveInput, Expr, ExprLit, FnArg, ItemFn, Lit, LitFloat, LitInt, Meta as SynMeta, MetaList, MetaNameValue, Pat, Path, Token, Type, TypePath, Variant, parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::Comma};
+use syn::{Data, DataEnum, DeriveInput, Expr, ExprLit, FnArg, ItemFn, Lit, LitFloat, LitInt, Meta as SynMeta, MetaList, MetaNameValue, Pat, Path, Stmt, Token, Type, TypePath, Variant, parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::Comma};
 use helper::absolute_path;
 
 use crate::helper::SpriteSheet;
@@ -207,12 +207,12 @@ pub fn force_single(_attr: TokenStream, input: TokenStream) -> TokenStream {
             });
         }
     }
-
+    let lazy = !lazy_skips.is_empty();
 
     let mut added_body = quote! {};
 
     let static_name = Ident::new(&format!("_{fn_name}_SYSTEM_RAN"), Span::mixed_site());
-    let statics = if !lazy_skips.is_empty() {
+    let statics = if lazy {
         quote! {
             static #static_name: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
         }
@@ -236,8 +236,12 @@ pub fn force_single(_attr: TokenStream, input: TokenStream) -> TokenStream {
                 trace!("Skipping system {}", stringify!(#fn_name));
                 return;
             };
-            *#static_name.lock().unwrap() = true;
         });
+    }
+    if lazy {
+        added_body.extend(quote! {
+            *#static_name.lock().unwrap() = true;
+        })
     }
     for (modified, mutable) in modified_inputs {
         let mutability = if mutable {

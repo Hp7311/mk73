@@ -40,6 +40,7 @@ fn recv_spawning(
 ) {
     for mut rx in rxs {
         for msg in rx.receive() {
+            debug!("New weapon {:?}", msg.weapon);
             let (_, mut counter, mut reload_map) = boat_q.iter_mut().find(|(c, ..)| c.0 == msg.client_id).unwrap();
             let Some(count) =  counter.weapons.get_mut(&msg.weapon) else { panic!("{:?}", counter) };
             if count.avaliable == 0 {
@@ -48,8 +49,8 @@ fn recv_spawning(
                 continue;
             }
 
-            if count.avaliable == count.max {
-                let reload = reload_map.get_mut(&msg.weapon).unwrap();
+            let reload = reload_map.get_mut(&msg.weapon).unwrap();
+            if reload.is_none() {  // 1st: full ammo, 2nd: upgraded
                 *reload = Some(Instant::now());  // set latest "reload" time at fire time
             }
             count.avaliable -= 1;
@@ -83,14 +84,18 @@ pub(crate) struct LastReloaded(pub HashMap<Weapon, Option<Instant>>);
 
 fn on_upgrade(
     trigger: On<UpgradeEventCommonFinished>,
-    mut query: Query<(&mut LastReloaded, &Boat), With<WeaponCounter>>
+    mut query: Query<(&mut LastReloaded, &WeaponCounter)>
 ) {
-    if let Ok((mut last_reloaded, boat)) = query.get_mut(trigger.entity) {
+    if let Ok((mut last_reloaded, weapon_counter)) = query.get_mut(trigger.entity) {
         last_reloaded.clear();
 
         info!("Cleared");
-        for weapon in boat.armanents().keys() {
-            last_reloaded.insert(*weapon, None);
+        for (weapon, data) in &weapon_counter.weapons {
+            last_reloaded.insert(*weapon, if data.avaliable == data.max {
+                None
+            } else {
+                Some(Instant::now())  // if not full ammo, set upgrade time as upgrade time
+            });
         }
     } else {
         error!("WeaponCounter/boat entity not found");
@@ -105,14 +110,13 @@ fn reload_weapons(
         for (weapon, last_reloaded) in reload_map.iter_mut().filter(|(w, i)| i.is_some_and(|i| i.elapsed() > w.reload())) {
             let data = counter.weapons.get_mut(weapon).unwrap();
 
-            // FIXME messages not receiving properly
             if data.avaliable == data.max {
-                info!("{weapon:?} reloading complete");
+                debug!("{weapon:?} reloading complete");
                 *last_reloaded = None;
                 continue;
             }
 
-            info!("Reloaded {weapon:?}");
+            debug!("Reloaded {weapon:?}");
             data.avaliable += 1;
 
             *last_reloaded = Some(Instant::now());

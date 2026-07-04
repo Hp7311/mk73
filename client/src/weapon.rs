@@ -1,34 +1,36 @@
-use std::debug_assert_matches;
-use bevy::color::palettes::css::LIME;
-use bevy::prelude::*;
-use common::macros::force_single;
-use lightyear::prelude::*;
-use common::primitives::{CursorPos, LastSpeed, MeshBundle, Size, Speed, TargetRotation, WeaponCounter, WrapRadian as _};
-use common::protocol::{EntityOnClient, ReloadWeapon, SendToServer, SpawnWeapon, WeaponRollBack};
-use common::util::get_rotate_radian;
-use common::{Boat, CIRCLE_HUD, Weapon};
 use crate::FiresWeapon;
 use crate::asset::SpriteMap;
 use crate::ui::UpdateWeaponSelectionBarCount;
+use bevy::color::palettes::css::LIME;
+use bevy::prelude::*;
+use common::macros::force_single;
+use common::primitives::{
+    CursorPos, LastSpeed, MeshBundle, Size, Speed, TargetRotation, WeaponCounter, WrapRadian as _,
+};
+use common::protocol::{EntityOnClient, ReloadWeapon, SendToServer, SpawnWeapon, WeaponRollBack};
+use common::util::get_rotate_radian;
+use common::{Boat, CIRCLE_HUD, Weapon};
+use lightyear::prelude::*;
+use std::debug_assert_matches;
 
 /// movement in [`common::movement`]
 pub(crate) struct WeaponPlugin;
 
 impl Plugin for WeaponPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .add_observer(fire_weapon)
+        app.add_observer(fire_weapon)
             .add_observer(spawn_others_weapon)
-
             .add_systems(FixedUpdate, rollback)
             .add_systems(Update, sync_weapon_marker);
-        
+
         app.add_observer(change_weapon);
 
-        app.add_systems(Update, recv_reload);  // syncing weapon reloads aren't that scheduling sensitive
+        // messages MUST be Update or PreUpdate .after(Receive)
+        app.add_systems(Update, recv_reload); // syncing weapon reloads aren't that scheduling sensitive
     }
 }
 
+// FIXME obviously wrong movement according to self (client's boat moves = a lot more acceleration)
 fn fire_weapon(
     _: On<FiresWeapon>,
     cursor_pos: Res<CursorPos>,
@@ -39,54 +41,68 @@ fn fire_weapon(
     mut commands: Commands,
     sprites: Res<SpriteMap>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let (transform, mut weapon_counter) = boat.into_inner();
-    let Some(selected) = weapon_counter.selected_weapon else { return; };
+    let Some(selected) = weapon_counter.selected_weapon else {
+        return;
+    };
     let mut msg = SpawnWeapon {
         weapon: selected,
-        position: transform.translation,  // currently starts at centre of boat
+        position: transform.translation, // currently starts at centre of boat
         starting_rotation: transform.rotation.wrap_radian(),
         end_rotation: get_rotate_radian(transform.translation.xy(), cursor_pos.0).wrap_radian(),
         entity_on_client: EntityOnClient(u64::MAX),
-        client_id: client_id.0
+        client_id: client_id.0,
     };
 
-    let Some(count) = weapon_counter.weapons.get_mut(&selected) else { panic!() };
+    let Some(count) = weapon_counter.weapons.get_mut(&selected) else {
+        panic!()
+    };
 
     if count.avaliable == 0 {
-        return;  // no weapons left
+        return; // no weapons left
     }
-    count.avaliable -= 1;  // oldFIXME upgrade glitch
+    count.avaliable -= 1; // oldFIXME upgrade glitch
 
     debug!("Firing {selected:?} ({:?} left)", count.avaliable);
-    commands.trigger(UpdateWeaponSelectionBarCount { target_weapon: selected });  // TODO seeing as WeaponData and others are bundled together, Changed<T> doesn't work really well. triggering this event everywhere weapon data changes fro nwo...
+    commands.trigger(UpdateWeaponSelectionBarCount {
+        target_weapon: selected,
+    }); // TODO seeing as WeaponData and others are bundled together, Changed<T> doesn't work really well. triggering this event everywhere weapon data changes fro nwo...
 
-    msg.entity_on_client.0 = commands.spawn((
-        Sprite {
-            // weapons get spawned frequently
-            image: sprites.image(),
-            custom_size: Some(msg.weapon.render_size()),
-            texture_atlas: sprites.get(msg.weapon),
-            ..default()
-        },
-        Transform {
-            translation: transform.translation,
-            // follows boat rotation
-            rotation: transform.rotation,
-            ..default()
-        },
-        TargetRotation(msg.end_rotation),
-        LastSpeed(Speed::ZERO),
-        msg.weapon,
-
-        Name::new("Controlled weapon")
-    )).id().to_bits();
+    msg.entity_on_client.0 = commands
+        .spawn((
+            Sprite {
+                // weapons get spawned frequently
+                image: sprites.image(),
+                custom_size: Some(msg.weapon.render_size()),
+                texture_atlas: sprites.get(msg.weapon),
+                ..default()
+            },
+            Transform {
+                translation: transform.translation,
+                // follows boat rotation
+                rotation: transform.rotation,
+                ..default()
+            },
+            TargetRotation(msg.end_rotation),
+            LastSpeed(Speed::ZERO),
+            msg.weapon,
+            Name::new("Controlled weapon"),
+        ))
+        .id()
+        .to_bits();
 
     // at back to prevent use-after-move
-    
-    spawn_weapon_marker(&mut commands, Entity::from_bits(msg.entity_on_client.0),  msg.position.xy(), &mut meshes, &mut materials);
-    sender.send::<SendToServer>(msg);  // can be unordered
+
+    spawn_weapon_marker(
+        &mut commands,
+        Entity::from_bits(msg.entity_on_client.0),
+        msg.position.xy(),
+        &mut meshes,
+        &mut materials,
+    );
+    sender.send::<SendToServer>(msg); // can be unordered
 }
 
 fn spawn_others_weapon(
@@ -96,39 +112,48 @@ fn spawn_others_weapon(
 
     sprites: Res<SpriteMap>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let Ok((weapon, transform)) = weapons.get(trigger.entity) else {
         // not others'
         return;
     };
 
-    commands.get_entity(trigger.entity).unwrap()
-        .insert((
-            Sprite {
-                // weapons get spawned frequently
-                image: sprites.image(),
-                custom_size: Some(weapon.render_size()),
-                texture_atlas: sprites.get(*weapon),
-                ..default()
-            },
-            Name::new("Other's weapon")
-        ));
-    
-    spawn_weapon_marker(&mut commands, trigger.entity, transform.translation.xy(), &mut meshes, &mut materials);
+    commands.get_entity(trigger.entity).unwrap().insert((
+        Sprite {
+            // weapons get spawned frequently
+            image: sprites.image(),
+            custom_size: Some(weapon.render_size()),
+            texture_atlas: sprites.get(*weapon),
+            ..default()
+        },
+        Name::new("Other's weapon"),
+    ));
+
+    spawn_weapon_marker(
+        &mut commands,
+        trigger.entity,
+        transform.translation.xy(),
+        &mut meshes,
+        &mut materials,
+    );
 }
 
 #[derive(Debug, Event)]
 pub(crate) struct ChangeWeapon {
-    pub target: Weapon
+    pub target: Weapon,
 }
 
 fn change_weapon(
     trigger: On<ChangeWeapon>,
-    mut weapon_counter: Single<&mut WeaponCounter, With<Controlled>>
+    mut weapon_counter: Single<&mut WeaponCounter, With<Controlled>>,
 ) {
     debug_assert_matches!(weapon_counter.selected_weapon, Some(_));
-    debug!("Changing selected weapon from {:?} to {:?}", weapon_counter.selected_weapon.unwrap(), trigger.target);
+    debug!(
+        "Changing selected weapon from {:?} to {:?}",
+        weapon_counter.selected_weapon.unwrap(),
+        trigger.target
+    );
     weapon_counter.selected_weapon = Some(trigger.target);
 }
 fn rollback(
@@ -136,7 +161,7 @@ fn rollback(
     mut commands: Commands,
     mut weapons: Query<&mut Transform, With<Weapon>>,
     types: Query<&Weapon>,
-    mut counter: Single<&mut WeaponCounter, With<Controlled>>
+    mut counter: Single<&mut WeaponCounter, With<Controlled>>,
 ) {
     for msg in reader.receive() {
         info!("Rolling back weapon");
@@ -144,13 +169,15 @@ fn rollback(
             WeaponRollBack::Transform {
                 position,
                 rotation,
-                entity
+                entity,
             } => {
-                let Ok(mut transform) = weapons.get_mut(Entity::from_bits(entity.0)) else { return };
+                let Ok(mut transform) = weapons.get_mut(Entity::from_bits(entity.0)) else {
+                    return;
+                };
                 transform.translation = position;
                 transform.rotation = rotation.to_quat();
             }
-            WeaponRollBack::Despawn { entity} => {
+            WeaponRollBack::Despawn { entity } => {
                 if let Ok(mut weapon) = commands.get_entity(Entity::from_bits(entity.0)) {
                     weapon.despawn();
                     let weapon = types.get(Entity::from_bits(entity.0)).unwrap();
@@ -165,14 +192,21 @@ fn rollback(
 
 #[force_single]
 fn recv_reload(
-    #[force_single_skip(lazy)]
-    mut rx: Single<&mut MessageReceiver<ReloadWeapon>>,
-    #[force_single_skip(lazy)]
-    mut counter: Single<&mut WeaponCounter, With<Controlled>>,
-    mut commands: Commands
+    #[force_single_skip(lazy)] mut rx: Single<&mut MessageReceiver<ReloadWeapon>>,
+    #[force_single_skip(lazy)] mut counter: Single<&mut WeaponCounter, With<Controlled>>,
+    #[force_single_skip(lazy)] boat: Single<&Boat, With<Controlled>>,
+    mut commands: Commands,
 ) {
     for ReloadWeapon { weapon } in rx.receive() {
-        let data = counter.weapons.get_mut(&weapon).unwrap();
+        let Some(data) = counter.weapons.get_mut(&weapon) else {
+            if Boat::VARIANTS.into_iter()
+                .filter(|b| b.level() == boat.level() - 1)  // don't expect to panic since this would only trigger technically after an upgrade
+                .find(|b| b.armanents().get(&weapon).is_some()).is_some()
+            {
+                continue;
+            }
+            panic!("Received invalid reload weapon, counter: {}, weapon: {weapon:?}", counter.clone())
+        };
         data.avaliable += 1;
         debug_assert!(data.avaliable <= data.max);
         commands.trigger(UpdateWeaponSelectionBarCount {
@@ -189,7 +223,13 @@ const MARKER_BOTTOM: Vec2 = vec2(0.0, -17.32);
 #[derive(Component, Clone, Copy)]
 struct WeaponMarker(Entity);
 
-fn spawn_weapon_marker(commands: &mut Commands, weapon_linked: Entity, weapon_pos: Vec2, meshes: &mut Assets<Mesh>, materials: &mut Assets<ColorMaterial>) {
+fn spawn_weapon_marker(
+    commands: &mut Commands,
+    weapon_linked: Entity,
+    weapon_pos: Vec2,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+) {
     commands.spawn((
         Transform::from_translation((weapon_pos + MARKER_OFFSET).extend(*CIRCLE_HUD)),
         MeshBundle {
@@ -201,21 +241,26 @@ fn spawn_weapon_marker(commands: &mut Commands, weapon_linked: Entity, weapon_po
             materials: MeshMaterial2d(materials.add(ColorMaterial::from_color(LIME))),
         },
         WeaponMarker(weapon_linked),
-        Name::new("Weapon Marker")
+        Name::new("Weapon Marker"),
     ));
 }
 
 // can't be bothered with Changed<Transform>, a weapon is always moving
 /// make the weapon marker upright
-fn sync_weapon_marker(mut commands: Commands, weapon: Query<&Transform, With<Weapon>>, markers: Query<(&mut Transform, &WeaponMarker, Entity), Without<Weapon>>) {
+fn sync_weapon_marker(
+    mut commands: Commands,
+    weapon: Query<&Transform, With<Weapon>>,
+    markers: Query<(&mut Transform, &WeaponMarker, Entity), Without<Weapon>>,
+) {
     for (mut marker_transform, &WeaponMarker(parent), marker_id) in markers {
         if let Ok(parent_transform) = weapon.get(parent) {
-            let marker_translation = parent_transform.translation + MARKER_OFFSET/* important!! */.extend(*CIRCLE_HUD /* important!! */);
+            let marker_translation = parent_transform.translation
+                + MARKER_OFFSET /* important!! */
+                    .extend(*CIRCLE_HUD /* important!! */);
             marker_transform.translation = marker_translation;
         } else {
             // parent weapon despawned
-            commands.get_entity(marker_id).unwrap()
-                .despawn();
+            commands.get_entity(marker_id).unwrap().despawn();
         }
     }
 }

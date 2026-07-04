@@ -2,40 +2,32 @@
 #![allow(clippy::too_many_arguments)]
 
 // FIXING server unresponsive after few minutes
-mod input;
-mod dive;
-mod weapon;
+mod asset;
 mod boat;
+mod dive;
+mod input;
 mod oil_rig;
 mod ui;
-mod asset;
+mod weapon;
 
 use std::env::current_dir;
 use std::sync::LazyLock;
 use std::time::Duration;
 
 use bevy::camera_controller::pan_camera::{MousePanSettings, PanCamera, PanCameraPlugin};
+use bevy::material::key;
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use common::util::BlockInput;
-use common::{TCP_ADDR, UpgradePlugin};
 use common::protocol::ZIndexUpdate;
+use common::util::{BlockInput, BoatMoveInputExt};
 use common::{
     Boat, CLIENT_ADDR, MainCamera, MovementPlugin, PROTOCOL_ID, SERVER_ADDR, WorldPlugin,
+    primitives::ZIndex,
     protocol::{Move, ProtocolPlugin, Rotate},
-    primitives::ZIndex
 };
+use common::{TCP_ADDR, UpgradePlugin};
 
-use lightyear::netcode::{auth::Authentication, Key, NetcodeClient};
-use lightyear::prelude::{
-    input::native::{ActionState, InputMarker},
-    client::{
-        ClientPlugins, NetcodeConfig
-    },
-    *
-};
-use lightyear::webtransport::client::WebTransportClientIo;
 use crate::asset::AssetPreloadPlugin;
 use crate::boat::BoatPlugin;
 use crate::dive::DivingPlugin;
@@ -43,12 +35,18 @@ use crate::input::InputBufferPlugin;
 use crate::oil_rig::OilRigPlugin;
 use crate::ui::UiPlugin;
 use crate::weapon::WeaponPlugin;
+use lightyear::netcode::{Key, NetcodeClient, auth::Authentication};
+use lightyear::prelude::{
+    client::{ClientPlugins, NetcodeConfig},
+    input::native::{ActionState, InputMarker},
+    *,
+};
+use lightyear::webtransport::client::WebTransportClientIo;
 
 // note that web builds are noticably laggier than native builds
 
 #[cfg(all(not(target_family = "wasm"), not(debug_assertions)))]
 compile_error! {"Should compile by trunk serve on production"}
-
 
 const DEFAULT_MAX_ZOOM: f32 = 2.0;
 
@@ -79,7 +77,6 @@ fn main() -> AppExit {
     .add_plugins(ProtocolPlugin)
     .add_plugins(PanCameraPlugin)
     .insert_resource(ClearColor(bevy::color::palettes::css::TEAL.into()))
-        
     // plugins
     .init_state::<BoatState>()
     .add_plugins(WorldPlugin)
@@ -89,24 +86,19 @@ fn main() -> AppExit {
     .add_plugins(MovementPlugin { move_weapon: true })
     .add_plugins(DivingPlugin)
     .add_plugins(WeaponPlugin)
-    .add_plugins(UiPlugin) 
+    .add_plugins(UiPlugin)
     .add_plugins(UpgradePlugin)
-
     // init
     .add_plugins(AssetPreloadPlugin)
     .add_systems(Startup, setup)
     .add_observer(on_added_actionstate::<Rotate>)
     .add_observer(on_added_actionstate::<Move>)
     .add_observer(on_added_actionstate::<ZIndexUpdate>)
-
     .add_systems(FixedUpdate, update_state)
     .add_systems(Update, move_camera)
-
     .add_systems(FixedUpdate, sync_z_index)
-        
     .add_plugins(EguiPlugin::default())
     .add_plugins(WorldInspectorPlugin::default())
-
     .add_observer(on_disconnect)
     .add_observer(on_remove_disconnect);
 
@@ -115,11 +107,14 @@ fn main() -> AppExit {
 
 static DIGEST: LazyLock<String> = LazyLock::new(|| {
     if current_dir().unwrap().ends_with("client") {
-        std::fs::read_to_string("../cert/digest.txt").unwrap()   
+        std::fs::read_to_string("../cert/digest.txt").unwrap()
     } else if current_dir().unwrap().ends_with("mk73") {
         std::fs::read_to_string("cert/digest.txt").unwrap()
     } else {
-        panic!("Must run from . or ./client, current_dir: {:?}", current_dir().unwrap())
+        panic!(
+            "Must run from . or ./client, current_dir: {:?}",
+            current_dir().unwrap()
+        )
     }
 });
 
@@ -128,9 +123,11 @@ fn setup(mut commands: Commands) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let client_id = rt.block_on(async {
         let resp = reqwest::get(format!("http://{}/client_id", TCP_ADDR))
-            .await.unwrap()
+            .await
+            .unwrap()
             .bytes()
-            .await.unwrap();
+            .await
+            .unwrap();
 
         u64::from_be_bytes(resp.as_ref().try_into().unwrap())
     });
@@ -148,7 +145,6 @@ fn setup(mut commands: Commands) {
         ..default()
     };
 
-
     let client = commands
         .spawn((
             Client::default(),
@@ -157,10 +153,10 @@ fn setup(mut commands: Commands) {
             Link::default(),
             NetcodeClient::new(auth, netcode_config).unwrap(),
             WebTransportClientIo {
-                certificate_digest: DIGEST.clone()
+                certificate_digest: DIGEST.clone(),
             },
             ReplicationReceiver,
-            PredictionManager::default()
+            PredictionManager::default(),
         ))
         .id();
 
@@ -206,9 +202,10 @@ fn update_state(
     current_state: Res<State<BoatState>>,
     mut setter: ResMut<NextState<BoatState>>,
     mouse_button: Res<ButtonInput<MouseButton>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     block_input: Res<BlockInput>,
-    mut commands: Commands
+    mut commands: Commands,
 ) {
     match current_state.get() {
         BoatState::Moving { locked } => {
@@ -216,27 +213,30 @@ fn update_state(
                 setter.set(BoatState::Moving { locked: true })
             }
 
-            if !mouse_button.pressed(MouseButton::Left) {
+            if !mouse_button.move_pressed() && !keyboard_input.move_pressed() {
                 // not just_released for countering rare bug
                 setter.set(BoatState::Released);
             }
         }
         BoatState::Released => {
-            if mouse_button.just_pressed(MouseButton::Left) && !block_input.0 {
+            if mouse_button.move_pressed() && !block_input.0 {
                 setter.set(BoatState::FiringWeapon(Duration::ZERO));
+            } else if keyboard_input.move_pressed() {
+                // lower priority
+                setter.set(BoatState::Moving { locked: true })
             }
         }
         BoatState::FiringWeapon(elapsed) => {
             let duration = *elapsed + time.delta();
 
-            
             // TODO a lot of misses and moving when firing weapon
             if duration > TIME_TO_LAUNCH_WEAPON {
                 setter.set(BoatState::Moving { locked: false });
             } else if mouse_button.just_released(MouseButton::Left) {
-                commands.trigger(FiresWeapon);  /* 
-2026-06-30T16:48:58.481663Z DEBUG client::weapon: Firing BrahMos (3 left)
-2026-06-30T16:48:58.481793Z DEBUG client::weapon: Firing BrahMos (2 left) ????? */ 
+                commands.trigger(FiresWeapon); /* 
+                2026-06-30T16:48:58.481663Z DEBUG client::weapon: Firing BrahMos (3 left)
+                2026-06-30T16:48:58.481793Z DEBUG client::weapon: Firing BrahMos (2 left) ????? i guess it's fixedupdate running twice in a row due to previous inactivity*/
+                // TODO make input handling Update
                 setter.set(BoatState::Released);
             } else {
                 setter.set(BoatState::FiringWeapon(duration));
@@ -247,7 +247,7 @@ fn update_state(
 
 /// using hack to achieve system to be only triggered when both
 /// [`ActionState<T>`] and [`Controlled`] added
-// #[deny(unused)]     
+// #[deny(unused)]
 fn on_added_actionstate<T>(
     trigger: On<Add, ActionState<T>>,
     controlled_action_states: Query<(), (With<ActionState<T>>, With<Controlled>)>,
@@ -293,7 +293,7 @@ fn move_camera(
 
 /// here, we assumeee the modified ZIndex is the correct val to use for rendering
 fn sync_z_index(
-    query: Query<(&ZIndex, &mut Transform), (With<Boat>, Without<Controlled>, Changed<ZIndex>)>
+    query: Query<(&ZIndex, &mut Transform), (With<Boat>, Without<Controlled>, Changed<ZIndex>)>,
 ) {
     for (z_index, mut transform) in query {
         transform.translation.z = z_index.0;
